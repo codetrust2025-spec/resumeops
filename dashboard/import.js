@@ -121,6 +121,7 @@
       for (const input of row.querySelectorAll('[data-field]')) {
         const value = entry[input.dataset.field];
         input.value = input.dataset.field === 'bullets' ? joinLines(value) : asText(value);
+        input.dispatchEvent(new Event('input', {bubbles:true}));
       }
     }
   }

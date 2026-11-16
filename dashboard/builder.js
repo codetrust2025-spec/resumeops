@@ -103,6 +103,13 @@ const entryFields = {
 };
 
 function addEntry(kind, focus = true) {
+  const holder = el(kind+'-entries');
+  const details = document.createElement('details');
+  details.className = 'resume-entry';
+  details.open = focus || !window.matchMedia('(max-width:760px)').matches;
+  const heading = rows('summary', (kind === 'experience' ? 'Experience' : 'Education') +
+    ' ' + (holder.children.length + 1));
+  details.append(heading);
   const entry = document.createElement('fieldset');
   entry.append(rows('legend',kind === 'experience' ? 'Work entry' : 'Education entry'));
   const grid = rows('div','','fields');
@@ -119,9 +126,19 @@ function addEntry(kind, focus = true) {
   }
   const remove = rows('button','Remove entry','secondary');
   remove.type='button';
-  remove.addEventListener('click', () => entry.remove());
+  remove.addEventListener('click', () => details.remove());
   entry.append(grid,remove);
-  el(kind+'-entries').append(entry);
+  details.append(entry);
+  const title = () => {
+    const name = grid.querySelector(kind === 'experience' ? '[data-field=company]' :
+      '[data-field=institution]').value.trim();
+    const title = grid.querySelector(kind === 'experience' ? '[data-field=position]' :
+      '[data-field=degree]').value.trim();
+    heading.textContent = [kind === 'experience' ? 'Experience' : 'Education', name, title]
+      .filter(Boolean).join(' · ');
+  };
+  grid.addEventListener('input', title);
+  holder.append(details);
   if (focus) grid.querySelector('input').focus();
 }
 el('add-experience').addEventListener('click', () => addEntry('experience'));
@@ -157,6 +174,7 @@ function profileText(profile) {
 
 function showStep(index, focus = true) {
   activeStep=index;
+  document.querySelector('.editor').dataset.activeStep = String(index);
   steps.forEach((step,i) => {step.hidden=i!==index;});
   [...el('steps').children].forEach((step,i) => {
     if (i===index) step.setAttribute('aria-current','step');
@@ -165,8 +183,32 @@ function showStep(index, focus = true) {
   el('back').hidden=index===0;
   el('next').hidden=index===3;
   el('generate').hidden=index!==3;
-  if (focus) steps[index].querySelector('h2').focus();
+  if (focus) {
+    steps[index].querySelector('h2').focus({preventScroll:true});
+    if (window.matchMedia('(max-width:760px)').matches) {
+      el('steps').scrollIntoView({block:'start',behavior:'auto'});
+    }
+  }
 }
+const mobileLayout = window.matchMedia('(max-width:760px)');
+if (mobileLayout.matches) {
+  el('more-personal').open=false;
+  el('more-experience').open=false;
+}
+mobileLayout.addEventListener('change',event => {
+  if (!event.matches) {
+    el('more-personal').open=true;
+    el('more-experience').open=true;
+  }
+});
+const historyToggle=el('history-toggle');
+function expandHistory(expanded) {
+  el('history-content').classList.toggle('expanded',expanded);
+  historyToggle.setAttribute('aria-expanded',String(expanded));
+  historyToggle.textContent=expanded ? 'Hide history' : 'Show history';
+}
+historyToggle.addEventListener('click', () => expandHistory(historyToggle.getAttribute('aria-expanded')!=='true'));
+document.querySelector('a[href="#history"]').addEventListener('click', () => expandHistory(true));
 showStep(0,false);
 updateExperience();
 el('back').addEventListener('click', () => {feedback('');showStep(activeStep-1);});

@@ -53,23 +53,31 @@
 <label>Email<input name="email" type="email" autocomplete="email" required maxlength="254"></label>
 <label>Phone<input name="phone" type="tel" autocomplete="tel" maxlength="50"></label>
 <label>Location<input name="location" maxlength="150"></label>
-<label>Current company<input name="current_company" maxlength="250"></label>
 <label>Professional headline<input name="headline" maxlength="140"></label>
+</div>
+<details id="more-personal" class="optional-details" open>
+<summary>More details (company and links)</summary>
+<div class="fields">
+<label>Current company<input name="current_company" maxlength="250"></label>
 <label>LinkedIn<input name="linkedin" maxlength="250"></label>
 <label>GitHub<input name="github" maxlength="250"></label>
 <label>Portfolio<input name="portfolio" maxlength="250"></label>
 </div>
+</details>
 </section>
 <section data-step hidden>
 <h2 tabindex="-1">Experience and education</h2>
 <label>Years of experience<input name="years" type="range" min="0" max="25" step="1" value="1"></label>
 <div class="range-label"><span>0 years</span><output id="experience-level" for="years"></output><span>25+ years</span></div>
 <label>Professional summary<textarea name="summary" rows="3"></textarea></label>
-<div class="fields">
 <label>Verified skills<textarea name="skills" rows="3" placeholder="One per line"></textarea></label>
+<details id="more-experience" class="optional-details" open>
+<summary>More details (projects and certifications)</summary>
+<div class="fields">
 <label>Verified certifications<textarea name="certifications" rows="3" placeholder="One per line"></textarea></label>
-</div>
 <label>Verified projects<textarea name="projects" rows="3" placeholder="One project or contribution per line"></textarea></label>
+</div>
+</details>
 <div id="experience-entries"></div>
 <div id="education-entries"></div>
 <div class="actions"><button type="button" class="secondary" id="add-experience">Add experience</button><button type="button" class="secondary" id="add-education">Add education</button></div>
@@ -99,7 +107,7 @@
 <div role="tabpanel" id="result-latex" aria-labelledby="tab-latex" hidden><div class="actions"><button type="button" class="secondary" id="copy-latex">Copy LaTeX</button><a id="download-latex" class="button secondary">Download LaTeX</a></div><p id="copy-status" role="status"></p><pre id="latex-source"></pre></div>
 <div role="tabpanel" id="result-ats" aria-labelledby="tab-ats" hidden><div id="ats-result"></div></div>
 </section>
-<section class="panel history" id="history"><div class="result-head"><h2>Generation history</h2><input type="search" id="history-filter" aria-label="Find a resume" placeholder="Find a resume"></div><div id="revision-list"></div></section>
+<section class="panel history" id="history"><div class="result-head"><h2>Generation history</h2><button type="button" id="history-toggle" class="secondary" aria-controls="history-content" aria-expanded="false">Show history</button></div><div id="history-content"><input type="search" id="history-filter" aria-label="Find a resume" placeholder="Find a resume"><div id="revision-list"></div></div></section>
 </main>
 </body>
 </html>
