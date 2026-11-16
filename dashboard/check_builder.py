@@ -60,7 +60,9 @@ def check(screenshots):
                     'name':'resume.exe','mimeType':'application/octet-stream','buffer':b'invalid'})
                 import_page.get_by_role('button', name='Import and prefill').click()
                 expect(import_page.locator('#resume-import-status')).to_contain_text('Unsupported file type')
-                import_page.locator('#resume-upload').set_input_files({
+                with import_page.expect_file_chooser() as picker:
+                    import_page.get_by_role('button', name='Import an existing document').click()
+                picker.value.set_files({
                     'name':'verified.json','mimeType':'application/json',
                     'buffer':json.dumps({'profile':{
                         'full_name':'Jordan Import Example','email':'jordan@example.com',
