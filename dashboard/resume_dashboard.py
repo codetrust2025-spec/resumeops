@@ -13,7 +13,7 @@ import tempfile
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from urllib.parse import parse_qs, urlsplit
 from zipfile import BadZipFile, ZipFile
 
@@ -240,6 +240,35 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
 
     import_stages = {}
     import_lock = Lock()
+    import_ttl_seconds = 30 * 60
+
+    def cleanup_imports():
+        now = time.monotonic()
+        for key, entry in list(import_stages.items()):
+            if isinstance(entry, dict) and now - entry['created'] > import_ttl_seconds:
+                del import_stages[key]
+
+    def background_draft(import_id, extension, document):
+        def report_stage(stage):
+            with import_lock:
+                entry = import_stages.get(import_id)
+                if isinstance(entry, dict) and entry['status'] == 'processing':
+                    entry['stage'] = stage
+        try:
+            draft = workspace.draft(extension, document, report_stage)
+            completed = {'status': 'complete', 'stage': 'Draft ready for review',
+                         'profile': draft['profile'], 'source': draft['source']}
+        except (ValueError, UnicodeError) as exc:
+            completed = {'status': 'error', 'stage': 'Import failed', 'error': str(exc)}
+        except Exception:
+            # Do not expose source resumes or backend traces in public responses.
+            completed = {'status': 'error', 'stage': 'Import failed',
+                         'error': 'Resume extraction failed. Check the Ollama service and retry.'}
+        with import_lock:
+            entry = import_stages.get(import_id)
+            if isinstance(entry, dict):
+                completed['created'] = entry['created']
+                import_stages[import_id] = completed
 
     class DashboardHandler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -284,8 +313,17 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 if not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token):
                     return self.send_json({'error': 'Request not authorized.'}, 403)
                 with import_lock:
-                    stage = import_stages.get(query.get('id', [''])[0])
-                return self.send_json({'stage': stage})
+                    cleanup_imports()
+                    import_id = query.get('id', [''])[0]
+                    entry = import_stages.get(import_id)
+                    if isinstance(entry, dict):
+                        response = {key: value for key, value in entry.items() if key != 'created'}
+                        if entry['status'] in ('complete', 'error'):
+                            # Deliver each draft once; don't retain personal data on the server.
+                            del import_stages[import_id]
+                    else:
+                        response = {'stage': entry, 'status': 'unknown' if entry is None else 'processing'}
+                return self.send_json(response)
             if url.path == '/api/catalog':
                 from resume_bot.workflow import ROLES, TEMPLATES
                 return self.send_json({'roles': list(ROLES.values()), 'templates': TEMPLATES})
@@ -347,8 +385,11 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             if not drafting and self.headers.get_content_type() != 'application/json':
                 return self.send_json({'error': 'Choose a verified candidate JSON file.'}, 415)
             import_id = self.headers.get('X-Resume-Import-ID', '') if drafting else ''
+            asynchronous = drafting and self.headers.get('X-Resume-Async') == '1'
             if import_id and not re.fullmatch(r'[0-9a-f]{32}', import_id):
                 return self.send_json({'error': 'Invalid import identifier.'}, 400)
+            if asynchronous and not import_id:
+                return self.send_json({'error': 'An import identifier is required.'}, 400)
 
             draft_stage = None
 
@@ -365,6 +406,22 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 if not 0 < length <= limit:
                     return self.send_json({'error': f'Choose a file up to {limit // MAX_INPUT} MB.'}, 413)
                 data = self.rfile.read(length)
+                if asynchronous:
+                    with import_lock:
+                        cleanup_imports()
+                        if import_id in import_stages:
+                            return self.send_json({'error': 'This import already exists.'}, 409)
+                        active = sum(isinstance(item, dict) and item['status'] == 'processing'
+                                     for item in import_stages.values())
+                        if active >= 2:
+                            return self.send_json({'error': 'Two imports are already processing. Retry shortly.'}, 429)
+                        import_stages[import_id] = {
+                            'created': time.monotonic(), 'status': 'processing',
+                            'stage': 'Reading document'}
+                    Thread(target=background_draft, args=(import_id, extension, data),
+                           name='resume-import', daemon=True).start()
+                    return self.send_json({'id': import_id, 'status': 'processing',
+                                           'stage': 'Reading document'}, 202)
                 if drafting:
                     if not import_id:
                         return self.send_json(workspace.draft(extension, data))

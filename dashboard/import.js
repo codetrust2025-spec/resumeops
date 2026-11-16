@@ -26,57 +26,87 @@
     const name = file.name.toLowerCase();
     return name.includes('.') ? '.' + name.split('.').pop() : '';
   }
-  function readDocument(file, extension) {
-    return new Promise((resolve, reject) => {
-      const id = Array.from(crypto.getRandomValues(new Uint8Array(16)),
-        byte => byte.toString(16).padStart(2, '0')).join('');
+  async function readDocument(file, extension) {
+    const id = Array.from(crypto.getRandomValues(new Uint8Array(16)),
+      byte => byte.toString(16).padStart(2, '0')).join('');
+    const url = '/api/import-progress?id=' + id;
+    const stages = {'Reading document': 35, 'Extracting candidate details with Ollama': 70,
+      'Draft ready for review': 95};
+    // The upload response is immediate; expensive Ollama extraction happens on the RTX.
+    const upload = new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      let active = true;
-      let polling = false;
-      const percentages = {'Reading document': 35, 'Extracting candidate details with Ollama': 70};
-      const poll = async () => {
-        if (!active || polling) return;
-        polling = true;
-        try {
-          const response = await fetch('/api/import-progress?id=' + id,
-            {headers: {'X-Dashboard-Token': token}});
-          if (response.ok) {
-            const result = await response.json();
-            if (active && percentages[result.stage] !== undefined) {
-              stage(result.stage, percentages[result.stage]);
-            }
-          }
-        } catch {
-          // The upload response remains authoritative even if progress polling fails.
-        } finally {polling = false;}
-      };
-      const interval = setInterval(poll, 600);
-      const finish = () => {active = false; clearInterval(interval);};
       xhr.upload.onprogress = event => {
         if (event.lengthComputable && event.total) {
           stage('Uploading resume', Math.floor(event.loaded / event.total * 25));
         }
       };
-      xhr.upload.onload = () => {stage('Reading document', 25);poll();};
-      xhr.onerror = () => {finish();reject(new Error('Connection lost while importing. Retry the upload.'));};
-      xhr.onabort = () => {finish();reject(new Error('Resume import cancelled.'));};
+      xhr.upload.onload = () => stage('Upload complete. Starting extraction', 25);
+      xhr.onerror = () => reject(new Error('Upload connection interrupted. Checking whether processing started.'));
+      xhr.onabort = () => reject(new Error('Resume upload was cancelled.'));
       xhr.onload = () => {
-        finish();
-        const result = xhr.response;
-        if (xhr.status >= 200 && xhr.status < 300 && result?.profile &&
-            typeof result.profile === 'object' && !Array.isArray(result.profile)) {
-          resolve(result);
+        const response = xhr.response;
+        if (xhr.status === 202 && response?.status === 'processing') {
+          resolve(response);
         } else {
-          reject(new Error(result?.error || 'Import failed (HTTP ' + xhr.status + ').'));
+          reject(new Error(response?.error || (
+            xhr.status === 403 ? 'Session expired. Sign in through Cloudflare Access and retry.' :
+            'Upload rejected (HTTP ' + xhr.status + '). Check the server logs.')));
         }
       };
-      xhr.open('POST','/api/draft');
+      xhr.open('POST', '/api/draft');
       xhr.responseType = 'json';
+      xhr.withCredentials = true;
       xhr.setRequestHeader('X-Dashboard-Token', token);
       xhr.setRequestHeader('X-Resume-Extension', extension);
       xhr.setRequestHeader('X-Resume-Import-ID', id);
+      xhr.setRequestHeader('X-Resume-Async', '1');
       xhr.send(file);
     });
+    try {
+      await upload;
+    } catch (error) {
+      // If the browser lost the 202 response, the server might still be working.
+      if (!error.message.includes('Upload connection interrupted')) throw error;
+      stage('Reconnecting to resume import', 25);
+    }
+    const started = Date.now();
+    let unknown = 0;
+    let failures = 0;
+    while (Date.now() - started < 10 * 60 * 1000) {
+      let result;
+      try {
+        const response = await fetch(url, {
+          headers: {'X-Dashboard-Token': token},
+          credentials: 'same-origin',
+          cache: 'no-store',
+        });
+        if (response.status === 403) {
+          throw new Error('Session expired. Sign in through Cloudflare Access and retry.');
+        }
+        if (!response.ok) throw new Error('Status check failed (HTTP ' + response.status + ')');
+        result = await response.json();
+        failures = 0;
+      } catch (error) {
+        if (error.message.includes('Session expired')) throw error;
+        if (++failures >= 6) {
+          throw new Error('Could not reconnect to import status. Verify your connection and retry.');
+        }
+        stage('Reconnecting to import status', 35);
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        continue;
+      }
+      if (result.status === 'complete' && result.profile) return result;
+      if (result.status === 'error') throw new Error(result.error || 'Local extraction failed.');
+      if (result.status === 'unknown') {
+        if (++unknown >= 4) throw new Error('Import session not found. Upload the file again.');
+      } else {
+        unknown = 0;
+        const pct = stages[result.stage];
+        if (pct !== undefined) stage(result.stage, pct);
+      }
+      await new Promise(resolve => setTimeout(resolve, 1100));
+    }
+    throw new Error('Extraction is taking unusually long. Check Ollama and RTX status before retrying.');
   }
 
   function setEntries(kind, entries) {
