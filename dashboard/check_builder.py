@@ -51,6 +51,72 @@ def check(screenshots):
                 role = page.get_by_label('Target role')
                 expect(role.locator('option', has_text='Full Stack Developer')).to_have_count(1)
                 picture('new-role.png')
+                # Primary builder accepts a file and stays on the same screen.
+                import_page = context.new_page()
+                import_page.goto(url)
+                assert import_page.locator('a[href="/operations"]').count() == 0
+                expect(import_page.get_by_role('button', name='Import and prefill')).to_be_disabled()
+                import_page.locator('#resume-upload').set_input_files({
+                    'name':'resume.exe','mimeType':'application/octet-stream','buffer':b'invalid'})
+                import_page.get_by_role('button', name='Import and prefill').click()
+                expect(import_page.locator('#resume-import-status')).to_contain_text('Unsupported file type')
+                import_page.locator('#resume-upload').set_input_files({
+                    'name':'verified.json','mimeType':'application/json',
+                    'buffer':json.dumps({'profile':{
+                        'full_name':'Jordan Import Example','email':'jordan@example.com',
+                        'headline':'Frontend Developer','skills':['React','TypeScript'],
+                        'experience':[{'company':'Example Studio','position':'Developer',
+                            'start':'January 2020','end':'Present',
+                            'bullets':['Built frontend dashboards']}],
+                        'education':[{'institution':'Sample University','degree':'B.Tech'}]},
+                        'target':{'role':'fullstack-developer','template':'compact',
+                            'experience_years':5}}).encode('utf8')})
+                import_page.get_by_role('button', name='Import and prefill').click()
+                expect(import_page.locator('#resume-import-status')).to_contain_text('Imported')
+                assert import_page.evaluate('location.pathname') == '/'
+                expect(import_page.get_by_label('Target role')).to_have_value('fullstack-developer')
+                import_page.get_by_role('button', name='Continue').click()
+                expect(import_page.get_by_label('Full name')).to_have_value('Jordan Import Example')
+                expect(import_page.get_by_label('Email')).to_have_value('jordan@example.com')
+                import_page.get_by_role('button', name='Continue').click()
+                expect(import_page.get_by_label('Verified skills')).to_have_value('React\nTypeScript')
+                expect(import_page.get_by_label('Employer')).to_have_value('Example Studio')
+                assert not list(workspace.inbox.glob('jordan-import-example-*.json')), 'Import must not queue'
+                import_page.close()
+
+                # Existing document-import API is reused, not redirected to Operations.
+                original_draft = workspace.draft
+                def synthetic_draft(extension, data, report=lambda stage: None):
+                    assert extension == '.txt'
+                    report('Reading document')
+                    report('Extracting candidate details with Ollama')
+                    return {'profile':{'full_name':'Taylor Document Example',
+                        'email':'taylor@example.com','skills':['Python'],
+                        'experience':[{'company':'Sample Inc','position':'Engineer',
+                            'start':'February 2022','bullets':['Built automation']}],
+                        'education':[]},'source':data.decode('utf8')}
+                workspace.draft = synthetic_draft
+                try:
+                    upload_page = context.new_page()
+                    upload_page.goto(url)
+                    upload_page.locator('#resume-upload').set_input_files({
+                        'name':'candidate.txt','mimeType':'text/plain',
+                        'buffer':b'Taylor Document Example resume. Employment Sample Inc. ' * 5})
+                    upload_page.get_by_role('button', name='Import and prefill').click()
+                    expect(upload_page.locator('#resume-import-status')).to_contain_text('Imported')
+                    assert upload_page.evaluate('location.pathname') == '/'
+                    expect(upload_page.locator('#import-evidence')).to_be_attached()
+                    upload_page.get_by_role('button',name='Continue').click()
+                    # Role selection stays required; import does not silently generate anything.
+                    expect(upload_page.get_by_role('heading',name='Choose a target role')).to_be_visible()
+                    upload_page.get_by_label('Target role').select_option('fullstack-developer')
+                    upload_page.get_by_role('button',name='Continue').click()
+                    expect(upload_page.get_by_label('Full name')).to_have_value('Taylor Document Example')
+                    assert not list(workspace.inbox.glob('taylor-document-example-*.json'))
+                    upload_page.close()
+                finally:
+                    workspace.draft = original_draft
+
                 page.get_by_role('button', name='Continue').click()
                 expect(page.get_by_role('heading', name='Choose a target role')).to_be_visible()
                 role.select_option('fullstack-developer')
@@ -157,9 +223,12 @@ def check(screenshots):
                 assert mobile.evaluate('document.documentElement.scrollWidth <= innerWidth')
                 if screenshots:
                     mobile.screenshot(path=screenshots/'new-mobile.png',full_page=True)
-                page.get_by_role('link',name='Operations ↗').click()
-                expect(page.get_by_role('heading',name='Resume operations')).to_be_visible()
-                expect(page.get_by_label('Candidate file')).to_be_visible()
+                # Operations remains compatible as an internal route, not a second UI in navigation.
+                ops_page = context.new_page()
+                ops_page.goto(url+'/operations')
+                expect(ops_page.get_by_role('heading',name='Resume operations')).to_be_visible()
+                expect(ops_page.get_by_label('Candidate file')).to_be_visible()
+                ops_page.close()
                 assert not errors, errors
                 browser.close()
                 print('Builder browser acceptance passed: wizard, keywords, history, three views, clipboard, actual TeX/PDF, downloads, mobile, and operations.')
