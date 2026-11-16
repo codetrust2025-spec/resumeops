@@ -26,6 +26,7 @@ jobs:
         run: |
           python -m unittest discover -s tests -v
           python dashboard/check_dashboard.py .
+          python dashboard/check_builder.py
           python dashboard/check_cloudflare_access.py
       - name: Build source-only staging archive
         run: git archive --format=zip -o "${RUNNER_TEMP}/resumeops-source.zip" HEAD

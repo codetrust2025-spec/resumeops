@@ -37,7 +37,10 @@ def release(name):
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,79}', name):
         raise ValueError('Invalid release name')
     folder = HOME / 'releases' / name
-    missing = [file for file in REQUIRED
+    files = REQUIRED
+    if (folder / 'index.html').is_file() and '/builder.js' in (folder / 'index.html').read_text(encoding='utf-8'):
+        files += ('builder.js', 'builder.css', 'operations.html')
+    missing = [file for file in files
                if not (folder / file).is_file() or not (folder / file).stat().st_size]
     if missing:
         raise RuntimeError(f'{name} is missing required files: {", ".join(missing)}')
@@ -58,6 +61,15 @@ def health(port, config):
         actual_type, body = fetch(port, route)
         if actual_type != content_type or marker not in body:
             raise RuntimeError(f'{route}: missing expected application content')
+    if b'/builder.js' in fetch(port, '/')[1]:
+        for route, mime, marker in (
+            ('/builder.js', 'text/javascript', b'function'),
+            ('/builder.css', 'text/css', b'.masthead'),
+            ('/operations', 'text/html', b'id="submit"'),
+        ):
+            actual, body = fetch(port, route)
+            if actual != mime or marker not in body:
+                raise RuntimeError(f'{route}: missing expected application content')
     mime, body = fetch(port, '/api/status')
     status = json.loads(body)
     if (mime != 'application/json' or not isinstance(status.get('healthy'), bool)

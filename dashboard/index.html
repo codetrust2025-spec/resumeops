@@ -1,65 +1,91 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="dashboard-token" content="__TOKEN__">
-<title>Resume Builder · Operations</title><link rel="stylesheet" href="/dashboard.css">
-<script defer src="/dashboard.js"></script>
-<script defer src="/workflow.js"></script>
+<title>Resume builder · ResumeOps</title>
+<link rel="stylesheet" href="/builder.css">
+<script defer src="/builder.js"></script>
 </head>
 <body>
-<header><div class="brand"><span class="mark" aria-hidden="true">R</span> Resume Builder</div><span id="health" class="pill">Connecting</span></header>
-<main>
-<section id="active-workflow" class="panel workflow" aria-label="Candidate processing" hidden>
-<h2 id="active-candidate"></h2>
-<progress id="workflow-progress" max="100" value="0" aria-label="Candidate processing progress"></progress>
-<p id="workflow-stage" role="status"></p><small id="workflow-time"></small>
+<header class="masthead"><div class="width header-inner">
+<a class="brand" href="/"><span aria-hidden="true">R</span> ResumeOps</a>
+<nav aria-label="Main navigation"><a href="/" aria-current="page">Builder</a><a href="#history">History</a><a href="/operations">Operations ↗</a></nav>
+</div></header>
+<main class="width">
+<section class="intro"><h1>Create a resume</h1><p>Choose a target role, enter verified facts, and generate a resume you can review and download.</p></section>
+<div class="layout">
+<section class="panel editor" aria-label="Resume builder">
+<ol id="steps" class="steps" aria-label="Creation steps">
+<li aria-current="step"><span>1</span> Role</li><li><span>2</span> Personal details</li>
+<li><span>3</span> Experience</li><li><span>4</span> Review</li>
+</ol>
+<form id="candidate" novalidate>
+<section data-step>
+<h2 tabindex="-1">Choose a target role</h2>
+<label>Target role<select name="role" required></select></label>
+<label>Resume template<select name="template" required></select></label>
+<details class="keyword-options"><summary>Target keywords</summary><p id="catalog-keywords"></p>
+<label>Additional keywords<textarea name="keywords" rows="3" placeholder="One per line"></textarea></label>
+<label>Job description<textarea id="description" rows="3" maxlength="15000" placeholder="Paste a description to find role keywords"></textarea></label>
+<div class="actions"><button type="button" id="extract-keywords" class="secondary">Find role keywords</button><button type="button" id="save-keywords" class="secondary">Save role defaults</button></div>
+</details>
 </section>
-<section class="hero">
-<div><h1>Resume operations</h1><p id="heartbeat">Reading watcher status…</p></div>
-<form id="submit"><input type="file" id="candidate" aria-label="Candidate file" required><button type="submit">Import candidate</button><small>Word, PDF, text, images, or candidate JSON</small><progress id="import-progress" aria-label="Import progress" max="100" value="0" hidden></progress><small id="import-stage" role="status" hidden></small><small id="feedback" role="status"></small></form>
-</section>
-<section class="panel review" id="review" hidden>
-<div class="section-head"><h2>Review extracted candidate details</h2><button id="discard" type="button">Discard draft</button></div>
-<div class="review-grid"><label>Source text<textarea id="source" readonly></textarea></label><label>Candidate JSON<textarea id="draft" spellcheck="false"></textarea></label></div>
-<div class="section-head"><small id="review-feedback" role="status">Check names, roles and dates against the source.</small><button id="publish" type="button">Confirm and queue</button></div>
-</section>
-<details class="panel workflow" id="candidate-workspace">
-<summary>Create a role-targeted resume</summary>
-<form id="candidate-form">
-<div class="candidate-grid">
-<label>Full name<input name="full_name" required maxlength="120"></label>
-<label>Email<input name="email" type="email" required maxlength="254"></label>
-<label>Headline<input name="headline" maxlength="140"></label>
-<label>Phone<input name="phone" type="tel" maxlength="50"></label>
+<section data-step hidden>
+<h2 tabindex="-1">Personal details</h2>
+<div class="fields">
+<label>Full name<input name="full_name" autocomplete="name" required maxlength="120"></label>
+<label>Email<input name="email" type="email" autocomplete="email" required maxlength="254"></label>
+<label>Phone<input name="phone" type="tel" autocomplete="tel" maxlength="50"></label>
 <label>Location<input name="location" maxlength="150"></label>
+<label>Current company<input name="current_company" maxlength="250"></label>
+<label>Professional headline<input name="headline" maxlength="140"></label>
 <label>LinkedIn<input name="linkedin" maxlength="250"></label>
 <label>GitHub<input name="github" maxlength="250"></label>
-<label>Target role<select name="role" required></select></label>
-<label>Template<select name="template" required></select></label>
-<label>Additional target keywords<textarea name="keywords" rows="2" placeholder="One per line"></textarea></label>
-<label>Confirmed skills<textarea name="skills" rows="2" placeholder="One per line"></textarea></label>
-<label>Certifications<textarea name="certifications" rows="2" placeholder="One per line"></textarea></label>
+<label>Portfolio<input name="portfolio" maxlength="250"></label>
 </div>
-<p id="role-keywords"></p>
-<label>Professional summary<textarea name="summary" rows="3"></textarea></label>
-<div id="experience-entries"></div><button type="button" id="add-experience">Add experience</button>
-<div id="education-entries"></div><button type="button" id="add-education">Add education</button>
-<label class="verify-facts"><input name="verified" type="checkbox"> I confirm these candidate facts are accurate.</label>
-<div class="candidate-actions"><button type="submit" value="preview">Preview and score</button>
-<button type="submit" value="queue">Queue verified resume</button></div>
-<p id="candidate-feedback" role="status"></p>
-</form>
-<div id="candidate-preview" hidden><h3>Resume preview</h3><p id="preview-score"></p><p id="preview-keywords"></p><pre id="preview-content"></pre></div>
-</details>
-<section class="metrics" aria-label="Job counts">
-<div><span>Waiting</span><strong id="queued">—</strong></div><div><span>Completed jobs</span><strong id="ok">—</strong></div><div><span>Awaiting retry</span><strong id="failed">—</strong></div><div><span>Published revisions</span><strong id="published">—</strong></div>
 </section>
-<p id="alert" role="status" hidden></p>
-<nav aria-label="Dashboard sections"><button data-panel="inbox" aria-pressed="true">Inbox</button><button data-panel="outputs" aria-pressed="false">Resume outputs</button><button data-panel="logs" aria-pressed="false">Logs</button></nav>
-<section id="inbox" class="panel"><div class="section-head"><h2>Candidate inbox</h2><input id="filter" type="search" placeholder="Find a file" aria-label="Find an inbox file"></div><div class="scroll"><table><thead><tr><th>File</th><th>Status</th><th>Last activity</th></tr></thead><tbody id="jobs"></tbody></table></div></section>
-<section id="outputs" class="panel" hidden><div class="section-head"><h2>Resume revisions</h2><input id="output-filter" type="search" placeholder="Find a candidate" aria-label="Find a candidate"></div><div id="revisions" class="revision-list"></div></section>
-<section id="logs" class="panel" hidden><div class="section-head"><h2>Operations logs</h2><select id="log-select" aria-label="Log file"></select></div><pre id="log-content">Select an available log.</pre></section>
+<section data-step hidden>
+<h2 tabindex="-1">Experience and education</h2>
+<label>Years of experience<input name="years" type="range" min="0" max="25" step="1" value="1"></label>
+<div class="range-label"><span>0 years</span><output id="experience-level" for="years"></output><span>25+ years</span></div>
+<label>Professional summary<textarea name="summary" rows="3"></textarea></label>
+<div class="fields">
+<label>Verified skills<textarea name="skills" rows="3" placeholder="One per line"></textarea></label>
+<label>Verified certifications<textarea name="certifications" rows="3" placeholder="One per line"></textarea></label>
+</div>
+<label>Verified projects<textarea name="projects" rows="3" placeholder="One project or contribution per line"></textarea></label>
+<div id="experience-entries"></div>
+<div id="education-entries"></div>
+<div class="actions"><button type="button" class="secondary" id="add-experience">Add experience</button><button type="button" class="secondary" id="add-education">Add education</button></div>
+</section>
+<section data-step hidden>
+<h2 tabindex="-1">Review and generate</h2>
+<div id="review-summary"></div>
+<label class="check"><input name="verified" type="checkbox"> I confirm these candidate facts are accurate.</label>
+</section>
+<p id="builder-status" role="status"></p>
+<div class="step-actions"><button type="button" class="secondary" id="back" hidden>Back</button><button type="button" id="next">Continue</button><button type="submit" id="generate" hidden>Generate resume</button></div>
+</form>
+</section>
+<aside>
+<section class="panel template-panel"><h2>Selected template</h2>
+<div class="sheet" aria-hidden="true"><i></i><i></i><b></b><i></i><i></i><b></b><i></i><i></i><i></i></div>
+<h3 id="template-name">Standard</h3><p id="template-note">A readable single-column layout with room for experience.</p>
+<a href="/operations">Import an existing document ↗</a>
+</section>
+<section class="panel activity" id="generation" hidden aria-live="polite"><h2>Generation progress</h2><progress id="job-progress" max="100" value="0"></progress><p id="job-stage"></p><small id="job-timestamp"></small></section>
+</aside>
+</div>
+<section class="panel results" id="results" hidden>
+<div class="result-head"><div><h2>Resume results</h2><p id="result-name"></p></div><button type="button" class="secondary" id="another">Generate another</button></div>
+<div role="tablist" aria-label="Resume result views" class="tabs"><button type="button" role="tab" id="tab-preview" aria-controls="result-preview" aria-selected="true">Resume Preview</button><button type="button" role="tab" id="tab-latex" aria-controls="result-latex" aria-selected="false" tabindex="-1">LaTeX Code</button><button type="button" role="tab" id="tab-ats" aria-controls="result-ats" aria-selected="false" tabindex="-1">ATS Analysis</button></div>
+<div role="tabpanel" id="result-preview" aria-labelledby="tab-preview"><div class="actions" id="pdf-actions"></div><iframe id="pdf-preview" title="PDF preview" hidden></iframe><div id="preview-text"></div></div>
+<div role="tabpanel" id="result-latex" aria-labelledby="tab-latex" hidden><div class="actions"><button type="button" class="secondary" id="copy-latex">Copy LaTeX</button><a id="download-latex" class="button secondary">Download LaTeX</a></div><p id="copy-status" role="status"></p><pre id="latex-source"></pre></div>
+<div role="tabpanel" id="result-ats" aria-labelledby="tab-ats" hidden><div id="ats-result"></div></div>
+</section>
+<section class="panel history" id="history"><div class="result-head"><h2>Generation history</h2><input type="search" id="history-filter" aria-label="Find a resume" placeholder="Find a resume"></div><div id="revision-list"></div></section>
 </main>
 </body>
 </html>

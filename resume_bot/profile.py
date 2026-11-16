@@ -35,7 +35,7 @@ def validate_profile(data):
     if not isinstance(data, dict):
         raise ProfileError('Profile must be a JSON object')
     accepted = {'full_name', 'headline', 'email', 'phone', 'location', 'linkedin', 'github',
-                'summary', 'skills', 'experience', 'education', 'certifications'}
+                'summary', 'skills', 'experience', 'education', 'certifications', 'projects', 'portfolio', 'current_company'}
     extra = set(data) - accepted
     if extra:
         raise ProfileError('Unknown fields: ' + ', '.join(sorted(extra)))
@@ -74,6 +74,17 @@ def validate_profile(data):
                  for k in ('institution', 'degree','start','end','details')}
         out['education'].append(entry)
     out['certifications'] = [_string(v, 'certifications[]',True) for v in data.get('certifications', [])]
+    for field in ('portfolio', 'current_company'):
+        if field in data:
+            value = _string(data[field], field)
+            if value:
+                out[field] = value
+    if 'projects' in data:
+        projects = data['projects']
+        if not isinstance(projects, list) or len(projects) > 30:
+            raise ProfileError('Projects: expected up to 30 entries')
+        if projects:
+            out['projects'] = [_string(item, 'projects[]', True) for item in projects]
     if not (out['experience'] or out['education']):
         raise ProfileError('At least one experience or education record is required')
     return out

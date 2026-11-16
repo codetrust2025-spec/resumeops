@@ -39,8 +39,11 @@ def render(profile, template="standard"):
     out.append(r'{\centering {\LARGE\bfseries '+paragraph(profile['full_name'])+r'}\\[3pt]'+'\n')
     if profile['headline']:
         out.append(r'{\color{ink}\large '+paragraph(profile['headline'])+r'}\\[3pt]'+'\n')
-    contact=[profile[k] for k in ('email','phone','location','linkedin','github') if profile[k]]
+    contact=[profile[k] for k in ('email','phone','location','linkedin','github','portfolio') if profile.get(k)]
     out.append(r'{\small '+r'\quad $\vert$ \quad '.join(paragraph(x) for x in contact)+r'}\par}'+'\n')
+    employer = profile.get('current_company')
+    if employer and not any(item['company'].casefold() == employer.casefold() for item in profile['experience']):
+        out.append(r'{\small Current company: '+paragraph(employer)+r'}\par'+'\n')
     if profile['summary']:
         out.append(r'\section*{PROFESSIONAL SUMMARY}'+'\n'+paragraph(profile['summary'])+'\n')
     if profile['skills']:
@@ -59,6 +62,11 @@ def render(profile, template="standard"):
                     out.append(r'\item '+paragraph(b)+'\n')
                 out.append(r'\end{itemize}'+'\n')
             out.append(r'\vspace{2pt}'+'\n')
+    if profile.get('projects'):
+        out.append(r'\section*{PROJECTS}'+'\n'+r'\begin{itemize}'+'\n')
+        for project in profile['projects']:
+            out.append(r'\item '+paragraph(project)+'\n')
+        out.append(r'\end{itemize}'+'\n')
     if profile['education']:
         out.append(r'\section*{EDUCATION}'+'\n')
         for x in profile['education']:

@@ -19,7 +19,7 @@ In a separate console from that checkout, create an inbox if the dashboard has n
 .\.venv\Scripts\python.exe -m resume_bot watch --inbox inbox --output output --overleaf --browser-profile 'C:\path\to\authorized-profile'
 ```
 
-Open http://127.0.0.1:18769. Expand **Create a role-targeted resume** to select a role/template, add verified experience and education, see matched and missing terms, and preview. An ATS score measures literal target term coverage. JSON intake, document draft review, PDF links, and the watcher dashboard still work.
+Open http://127.0.0.1:18769 for the four-step builder. Resume Preview, LaTeX Code and ATS Analysis are available for completed revisions. Open /operations for document import, watcher health, job details, alerts and logs. ATS readiness is a ResumeOps rubric. The keyword percentage is reported separately. See [the Level 1 parity report](LEVEL1_PARITY.md).
 
 Set optional environment values from `.env.example` in the service account environment. If `RESUMEOPS_MONGODB_URI` is set, ResumeOps upserts role keyword records and ATS score metadata after PDF verification. It stores the score and source hash in MongoDB without candidate contact fields or document contents. Connection failures remain visible as a blocked job and are retried. With no MongoDB URI, canonical records remain on local disk. Never configure the original external provider key.
 
@@ -32,6 +32,7 @@ $env:RESUME_BUILDER_REQUIRE_BROWSER='1'
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 .\.venv\Scripts\python.exe dashboard\check_dashboard.py .
 .\.venv\Scripts\python.exe dashboard\check_cloudflare_access.py
+.\.venv\Scripts\python.exe dashboard\check_builder.py
 ```
 
 CI tests the application and builds a source-only staging ZIP. Production promotion is manual and requires explicit approval following security and real end-to-end checks. Validate every release on a separate loopback port first.
