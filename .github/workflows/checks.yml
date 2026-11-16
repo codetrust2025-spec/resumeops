@@ -22,11 +22,23 @@ jobs:
           sudo apt-get install -y texlive-latex-extra lmodern poppler-utils
           python -m pip install -r requirements.txt
           python -m playwright install --with-deps chromium
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Run builder and dashboard checks
         run: |
           python -m unittest discover -s tests -v
           python dashboard/check_dashboard.py .
           python dashboard/check_cloudflare_access.py
+      - name: Run frontend component tests
+        run: node --test tests/js/*.test.js
+      - name: Run browser end-to-end and responsive checks (isolated staging workspace)
+        run: python dashboard/check_ui.py . "${RUNNER_TEMP}/ui-screenshots"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: resumeops-ui-screenshots
+          path: ${{ runner.temp }}/ui-screenshots
       - name: Build source-only staging archive
         run: git archive --format=zip -o "${RUNNER_TEMP}/resumeops-source.zip" HEAD
       - uses: actions/upload-artifact@v4

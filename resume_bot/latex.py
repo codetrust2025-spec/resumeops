@@ -40,6 +40,8 @@ def render(profile, template="standard"):
     if profile['headline']:
         out.append(r'{\color{ink}\large '+paragraph(profile['headline'])+r'}\\[3pt]'+'\n')
     contact=[profile[k] for k in ('email','phone','location','linkedin','github') if profile[k]]
+    if profile.get('portfolio'):
+        contact.append(profile['portfolio'])
     out.append(r'{\small '+r'\quad $\vert$ \quad '.join(paragraph(x) for x in contact)+r'}\par}'+'\n')
     if profile['summary']:
         out.append(r'\section*{PROFESSIONAL SUMMARY}'+'\n'+paragraph(profile['summary'])+'\n')
@@ -53,6 +55,19 @@ def render(profile, template="standard"):
             if dates or x['location']:
                 out.append(r'{\small\color{ink}'+paragraph(dates)+
                            (r' \quad $\cdot$ \quad '+paragraph(x['location']) if x['location'] else '')+r'}\\[1pt]'+'\n')
+            if x['bullets']:
+                out.append(r'\begin{itemize}'+'\n')
+                for b in x['bullets']:
+                    out.append(r'\item '+paragraph(b)+'\n')
+                out.append(r'\end{itemize}'+'\n')
+            out.append(r'\vspace{2pt}'+'\n')
+    if profile.get('projects'):
+        out.append(r'\section*{PROJECTS}'+'\n')
+        for x in profile['projects']:
+            out.append(r'\textbf{'+paragraph(x['name'])+'}'+
+                       (r' \textbar{} '+paragraph(x['link']) if x['link'] else '')+
+                       (r'\\'+'\n'+r'{\small\color{ink}'+paragraph(', '.join(x['technologies']))+'}'
+                        if x['technologies'] else '')+'\n')
             if x['bullets']:
                 out.append(r'\begin{itemize}'+'\n')
                 for b in x['bullets']:

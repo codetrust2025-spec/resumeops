@@ -65,6 +65,11 @@ class Workspace:
             record = (state or {}).get(path.name, {})
             last = record.get('last_attempt', 0)
             status = record.get('status') if last >= modified else None
+            revision = ''
+            if status == 'ok' and isinstance(record.get('output'), str):
+                built = Path(record['output'])
+                if built.is_absolute() and contained(built, self.output) and (built / 'result.json').is_file():
+                    revision = built.resolve().relative_to(self.output).as_posix()
             jobs.append({'name': path.name, 'status': status or 'queued',
                          'last': last or modified, 'failures': record.get('failures', 0) if status else 0,
                          'error': record.get('error', '') if status == 'failed' else '',
@@ -72,7 +77,8 @@ class Workspace:
                          'blocked': bool(record.get('blocked')) if status else False,
                          'percent': record.get('percent', 0) if status else 0,
                          'stage': record.get('stage', '') if status else '',
-                         'updated': record.get('updated', last or modified) if status else modified})
+                         'updated': record.get('updated', last or modified) if status else modified,
+                         'revision': revision})
         jobs.sort(key=lambda job: job['last'], reverse=True)
         revisions = []
         for path in self.output.glob('*/*/result.json'):
@@ -89,11 +95,13 @@ class Workspace:
             url = remote.get('url', '')
             if not re.fullmatch(r'https://www\.overleaf\.com/project/[A-Za-z0-9_-]+', url):
                 url = ''
+            ats = result.get('ats')
             revisions.append({
                 'key': path.parent.relative_to(self.output).as_posix(),
                 'candidate': result.get('candidate', 'Candidate'),
                 'model': result.get('model', ''),
-                'ats': result.get('ats'),
+                'ats': ats if isinstance(ats, dict) else None,
+                'overleafStatus': remote.get('status', ''),
                 'modified': modified, 'url': url,
                 'pages': (result.get('pdf_checks') or {}).get('pages'),
                 'sha256': remote.get('pdf_sha256', ''),
@@ -109,6 +117,25 @@ class Workspace:
                     self.inbox / '.resume-bot-state.json').exists(),
                 'logs': [name for name in LOGS if (self.logs / name).is_file()
                          and contained(self.logs / name, self.logs)]}
+
+    def settings(self):
+        from resume_bot.workflow import ROLES, TEMPLATES
+        ollama = {'url': 'http://127.0.0.1:11434', 'model': self.model, 'reachable': False,
+                  'modelInstalled': False, 'loaded': []}
+        from urllib.request import urlopen
+        try:
+            with urlopen(ollama['url'] + '/api/tags', timeout=1.5) as response:
+                names = [m.get('name', '') for m in json.load(response).get('models', [])]
+            ollama['reachable'] = True
+            ollama['modelInstalled'] = self.model in names or self.model + ':latest' in names
+            with urlopen(ollama['url'] + '/api/ps', timeout=1.5) as response:
+                ollama['loaded'] = [{'name': m.get('name', ''), 'gpu': int(m.get('size_vram', 0) or 0) > 0}
+                                    for m in json.load(response).get('models', [])]
+        except (OSError, ValueError, AttributeError):
+            pass
+        return {'ollama': ollama, 'roles': len(ROLES), 'templates': TEMPLATES,
+                'mongodb': bool(os.environ.get('RESUMEOPS_MONGODB_URI')),
+                'alertWebhook': bool(os.environ.get('RESUME_BUILDER_ALERT_WEBHOOK'))}
 
     def draft(self, extension, data, report=lambda stage: None):
         from resume_bot.ingest import extract_profile, read_resume_text
@@ -211,8 +238,10 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             self.send_header('Content-Length', str(len(data)))
             self.send_header('Cache-Control', 'no-store')
             self.send_header('X-Content-Type-Options', 'nosniff')
+            # Verified PDFs may be previewed inside the dashboard itself; nothing else is frameable.
+            ancestors = "'self'" if mime == 'application/pdf' else "'none'"
             self.send_header('Content-Security-Policy',
-                             "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+                             f"default-src 'self'; frame-ancestors {ancestors}; base-uri 'none'; form-action 'none'")
             if filename:
                 self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
             self.end_headers()
@@ -246,10 +275,20 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                     stage = import_stages.get(query.get('id', [''])[0])
                 return self.send_json({'stage': stage})
             if url.path == '/api/catalog':
-                from resume_bot.workflow import ROLES, TEMPLATES
-                return self.send_json({'roles': list(ROLES.values()), 'templates': TEMPLATES})
+                from resume_bot.workflow import CATALOG, ROLES, TEMPLATES
+                return self.send_json({'roles': list(ROLES.values()), 'templates': TEMPLATES,
+                                       'keywordGroups': CATALOG})
             if url.path == '/api/status':
                 return self.send_json(workspace.status())
+            if url.path == '/api/health':
+                status = workspace.status()
+                return self.send_json({'status': 'OK' if status['healthy'] else 'DEGRADED',
+                                       'watcher': status['healthy'], 'lastScan': status['lastScan'],
+                                       'timestamp': time.time()})
+            if url.path == '/api/settings':
+                access = ['Local loopback'] + (['Tailscale phone'] if phone_origin else []) + (
+                    ['Cloudflare Access ' + web_host] if web_origin else [])
+                return self.send_json({**workspace.settings(), 'access': access})
             if url.path == '/api/artifact':
                 path = workspace.artifact(query.get('key', [''])[0], query.get('name', [''])[0])
                 if path:
@@ -268,7 +307,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             assets = {'/': ('index.html', 'text/html'),
                       '/dashboard.css': ('dashboard.css', 'text/css'),
                       '/dashboard.js': ('dashboard.js', 'text/javascript'),
-                      '/workflow.js': ('workflow.js', 'text/javascript')}
+                      '/workflow.js': ('workflow.js', 'text/javascript'),
+                      '/core.js': ('core.js', 'text/javascript')}
             if url.path in assets:
                 name, mime = assets[url.path]
                 path = Path(__file__).with_name(name)
@@ -280,7 +320,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
 
         def do_POST(self):
             request_origin = self.request_origin()
-            if (self.path not in ('/api/queue', '/api/draft', '/api/preview') or request_origin is None
+            if (self.path not in ('/api/queue', '/api/draft', '/api/preview', '/api/jd-keywords')
+                    or request_origin is None
                     or self.headers.get('Origin') != request_origin
                     or not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token)):
                 return self.send_json({'error': 'Request not authorized.'}, 403)
@@ -323,12 +364,21 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                         with import_lock:
                             import_stages.pop(import_id, None)
                     return self.send_json(draft)
+                if self.path == '/api/jd-keywords':
+                    from resume_bot.workflow import job_description_keywords
+                    request = json.loads(data.decode('utf-8-sig'))
+                    if not isinstance(request, dict):
+                        raise ValueError('Paste a job description')
+                    return self.send_json({'keywords': job_description_keywords(request.get('text', ''))})
                 if self.path == '/api/preview':
-                    from resume_bot.workflow import analyze
+                    from resume_bot.latex import render
+                    from resume_bot.workflow import analyze, assess
                     profile, target = workspace.normalize(json.loads(data.decode('utf-8-sig')))
                     if target is None:
                         raise ValueError('Select a target role and template')
-                    return self.send_json({'profile': profile, 'ats': analyze(profile, target)})
+                    return self.send_json({'profile': profile, 'ats': analyze(profile, target),
+                                           'report': assess(profile, target),
+                                           'latex': render(profile, target['template'])})
                 result = workspace.enqueue(data)
             except (ValueError, UnicodeError) as exc:
                 return self.send_json({'error': str(exc), 'stage': draft_stage}, 400)

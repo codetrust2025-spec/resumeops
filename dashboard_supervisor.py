@@ -16,7 +16,7 @@ from urllib.request import Request, urlopen
 HOME = Path(__file__).resolve().parent
 CONTROL = HOME / 'release-state.json'
 CONFIG = HOME / 'dashboard-config.json'
-REQUIRED = ('index.html', 'dashboard.js', 'dashboard.css', 'resume_dashboard.py',
+REQUIRED = ('index.html', 'dashboard.js', 'dashboard.css', 'core.js', 'workflow.js', 'resume_dashboard.py',
             'cloudflare_access.py', 'check_dashboard.py', 'check_cloudflare_access.py')
 PORT = 8765
 LOGS = HOME / 'logs'
@@ -53,6 +53,7 @@ def health(port, config):
     for route, content_type, marker in (
         ('/', 'text/html', b'id="candidate"'),
         ('/dashboard.js', 'text/javascript', b'function'),
+        ('/core.js', 'text/javascript', b'ResumeCore'),
         ('/dashboard.css', 'text/css', b'{'),
     ):
         actual_type, body = fetch(port, route)

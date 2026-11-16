@@ -3,63 +3,210 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="dashboard-token" content="__TOKEN__">
-<title>Resume Builder · Operations</title><link rel="stylesheet" href="/dashboard.css">
+<title>ResumeOps</title><link rel="stylesheet" href="/dashboard.css">
+<script defer src="/core.js"></script>
 <script defer src="/dashboard.js"></script>
 <script defer src="/workflow.js"></script>
 </head>
 <body>
-<header><div class="brand"><span class="mark" aria-hidden="true">R</span> Resume Builder</div><span id="health" class="pill">Connecting</span></header>
-<main>
-<section id="active-workflow" class="panel workflow" aria-label="Candidate processing" hidden>
-<h2 id="active-candidate"></h2>
-<progress id="workflow-progress" max="100" value="0" aria-label="Candidate processing progress"></progress>
-<p id="workflow-stage" role="status"></p><small id="workflow-time"></small>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="#/dashboard"><span class="mark" aria-hidden="true">R</span><span>ResumeOps</span></a>
+  <button class="menu-toggle" id="menu-toggle" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>
+  <div class="topbar-end"><span id="health" class="pill" role="status">Connecting</span></div>
+</header>
+<div class="shell">
+<nav class="sidebar" id="sidebar" aria-label="Main navigation">
+  <a href="#/dashboard" data-route="dashboard">Dashboard</a>
+  <a href="#/create" data-route="create">Create Resume</a>
+  <a href="#/candidates" data-route="candidates">Candidates</a>
+  <a href="#/outputs" data-route="outputs">Resume Outputs</a>
+  <a href="#/ats" data-route="ats">ATS Analysis</a>
+  <a href="#/templates" data-route="templates">Templates</a>
+  <a href="#/logs" data-route="logs">Activity Logs</a>
+  <a href="#/settings" data-route="settings">Settings</a>
+</nav>
+<main id="main" tabindex="-1">
+
+<!-- Dashboard -->
+<section class="view" data-view="dashboard" aria-labelledby="dashboard-title">
+  <div class="page-head">
+    <div><p class="crumb">Workspace / Dashboard</p><h1 id="dashboard-title">Resume operations</h1><p id="heartbeat">Reading watcher status…</p></div>
+    <div class="head-actions"><a class="button primary" href="#/create">Create resume</a></div>
+  </div>
+  <section id="active-workflow" class="card workflow" aria-label="Candidate processing" hidden>
+    <div class="workflow-head"><h2 id="active-candidate"></h2><span id="active-percent" class="percent"></span></div>
+    <div class="bar"><span id="workflow-bar"></span></div>
+    <p id="workflow-stage" role="status"></p><small id="workflow-time"></small>
+  </section>
+  <section class="metrics" aria-label="Job counts">
+    <div class="metric"><span>Waiting</span><strong id="queued">—</strong></div>
+    <div class="metric"><span>Completed jobs</span><strong id="ok">—</strong></div>
+    <div class="metric"><span>Awaiting retry</span><strong id="failed">—</strong></div>
+    <div class="metric"><span>Published revisions</span><strong id="published">—</strong></div>
+  </section>
+  <p id="alert" class="notice warn" role="status" hidden></p>
+  <div class="split">
+    <section class="card" aria-labelledby="import-title">
+      <div class="card-head"><div><h2 id="import-title">Import candidate</h2><small>Word, PDF, text, images, or candidate JSON. Ollama extracts only facts quoted from the file.</small></div></div>
+      <form id="submit" class="import-form">
+        <label class="file"><span>Candidate file</span><input type="file" id="candidate" required></label>
+        <button type="submit" class="primary">Import candidate</button>
+        <div class="bar" id="import-bar" hidden><span id="import-progress"></span></div>
+        <small id="import-stage" role="status" hidden></small><small id="feedback" role="status"></small>
+      </form>
+    </section>
+    <section class="card" aria-labelledby="recent-title">
+      <div class="card-head"><h2 id="recent-title">Recent resume activity</h2><a href="#/candidates">View all candidates →</a></div>
+      <div class="table-wrap"><table><thead><tr><th>Candidate</th><th>Workflow stage</th><th>Status</th><th>Last updated</th></tr></thead><tbody id="recent"></tbody></table></div>
+    </section>
+  </div>
+  <section class="card review" id="review" hidden aria-labelledby="review-title">
+    <div class="card-head"><h2 id="review-title">Review extracted candidate details</h2><button id="discard" type="button" class="ghost">Discard draft</button></div>
+    <div class="review-grid"><label>Source text<textarea id="source" readonly></textarea></label><label>Candidate JSON<textarea id="draft" spellcheck="false"></textarea></label></div>
+    <div class="card-foot"><small id="review-feedback" role="status">Check names, roles and dates against the source.</small>
+      <div class="actions"><button id="open-in-wizard" type="button" class="ghost">Open in resume wizard</button><button id="publish" type="button" class="primary">Confirm and queue</button></div></div>
+  </section>
 </section>
-<section class="hero">
-<div><h1>Resume operations</h1><p id="heartbeat">Reading watcher status…</p></div>
-<form id="submit"><input type="file" id="candidate" aria-label="Candidate file" required><button type="submit">Import candidate</button><small>Word, PDF, text, images, or candidate JSON</small><progress id="import-progress" aria-label="Import progress" max="100" value="0" hidden></progress><small id="import-stage" role="status" hidden></small><small id="feedback" role="status"></small></form>
+
+<!-- Create resume wizard -->
+<section class="view" data-view="create" aria-labelledby="create-title" hidden>
+  <div class="page-head">
+    <div><p class="crumb">Workspace / Create Resume</p><h1 id="create-title">Create a professional resume</h1><p>From verified candidate details to an ATS-ready PDF and Overleaf publication.</p></div>
+    <div class="head-actions"><span id="draft-state" class="pill">Draft · Unsaved</span><button id="new-draft" type="button" class="ghost">New draft</button></div>
+  </div>
+  <div class="wizard">
+    <section class="card wizard-form" aria-labelledby="wizard-title">
+      <h2 id="wizard-title" class="sr-only">Resume steps</h2>
+      <ol class="stepper" id="stepper"></ol>
+      <form id="wizard" novalidate>
+        <!-- Step 1 -->
+        <fieldset class="step" data-step="1"><legend>Personal details</legend>
+          <p class="hint">Use the candidate's own contact details exactly as provided.</p>
+          <div class="grid two">
+            <label>Full name *<input data-bind="profile.full_name" maxlength="120" autocomplete="off"></label>
+            <label>Professional headline<input data-bind="profile.headline" maxlength="140"></label>
+            <label>Email *<input data-bind="profile.email" type="email" maxlength="254"></label>
+            <label>Phone<input data-bind="profile.phone" type="tel" maxlength="50"></label>
+            <label>Location<input data-bind="profile.location" maxlength="150"></label>
+            <label>LinkedIn<input data-bind="profile.linkedin" maxlength="250" placeholder="https://linkedin.com/in/…"></label>
+            <label>GitHub<input data-bind="profile.github" maxlength="250" placeholder="https://github.com/…"></label>
+            <label>Portfolio<input data-bind="profile.portfolio" maxlength="250" placeholder="https://…"></label>
+          </div>
+          <label>Professional summary<textarea data-bind="profile.summary" rows="4" maxlength="8000"></textarea></label>
+        </fieldset>
+        <!-- Step 2 -->
+        <fieldset class="step" data-step="2" hidden><legend>Experience, education and skills</legend>
+          <p class="hint">Add verified work history only. ResumeOps never invents roles, metrics or qualifications.</p>
+          <div class="experience-summary" id="experience-summary"></div>
+          <div class="entries-head"><h3>Work experience</h3><button type="button" class="link" data-add="experience">+ Add experience</button></div>
+          <div id="experience-entries" class="entries"></div>
+          <div class="entries-head"><h3>Education</h3><button type="button" class="link" data-add="education">+ Add education</button></div>
+          <div id="education-entries" class="entries"></div>
+          <div class="grid two">
+            <label>Confirmed skills<textarea data-bind="skills" rows="4" placeholder="One per line or comma-separated"></textarea></label>
+            <label>Certifications<textarea data-bind="certifications" rows="4" placeholder="One per line"></textarea></label>
+          </div>
+          <div class="entries-head"><h3>Projects</h3><button type="button" class="link" data-add="projects">+ Add project</button></div>
+          <div id="projects-entries" class="entries"></div>
+        </fieldset>
+        <!-- Step 3 -->
+        <fieldset class="step" data-step="3" hidden><legend>Target role</legend>
+          <div class="grid two">
+            <label>Target role *<select data-bind="role" id="role-select"></select></label>
+            <label>Template<select data-bind="template" id="template-select"></select></label>
+          </div>
+          <div id="role-detail" class="role-detail"></div>
+          <label>Job description<textarea data-bind="jobDescription" rows="5" maxlength="50000" placeholder="Paste a job description to pick out its keywords"></textarea></label>
+          <div class="actions start"><button type="button" id="extract-keywords" class="ghost">Extract keywords from job description</button><small id="jd-feedback" role="status"></small></div>
+          <div class="keyword-entry"><label>Add a target keyword<input id="keyword-input" maxlength="100" placeholder="Type a keyword and press Enter"></label><button type="button" id="add-keyword" class="ghost">Add</button></div>
+          <div id="keyword-chips" class="chips" aria-live="polite"></div>
+        </fieldset>
+        <!-- Step 4 -->
+        <fieldset class="step" data-step="4" hidden><legend>Review &amp; ATS</legend>
+          <div id="review-summary" class="review-summary"></div>
+          <div class="compare" id="source-compare"></div>
+          <div id="review-ats" class="ats-detail"></div>
+          <label class="check"><input type="checkbox" data-bind="verified"> I confirm these candidate facts are accurate and supplied by the candidate.</label>
+        </fieldset>
+        <!-- Step 5 -->
+        <fieldset class="step" data-step="5" hidden><legend>Generate</legend>
+          <p class="hint">The local watcher runs Ollama (qwen2.5:7b), compiles LaTeX to PDF, verifies the PDF text, and publishes to Overleaf.</p>
+          <div class="generate-card">
+            <div class="workflow-head"><h3 id="gen-candidate">Ready to generate</h3><span id="gen-percent" class="percent">0%</span></div>
+            <div class="bar"><span id="gen-bar"></span></div>
+            <p id="gen-stage" role="status">Not queued yet.</p>
+            <ol class="timeline" id="gen-timeline"></ol>
+            <div id="gen-outputs" class="links"></div>
+          </div>
+        </fieldset>
+        <ul id="wizard-errors" class="errors" role="alert"></ul>
+        <div class="wizard-nav"><button type="button" id="back" class="ghost">← Back</button>
+          <div class="actions"><button type="button" id="next" class="primary">Continue →</button><button type="button" id="generate" class="primary" hidden>Generate resume</button></div></div>
+      </form>
+    </section>
+    <aside class="card preview" aria-labelledby="preview-title">
+      <div class="card-head"><div><h2 id="preview-title">Live resume preview</h2><small id="preview-status">Updates as verified details change</small></div>
+        <button type="button" id="fullscreen" class="link">Full screen</button></div>
+      <div class="tabs" role="tablist" aria-label="Preview views">
+        <button role="tab" aria-selected="true" data-tab="resume" id="tab-resume">Resume preview</button>
+        <button role="tab" aria-selected="false" data-tab="ats" id="tab-ats">ATS analysis</button>
+        <button role="tab" aria-selected="false" data-tab="latex" id="tab-latex">LaTeX code</button>
+        <button role="tab" aria-selected="false" data-tab="pdf" id="tab-pdf">PDF</button>
+      </div>
+      <div class="tab-panel" data-panel="resume" role="tabpanel" aria-labelledby="tab-resume"><article class="paper" id="paper"></article></div>
+      <div class="tab-panel" data-panel="ats" role="tabpanel" aria-labelledby="tab-ats" hidden><div id="preview-ats" class="ats-detail"></div></div>
+      <div class="tab-panel" data-panel="latex" role="tabpanel" aria-labelledby="tab-latex" hidden>
+        <div class="actions start"><button type="button" id="copy-latex" class="ghost">Copy LaTeX</button><button type="button" id="download-latex" class="ghost">Download .tex</button><small id="latex-feedback" role="status"></small></div>
+        <pre id="latex-code" class="code">Complete the required details to render LaTeX.</pre></div>
+      <div class="tab-panel" data-panel="pdf" role="tabpanel" aria-labelledby="tab-pdf" hidden><div id="pdf-panel"><p class="empty">The verified PDF appears here after generation.</p></div></div>
+      <div class="coverage"><div><strong>ATS keyword coverage</strong><small>Based on the selected target role</small></div><span id="coverage-score">—</span></div>
+      <ul id="preview-errors" class="errors"></ul>
+    </aside>
+  </div>
 </section>
-<section class="panel review" id="review" hidden>
-<div class="section-head"><h2>Review extracted candidate details</h2><button id="discard" type="button">Discard draft</button></div>
-<div class="review-grid"><label>Source text<textarea id="source" readonly></textarea></label><label>Candidate JSON<textarea id="draft" spellcheck="false"></textarea></label></div>
-<div class="section-head"><small id="review-feedback" role="status">Check names, roles and dates against the source.</small><button id="publish" type="button">Confirm and queue</button></div>
+
+<!-- Candidates -->
+<section class="view" data-view="candidates" aria-labelledby="candidates-title" hidden>
+  <div class="page-head"><div><p class="crumb">Workspace / Candidates</p><h1 id="candidates-title">Candidates</h1><p>Every candidate request in the watcher inbox, with live processing state.</p></div></div>
+  <section class="card"><div class="card-head"><h2>Candidate inbox</h2><input id="filter" type="search" placeholder="Find a candidate or file" aria-label="Find a candidate or file"></div>
+    <div class="table-wrap"><table><thead><tr><th>Candidate</th><th>Progress</th><th>Status</th><th>Retries</th><th>Last activity</th></tr></thead><tbody id="jobs"></tbody></table></div></section>
 </section>
-<details class="panel workflow" id="candidate-workspace">
-<summary>Create a role-targeted resume</summary>
-<form id="candidate-form">
-<div class="candidate-grid">
-<label>Full name<input name="full_name" required maxlength="120"></label>
-<label>Email<input name="email" type="email" required maxlength="254"></label>
-<label>Headline<input name="headline" maxlength="140"></label>
-<label>Phone<input name="phone" type="tel" maxlength="50"></label>
-<label>Location<input name="location" maxlength="150"></label>
-<label>LinkedIn<input name="linkedin" maxlength="250"></label>
-<label>GitHub<input name="github" maxlength="250"></label>
-<label>Target role<select name="role" required></select></label>
-<label>Template<select name="template" required></select></label>
-<label>Additional target keywords<textarea name="keywords" rows="2" placeholder="One per line"></textarea></label>
-<label>Confirmed skills<textarea name="skills" rows="2" placeholder="One per line"></textarea></label>
-<label>Certifications<textarea name="certifications" rows="2" placeholder="One per line"></textarea></label>
-</div>
-<p id="role-keywords"></p>
-<label>Professional summary<textarea name="summary" rows="3"></textarea></label>
-<div id="experience-entries"></div><button type="button" id="add-experience">Add experience</button>
-<div id="education-entries"></div><button type="button" id="add-education">Add education</button>
-<label class="verify-facts"><input name="verified" type="checkbox"> I confirm these candidate facts are accurate.</label>
-<div class="candidate-actions"><button type="submit" value="preview">Preview and score</button>
-<button type="submit" value="queue">Queue verified resume</button></div>
-<p id="candidate-feedback" role="status"></p>
-</form>
-<div id="candidate-preview" hidden><h3>Resume preview</h3><p id="preview-score"></p><p id="preview-keywords"></p><pre id="preview-content"></pre></div>
-</details>
-<section class="metrics" aria-label="Job counts">
-<div><span>Waiting</span><strong id="queued">—</strong></div><div><span>Completed jobs</span><strong id="ok">—</strong></div><div><span>Awaiting retry</span><strong id="failed">—</strong></div><div><span>Published revisions</span><strong id="published">—</strong></div>
+
+<!-- Outputs -->
+<section class="view" data-view="outputs" aria-labelledby="outputs-title" hidden>
+  <div class="page-head"><div><p class="crumb">Workspace / Resume Outputs</p><h1 id="outputs-title">Resume outputs</h1><p>Verified PDFs, LaTeX sources and Overleaf projects.</p></div></div>
+  <section class="card"><div class="card-head"><h2>Resume revisions</h2><input id="output-filter" type="search" placeholder="Find a candidate" aria-label="Find a candidate"></div>
+    <div id="revisions" class="revision-list"></div></section>
 </section>
-<p id="alert" role="status" hidden></p>
-<nav aria-label="Dashboard sections"><button data-panel="inbox" aria-pressed="true">Inbox</button><button data-panel="outputs" aria-pressed="false">Resume outputs</button><button data-panel="logs" aria-pressed="false">Logs</button></nav>
-<section id="inbox" class="panel"><div class="section-head"><h2>Candidate inbox</h2><input id="filter" type="search" placeholder="Find a file" aria-label="Find an inbox file"></div><div class="scroll"><table><thead><tr><th>File</th><th>Status</th><th>Last activity</th></tr></thead><tbody id="jobs"></tbody></table></div></section>
-<section id="outputs" class="panel" hidden><div class="section-head"><h2>Resume revisions</h2><input id="output-filter" type="search" placeholder="Find a candidate" aria-label="Find a candidate"></div><div id="revisions" class="revision-list"></div></section>
-<section id="logs" class="panel" hidden><div class="section-head"><h2>Operations logs</h2><select id="log-select" aria-label="Log file"></select></div><pre id="log-content">Select an available log.</pre></section>
+
+<!-- ATS -->
+<section class="view" data-view="ats" aria-labelledby="ats-title" hidden>
+  <div class="page-head"><div><p class="crumb">Workspace / ATS Analysis</p><h1 id="ats-title">ATS analysis</h1><p>Keyword coverage is measured only against facts the candidate supplied.</p></div></div>
+  <section class="card"><div class="card-head"><h2>Current draft</h2><a href="#/create">Open wizard →</a></div><div id="ats-draft" class="ats-detail pad"></div></section>
+  <section class="card"><div class="card-head"><h2>Generated resumes</h2></div>
+    <div class="table-wrap"><table><thead><tr><th>Candidate</th><th>Role</th><th>Template</th><th>Coverage</th><th>Matched / missing</th></tr></thead><tbody id="ats-rows"></tbody></table></div></section>
+</section>
+
+<!-- Templates -->
+<section class="view" data-view="templates" aria-labelledby="templates-title" hidden>
+  <div class="page-head"><div><p class="crumb">Workspace / Templates</p><h1 id="templates-title">Templates</h1><p>ATS-readable LaTeX layouts, previewed with a synthetic sample candidate.</p></div></div>
+  <div id="template-cards" class="template-grid"></div>
+</section>
+
+<!-- Logs -->
+<section class="view" data-view="logs" aria-labelledby="logs-title" hidden>
+  <div class="page-head"><div><p class="crumb">Workspace / Activity Logs</p><h1 id="logs-title">Activity logs</h1><p>The latest 64 KB of each watcher and operations log.</p></div></div>
+  <section class="card"><div class="card-head"><h2>Operations logs</h2><select id="log-select" aria-label="Log file"></select></div><pre id="log-content" class="code tall">Select an available log.</pre></section>
+</section>
+
+<!-- Settings -->
+<section class="view" data-view="settings" aria-labelledby="settings-title" hidden>
+  <div class="page-head"><div><p class="crumb">Workspace / Settings</p><h1 id="settings-title">Settings</h1><p>Read-only service configuration. Secrets are never shown.</p></div></div>
+  <div id="settings-grid" class="settings-grid"></div>
+</section>
+
 </main>
+</div>
 </body>
 </html>

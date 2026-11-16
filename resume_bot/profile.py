@@ -35,7 +35,8 @@ def validate_profile(data):
     if not isinstance(data, dict):
         raise ProfileError('Profile must be a JSON object')
     accepted = {'full_name', 'headline', 'email', 'phone', 'location', 'linkedin', 'github',
-                'summary', 'skills', 'experience', 'education', 'certifications'}
+                'summary', 'skills', 'experience', 'education', 'certifications',
+                'portfolio', 'projects'}
     extra = set(data) - accepted
     if extra:
         raise ProfileError('Unknown fields: ' + ', '.join(sorted(extra)))
@@ -74,6 +75,28 @@ def validate_profile(data):
                  for k in ('institution', 'degree','start','end','details')}
         out['education'].append(entry)
     out['certifications'] = [_string(v, 'certifications[]',True) for v in data.get('certifications', [])]
+    # Optional Level 1 fields. They are emitted only when supplied, so existing profiles keep
+    # byte-identical normalized JSON, inbox digests and rendered LaTeX.
+    portfolio = _string(data.get('portfolio', ''), 'portfolio')
+    if portfolio:
+        out['portfolio'] = portfolio
+    if not isinstance(data.get('projects', []), list):
+        raise ProfileError('projects: expected array')
+    projects = []
+    for i, item in enumerate(data.get('projects', [])):
+        if not isinstance(item, dict):
+            raise ProfileError(f'projects[{i}]: expected object')
+        if set(item) - {'name', 'link', 'technologies', 'bullets'}:
+            raise ProfileError(f'projects[{i}]: unknown fields')
+        entry = {'name': _string(item.get('name', ''), f'projects[{i}].name', True),
+                 'link': _string(item.get('link', ''), f'projects[{i}].link')}
+        for key in ('technologies', 'bullets'):
+            if not isinstance(item.get(key, []), list):
+                raise ProfileError(f'projects[{i}].{key}: expected array')
+            entry[key] = [_string(v, f'projects[{i}].{key}[]', True) for v in item.get(key, [])]
+        projects.append(entry)
+    if projects:
+        out['projects'] = projects
     if not (out['experience'] or out['education']):
         raise ProfileError('At least one experience or education record is required')
     return out

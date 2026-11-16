@@ -1,0 +1,167 @@
+{
+  "source": "Level 1 resume-automation scraperService keyword database (static; no live scraping)",
+  "roles": {
+    "azure-data-engineer": {
+      "groups": {
+        "technical": [
+          "Azure Data Factory",
+          "Azure Synapse Analytics",
+          "Azure Databricks",
+          "Azure SQL Database",
+          "Azure Data Lake",
+          "Azure Blob Storage",
+          "PySpark",
+          "Python",
+          "SQL",
+          "Scala",
+          "Azure Functions",
+          "Azure Stream Analytics",
+          "Cosmos DB",
+          "Power BI",
+          "Tableau"
+        ],
+        "tools": [
+          "Git",
+          "Azure DevOps",
+          "CI/CD",
+          "Docker",
+          "Kubernetes",
+          "Terraform",
+          "Apache Spark",
+          "Kafka",
+          "Azure Monitor"
+        ],
+        "soft": [
+          "ETL/ELT",
+          "Data Modeling",
+          "Data Warehousing",
+          "Data Pipeline",
+          "Big Data",
+          "Data Migration",
+          "Performance Tuning",
+          "Agile"
+        ],
+        "certifications": [
+          "Microsoft Certified: Azure Data Engineer Associate",
+          "Azure Fundamentals (AZ-900)",
+          "Azure Data Fundamentals (DP-900)",
+          "Databricks Certified Associate Developer"
+        ],
+        "trending": [
+          "Real-time Analytics",
+          "Serverless",
+          "Delta Lake",
+          "Data Mesh",
+          "Data Governance",
+          "MLOps"
+        ]
+      },
+      "priorities": {
+        "mustHave": [
+          "Azure Data Factory",
+          "Python",
+          "SQL",
+          "ETL",
+          "Data Pipeline"
+        ],
+        "highPriority": [
+          "Azure Databricks",
+          "PySpark",
+          "Azure Synapse",
+          "Power BI",
+          "Data Warehousing",
+          "Azure DevOps"
+        ],
+        "goodToHave": [
+          "Kafka",
+          "Terraform",
+          "Docker",
+          "Scala",
+          "Machine Learning"
+        ]
+      }
+    },
+    "frontend-developer": {
+      "groups": {
+        "technical": [
+          "React.js",
+          "Next.js",
+          "JavaScript",
+          "TypeScript",
+          "HTML5",
+          "CSS3",
+          "Redux",
+          "Context API",
+          "Material UI",
+          "Tailwind CSS",
+          "Bootstrap",
+          "REST API",
+          "GraphQL",
+          "Axios",
+          "React Query"
+        ],
+        "tools": [
+          "Git",
+          "GitHub",
+          "Webpack",
+          "Vite",
+          "NPM",
+          "Yarn",
+          "Jest",
+          "React Testing Library",
+          "Chrome DevTools",
+          "Postman",
+          "Figma",
+          "VS Code",
+          "ESLint",
+          "Prettier"
+        ],
+        "soft": [
+          "Responsive Design",
+          "Mobile-First",
+          "Cross-Browser Compatibility",
+          "Accessibility",
+          "Performance Optimization",
+          "SEO",
+          "Agile",
+          "Scrum"
+        ],
+        "certifications": [
+          "Meta Front-End Developer Certificate",
+          "AWS Certified Developer",
+          "Google Mobile Web Specialist"
+        ],
+        "trending": [
+          "Server Components",
+          "Micro-Frontends",
+          "Web Vitals",
+          "Progressive Web Apps",
+          "Jamstack",
+          "AI-Powered Tools"
+        ]
+      },
+      "priorities": {
+        "mustHave": [
+          "React.js",
+          "JavaScript",
+          "HTML5",
+          "CSS3",
+          "REST API"
+        ],
+        "highPriority": [
+          "TypeScript",
+          "Next.js",
+          "Redux",
+          "Git",
+          "Responsive Design"
+        ],
+        "goodToHave": [
+          "GraphQL",
+          "Testing",
+          "Webpack",
+          "Performance Optimization"
+        ]
+      }
+    }
+  }
+}
