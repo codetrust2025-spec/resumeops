@@ -102,7 +102,7 @@ const entryFields = {
     ['end','Education end'],['details','Education details']],
 };
 
-function addEntry(kind) {
+function addEntry(kind, focus = true) {
   const entry = document.createElement('fieldset');
   entry.append(rows('legend',kind === 'experience' ? 'Work entry' : 'Education entry'));
   const grid = rows('div','','fields');
@@ -122,7 +122,7 @@ function addEntry(kind) {
   remove.addEventListener('click', () => entry.remove());
   entry.append(grid,remove);
   el(kind+'-entries').append(entry);
-  grid.querySelector('input').focus();
+  if (focus) grid.querySelector('input').focus();
 }
 el('add-experience').addEventListener('click', () => addEntry('experience'));
 el('add-education').addEventListener('click', () => addEntry('education'));
