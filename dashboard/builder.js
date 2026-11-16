@@ -308,6 +308,17 @@ el('another').addEventListener('click', () => {
   el('experience-entries').replaceChildren();
   el('education-entries').replaceChildren();
   form.reset();
+  // Reset the inline source upload whenever a new candidate starts.
+  const importedFile = el('resume-upload');
+  if (importedFile) {
+    importedFile.value='';
+    el('import-resume').disabled=true;
+    el('resume-import-progress').hidden=true;
+    el('resume-import-progress').value=0;
+    el('resume-import-status').textContent='';
+    el('import-source').value='';
+    el('import-evidence').hidden=true;
+  }
   fields.role.value='';
   roleChanged();
   updateExperience();
