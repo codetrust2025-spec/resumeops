@@ -102,15 +102,29 @@ const entryFields = {
     ['end','Education end'],['details','Education details']],
 };
 
-function addEntry(kind, focus = true) {
-  const holder = el(kind+'-entries');
+const mobileLayout = window.matchMedia('(max-width:760px)');
+
+function wrapEntry(entry, open) {
+  // Phone-only collapsible shell around an entry; desktop keeps the bare fieldset.
+  if (entry.parentElement?.classList.contains('resume-entry')) return;
   const details = document.createElement('details');
   details.className = 'resume-entry';
-  details.open = focus || !window.matchMedia('(max-width:760px)').matches;
+  details.open = open;
+  details.append(entry.entryHeading);
+  entry.replaceWith(details);
+  details.append(entry);
+}
+function unwrapEntry(entry) {
+  const details = entry.parentElement;
+  if (details?.classList.contains('resume-entry')) details.replaceWith(entry);
+}
+
+function addEntry(kind, focus = true) {
+  const holder = el(kind+'-entries');
   const heading = rows('summary', (kind === 'experience' ? 'Experience' : 'Education') +
     ' ' + (holder.children.length + 1));
-  details.append(heading);
   const entry = document.createElement('fieldset');
+  entry.entryHeading = heading;
   entry.append(rows('legend',kind === 'experience' ? 'Work entry' : 'Education entry'));
   const grid = rows('div','','fields');
   for (const [key,label] of entryFields[kind]) {
@@ -126,9 +140,8 @@ function addEntry(kind, focus = true) {
   }
   const remove = rows('button','Remove entry','secondary');
   remove.type='button';
-  remove.addEventListener('click', () => details.remove());
+  remove.addEventListener('click', () => (entry.closest('.resume-entry') || entry).remove());
   entry.append(grid,remove);
-  details.append(entry);
   const title = () => {
     const name = grid.querySelector(kind === 'experience' ? '[data-field=company]' :
       '[data-field=institution]').value.trim();
@@ -138,7 +151,8 @@ function addEntry(kind, focus = true) {
       .filter(Boolean).join(' · ');
   };
   grid.addEventListener('input', title);
-  holder.append(details);
+  holder.append(entry);
+  if (mobileLayout.matches) wrapEntry(entry, focus);
   if (focus) grid.querySelector('input').focus();
 }
 el('add-experience').addEventListener('click', () => addEntry('experience'));
@@ -184,31 +198,68 @@ function showStep(index, focus = true) {
   el('next').hidden=index===3;
   el('generate').hidden=index!==3;
   if (focus) {
-    steps[index].querySelector('h2').focus({preventScroll:true});
-    if (window.matchMedia('(max-width:760px)').matches) {
+    if (mobileLayout.matches) {
+      steps[index].querySelector('h2').focus({preventScroll:true});
       el('steps').scrollIntoView({block:'start',behavior:'auto'});
+    } else {
+      steps[index].querySelector('h2').focus();
     }
   }
 }
-const mobileLayout = window.matchMedia('(max-width:760px)');
-if (mobileLayout.matches) {
-  el('more-personal').open=false;
-  el('more-experience').open=false;
+
+// Optional fields are grouped into collapsed sections on phones only. Each moved label leaves a
+// marker so the exact desktop markup is restored when the viewport widens (e.g. rotation).
+function optionalGroup(id, summary, names, after) {
+  const details = document.createElement('details');
+  details.id = id;
+  details.className = 'optional-details';
+  const grid = rows('div','','fields');
+  details.append(rows('summary', summary), grid);
+  const labels = names.map(name => fields[name].closest('label'));
+  return {
+    collapse() {
+      if (details.isConnected) return;
+      for (const label of labels) {
+        const marker = document.createComment(id);
+        label.markerNode = marker;
+        label.replaceWith(marker);
+        grid.append(label);
+      }
+      details.open = false;
+      after().after(details);
+    },
+    expand() {
+      if (!details.isConnected) return;
+      for (const label of labels) label.markerNode.replaceWith(label);
+      details.remove();
+    },
+  };
 }
-mobileLayout.addEventListener('change',event => {
-  if (!event.matches) {
-    el('more-personal').open=true;
-    el('more-experience').open=true;
+const optionalGroups = [
+  optionalGroup('more-personal', 'More details (company and links)',
+    ['current_company','linkedin','github','portfolio'], () => fields.full_name.closest('.fields')),
+  optionalGroup('more-experience', 'More details (projects and certifications)',
+    ['certifications','projects'], () => fields.skills.closest('.fields')),
+];
+function applyLayout() {
+  for (const group of optionalGroups) mobileLayout.matches ? group.collapse() : group.expand();
+  for (const entry of document.querySelectorAll('#experience-entries fieldset, #education-entries fieldset')) {
+    mobileLayout.matches ? wrapEntry(entry, false) : unwrapEntry(entry);
   }
-});
+  if (!mobileLayout.matches) expandHistory(true);
+}
+mobileLayout.addEventListener('change', applyLayout);
 const historyToggle=el('history-toggle');
 function expandHistory(expanded) {
   el('history-content').classList.toggle('expanded',expanded);
+  el('history').classList.toggle('history-open',expanded);
   historyToggle.setAttribute('aria-expanded',String(expanded));
   historyToggle.textContent=expanded ? 'Hide history' : 'Show history';
 }
 historyToggle.addEventListener('click', () => expandHistory(historyToggle.getAttribute('aria-expanded')!=='true'));
 document.querySelector('a[href="#history"]').addEventListener('click', () => expandHistory(true));
+applyLayout();
+if (mobileLayout.matches) expandHistory(false);
 showStep(0,false);
 updateExperience();
 el('back').addEventListener('click', () => {feedback('');showStep(activeStep-1);});
