@@ -98,7 +98,46 @@ class DashboardTest(unittest.TestCase):
                         self.assertEqual(json.load(response)['profile'], json.loads(source))
                 with request(progress_path, headers=headers) as response:
                     self.assertIsNone(json.load(response)['stage'])
+                # Async imports return HTTP 202 before slow Ollama work completes.
+                async_headers = {**draft_headers, 'X-Resume-Import-ID': 'b' * 32,
+                                 'X-Resume-Async': '1'}
+                with patch.object(Workspace, 'draft', return_value={
+                        'profile': json.loads(source), 'source': expected_text}):
+                    with request('/api/draft', data=docx.getvalue(),
+                                 headers=async_headers) as response:
+                        self.assertEqual(response.status, 202)
+                        self.assertEqual(json.load(response)['status'], 'processing')
+                    ready = None
+                    for _ in range(80):
+                        with request('/api/import-progress?id='+'b'*32,
+                                     headers=headers) as response:
+                            ready = json.load(response)
+                        if ready['status'] in ('complete','error'):
+                            break
+                        time.sleep(.05)
+                    self.assertEqual(ready['status'], 'complete')
+                    self.assertEqual(ready['source'], expected_text)
+                    self.assertEqual(ready['profile'], json.loads(source))
+                    with request('/api/import-progress?id='+'b'*32,
+                                 headers=headers) as response:
+                        self.assertEqual(json.load(response)['status'], 'unknown')
+                with patch.object(Workspace, 'draft', side_effect=ValueError(
+                        'Scanned PDF has no readable text')):
+                    failed_headers = {**async_headers, 'X-Resume-Import-ID': 'c' * 32}
+                    with request('/api/draft', data=docx.getvalue(),
+                                 headers=failed_headers) as response:
+                        self.assertEqual(response.status, 202)
+                    for _ in range(80):
+                        with request('/api/import-progress?id='+'c'*32,
+                                     headers=headers) as response:
+                            failed = json.load(response)
+                        if failed['status'] in ('complete','error'):
+                            break
+                        time.sleep(.05)
+                    self.assertEqual(failed['status'], 'error')
+                    self.assertIn('no readable text', failed['error'])
                 self.assertFalse(list((root / 'inbox').glob('*.json')))
+
                 with self.assertRaises(HTTPError) as invalid_type:
                     request('/api/draft', data=b'x',
                             headers=dict(headers, **{'X-Resume-Extension': '.exe'}))
