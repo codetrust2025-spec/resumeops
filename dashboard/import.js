@@ -112,6 +112,12 @@
     }
     setEntries('experience', profile.experience);
     setEntries('education', profile.education);
+    // A new upload must not inherit role keywords or experience from a previous person.
+    fields.role.value = '';
+    fields.template.selectedIndex = 0;
+    fields.keywords.value = '';
+    fields.years.value = '1';
+    document.getElementById('catalog-keywords').textContent = '';
     if (typeof target.role === 'string' &&
         [...fields.role.options].some(option => option.value === target.role)) {
       fields.role.value = target.role;
