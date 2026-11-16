@@ -69,6 +69,7 @@ class Workspace:
                          'last': last or modified, 'failures': record.get('failures', 0) if status else 0,
                          'error': record.get('error', '') if status == 'failed' else '',
                          'candidate': record.get('candidate', '') if status else '',
+                         'revision': self.revision_key(record.get('output')) if status == 'ok' else '',
                          'blocked': bool(record.get('blocked')) if status else False,
                          'percent': record.get('percent', 0) if status else 0,
                          'stage': record.get('stage', '') if status else '',
@@ -185,6 +186,45 @@ class Workspace:
             Path(temporary).unlink(missing_ok=True)
         return {'name': target.name, 'created': True}
 
+    def revision_key(self, output):
+        path = Path(output) if output else None
+        return path.resolve().relative_to(self.output.resolve()).as_posix() if path and contained(path, self.output) else ''
+
+    def revision(self, key):
+        from resume_bot.workflow import analyze
+        path = self.artifact(key, 'result.json')
+        profile = self.artifact(key, 'profile.json')
+        if not path or not profile:
+            return None
+        report = read_json(path)
+        candidate = read_json(profile)
+        if not isinstance(report, dict) or not isinstance(candidate, dict):
+            return None
+        ats = report.get('ats')
+        if ats and 'ats_readiness' not in ats:
+            target = {'role': ats['role'], 'template': ats['template']}
+            ats = analyze(candidate, target, ats.get('matched', []) + ats.get('missing', []))
+        return {'profile': candidate, 'ats': ats}
+
+    def keywords(self, role):
+        from resume_bot.workflow import ROLES
+        if not isinstance(role, str) or role not in ROLES:
+            raise ValueError('Select a supported role')
+        extras = (read_json(self.root / 'role-keywords.json') or {}).get(role, [])
+        return {'role': role, 'catalog': ROLES[role]['keywords'], 'additional': extras}
+
+    def save_keywords(self, role, extras):
+        from resume_bot.storage import workspace_lock, write_json
+        from resume_bot.workflow import validate_keywords
+        self.keywords(role)
+        extras = validate_keywords(extras)
+        path = self.root / 'role-keywords.json'
+        with workspace_lock(self.root, '.resumeops-keywords.sqlite3'):
+            data = read_json(path) or {}
+            data[role] = extras
+            write_json(path, data)
+        return self.keywords(role)
+
     def artifact(self, key, name):
         if name not in ARTIFACTS or not re.fullmatch(r'[^/\\]+/[^/\\]+', key):
             return None
@@ -211,8 +251,9 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             self.send_header('Content-Length', str(len(data)))
             self.send_header('Cache-Control', 'no-store')
             self.send_header('X-Content-Type-Options', 'nosniff')
+            ancestors = "'self'" if mime == 'application/pdf' else "'none'"
             self.send_header('Content-Security-Policy',
-                             "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+                             f"default-src 'self'; frame-ancestors {ancestors}; base-uri 'none'; form-action 'none'")
             if filename:
                 self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
             self.end_headers()
@@ -248,6 +289,16 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             if url.path == '/api/catalog':
                 from resume_bot.workflow import ROLES, TEMPLATES
                 return self.send_json({'roles': list(ROLES.values()), 'templates': TEMPLATES})
+            if url.path == '/api/keywords':
+                try:
+                    return self.send_json(workspace.keywords(query.get('role', [''])[0]))
+                except ValueError as error:
+                    return self.send_json({'error': str(error)}, 400)
+            if url.path == '/api/revision':
+                revision = workspace.revision(query.get('key', [''])[0])
+                if revision:
+                    return self.send_json(revision)
+                return self.send_json({'error': 'Resume revision unavailable.'}, 404)
             if url.path == '/api/status':
                 return self.send_json(workspace.status())
             if url.path == '/api/artifact':
@@ -256,7 +307,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                     mime = 'application/pdf' if path.suffix == '.pdf' else (
                         mimetypes.guess_type(path)[0] or 'application/octet-stream')
                     return self.send_content(path.read_bytes(), mime,
-                                             filename=path.name if path.suffix != '.pdf' else None)
+                                             filename=path.name if path.suffix != '.pdf' or query.get('download') == ['1'] else None)
             if url.path == '/api/log':
                 name = query.get('name', [''])[0]
                 path = workspace.logs / name
@@ -266,6 +317,9 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                         data = stream.read()
                     return self.send_content(data.decode('utf-8-sig', errors='replace').encode('utf-8'), 'text/plain; charset=utf-8')
             assets = {'/': ('index.html', 'text/html'),
+                      '/operations': ('operations.html', 'text/html'),
+                      '/builder.css': ('builder.css', 'text/css'),
+                      '/builder.js': ('builder.js', 'text/javascript'),
                       '/dashboard.css': ('dashboard.css', 'text/css'),
                       '/dashboard.js': ('dashboard.js', 'text/javascript'),
                       '/workflow.js': ('workflow.js', 'text/javascript')}
@@ -273,14 +327,14 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 name, mime = assets[url.path]
                 path = Path(__file__).with_name(name)
                 data = path.read_bytes()
-                if url.path == '/':
+                if url.path in ('/', '/operations'):
                     data = data.replace(b'__TOKEN__', token.encode('ascii'))
                 return self.send_content(data, mime + '; charset=utf-8')
             return self.send_json({'error': 'File unavailable.'}, 404)
 
         def do_POST(self):
             request_origin = self.request_origin()
-            if (self.path not in ('/api/queue', '/api/draft', '/api/preview') or request_origin is None
+            if (self.path not in ('/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract') or request_origin is None
                     or self.headers.get('Origin') != request_origin
                     or not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token)):
                 return self.send_json({'error': 'Request not authorized.'}, 403)
@@ -323,6 +377,19 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                         with import_lock:
                             import_stages.pop(import_id, None)
                     return self.send_json(draft)
+                if self.path.startswith('/api/keywords/'):
+                    from resume_bot.workflow import matched_terms
+                    request = json.loads(data.decode('utf-8-sig'))
+                    if not isinstance(request, dict):
+                        raise ValueError('Expected keyword settings')
+                    role = request.get('role')
+                    if self.path.endswith('/update'):
+                        return self.send_json(workspace.save_keywords(role, request.get('keywords')))
+                    description = request.get('description', '')
+                    if not isinstance(description, str) or len(description) > 15000:
+                        raise ValueError('Job description must be text under 15,000 characters')
+                    terms = workspace.keywords(role)['catalog']
+                    return self.send_json({'keywords': matched_terms(terms, description) if description.strip() else terms})
                 if self.path == '/api/preview':
                     from resume_bot.workflow import analyze
                     profile, target = workspace.normalize(json.loads(data.decode('utf-8-sig')))

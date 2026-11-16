@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from resume_bot.pipeline import scan
+from resume_bot.latex import render
 from resume_bot.workflow import DatabaseUnavailable, analyze, normalize_request
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +33,33 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn('C++', profile['skills'])
         self.assertEqual(stats['template'], 'compact')
         self.assertIsNone(normalize_request(job['profile'])[1])
+
+    def test_ats_rubric_distinguishes_coverage_from_section_and_evidence_points(self):
+        job = targeted()
+        profile, target = normalize_request(job)
+        report = analyze(profile, target)
+        self.assertEqual(sum(item['max'] for item in report['breakdown']), 100)
+        self.assertEqual(sum(item['points'] for item in report['breakdown']), report['ats_readiness'])
+        self.assertNotEqual(report['ats_readiness'], report['score'])
+        self.assertIn('C++', report['missing'])
+        self.assertTrue(report['suggestions'])
+
+    def test_experience_slider_does_not_generate_a_candidate_claim(self):
+        job = targeted()
+        job['target']['experience_years'] = 25
+        job['profile']['portfolio'] = 'https://example.com'
+        job['profile']['current_company'] = 'Confirmed Employer'
+        job['profile']['projects'] = ['Maintained a reporting utility']
+        profile, target = normalize_request(job)
+        latex = render(profile, target['template'])
+        self.assertIn('Maintained a reporting utility', latex)
+        self.assertIn('Confirmed Employer', latex)
+        self.assertIn('https://example.com', latex)
+        self.assertNotIn('25 years', latex)
+        self.assertNotEqual(latex, render(profile, 'standard'))
+        job['target']['experience_years'] = True
+        with self.assertRaisesRegex(ValueError, 'Experience level'):
+            normalize_request(job)
 
     def test_reject_unknown_template(self):
         job = targeted()
