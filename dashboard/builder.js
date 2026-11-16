@@ -186,7 +186,7 @@ function showStep(index, focus = true) {
   if (focus) {
     steps[index].querySelector('h2').focus({preventScroll:true});
     if (window.matchMedia('(max-width:760px)').matches) {
-      el('steps').scrollIntoView({block:'start',behavior:'instant'});
+      el('steps').scrollIntoView({block:'start',behavior:'auto'});
     }
   }
 }
