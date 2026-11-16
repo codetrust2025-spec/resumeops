@@ -1,0 +1,40 @@
+{
+  "full_name": "Asha Example",
+  "headline": "Frontend Software Engineer",
+  "email": "asha.example@example.com",
+  "phone": "+91 90000 00000",
+  "location": "Hyderabad, India",
+  "linkedin": "",
+  "github": "",
+  "summary": "Frontend engineer with experience building accessible web interfaces and reusable React components. Worked with designers and backend developers on product features.",
+  "skills": ["JavaScript", "TypeScript", "React", "HTML", "CSS", "Git", "REST APIs"],
+  "experience": [
+    {
+      "company": "Example Digital Labs",
+      "position": "Software Engineer",
+      "start": "Jun 2023",
+      "end": "Present",
+      "location": "Hyderabad",
+      "bullets": [
+        "Developed reusable React components for internal web applications.",
+        "Integrated REST APIs and fixed UI bugs reported during testing.",
+        "Worked with product designers to improve keyboard navigation on forms."
+      ]
+    },
+    {
+      "company": "Illustrative Software Studio",
+      "position": "Junior Web Developer",
+      "start": "Jul 2021",
+      "end": "May 2023",
+      "location": "Remote",
+      "bullets": [
+        "Maintained HTML, CSS, and JavaScript pages for client websites.",
+        "Reviewed code changes with colleagues and documented recurring issues."
+      ]
+    }
+  ],
+  "education": [
+    {"institution": "Example Institute of Technology", "degree": "B.Tech in Information Technology", "start": "2017", "end": "2021", "details": ""}
+  ],
+  "certifications": []
+}

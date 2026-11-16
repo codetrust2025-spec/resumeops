@@ -1,0 +1,79 @@
+"""Candidate profile validation. Only user-supplied or source-evidenced data is admissible."""
+import re
+from datetime import date
+
+
+class ProfileError(ValueError):
+    pass
+
+
+def _string(value, field, required=False):
+    if not isinstance(value, str):
+        raise ProfileError(f'{field}: expected string')
+    text = value.strip()
+    if required and (not text or text.lower() in ('n/a', 'unknown', 'tbd', 'your name')):
+        raise ProfileError(f'{field}: missing required information')
+    if len(text) > 8000:
+        raise ProfileError(f'{field}: too long')
+    return text
+
+
+def _month(value):
+    """Validate chronology only when a date is unambiguously expressed."""
+    import datetime
+    if not value or value.lower() in ('present', 'current', 'now', 'ongoing'):
+        return None
+    for fmt in ('%b %Y', '%B %Y', '%Y-%m', '%Y', '%d %b %Y', '%d %B %Y', '%Y-%m-%d'):
+        try:
+            return datetime.datetime.strptime(value, fmt).date()
+        except ValueError:
+            pass
+    return None
+
+
+def validate_profile(data):
+    if not isinstance(data, dict):
+        raise ProfileError('Profile must be a JSON object')
+    accepted = {'full_name', 'headline', 'email', 'phone', 'location', 'linkedin', 'github',
+                'summary', 'skills', 'experience', 'education', 'certifications'}
+    extra = set(data) - accepted
+    if extra:
+        raise ProfileError('Unknown fields: ' + ', '.join(sorted(extra)))
+    out = {key: _string(data.get(key, ''), key, key in ('full_name', 'email'))
+           for key in ('full_name', 'headline', 'email', 'phone', 'location', 'linkedin', 'github', 'summary')}
+    if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', out['email']):
+        raise ProfileError('Invalid email address')
+    for k in ('skills', 'experience', 'education', 'certifications'):
+        if not isinstance(data.get(k, []), list):
+            raise ProfileError(f'{k}: expected array')
+    out['skills'] = [_string(x, 'skills[]', True) for x in data.get('skills', [])]
+    if len(out['skills']) != len(set(s.casefold() for s in out['skills'])):
+        raise ProfileError('Duplicate skills')
+    out['experience'] = []
+    for i, item in enumerate(data.get('experience', [])):
+        if not isinstance(item, dict):
+            raise ProfileError(f'experience[{i}]: expected object')
+        if set(item) - {'company','position','start','end','location','bullets'}:
+            raise ProfileError(f'experience[{i}]: unknown fields')
+        entry = {k: _string(item.get(k,''), f'experience[{i}].{k}', k in ('company','position','start'))
+                 for k in ('company', 'position','start','end','location')}
+        if not isinstance(item.get('bullets',[]), list):
+            raise ProfileError(f'experience[{i}].bullets: expected array')
+        entry['bullets'] = [_string(v, f'experience[{i}].bullets[]', True) for v in item.get('bullets', [])]
+        s, e = _month(entry['start']), _month(entry['end'])
+        if s and e and e < s:
+            raise ProfileError(f'experience[{i}]: end before start')
+        out['experience'].append(entry)
+    out['education'] = []
+    for i, item in enumerate(data.get('education', [])):
+        if not isinstance(item, dict):
+            raise ProfileError(f'education[{i}]: expected object')
+        if set(item) - {'institution','degree','start','end','details'}:
+            raise ProfileError(f'education[{i}]: unknown fields')
+        entry = {k: _string(item.get(k,''), f'education[{i}].{k}', k in ('institution','degree'))
+                 for k in ('institution', 'degree','start','end','details')}
+        out['education'].append(entry)
+    out['certifications'] = [_string(v, 'certifications[]',True) for v in data.get('certifications', [])]
+    if not (out['experience'] or out['education']):
+        raise ProfileError('At least one experience or education record is required')
+    return out

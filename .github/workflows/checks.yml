@@ -1,0 +1,35 @@
+name: ResumeOps checks
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    env:
+      RESUME_BUILDER_REQUIRE_BROWSER: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build and browser dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y texlive-latex-extra lmodern poppler-utils
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Run builder and dashboard checks
+        run: |
+          python -m unittest discover -s tests -v
+          python dashboard/check_dashboard.py .
+          python dashboard/check_cloudflare_access.py
+      - name: Build source-only staging archive
+        run: git archive --format=zip -o "${RUNNER_TEMP}/resumeops-source.zip" HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: resumeops-staging-source
+          path: ${{ runner.temp }}/resumeops-source.zip

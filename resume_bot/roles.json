@@ -1,0 +1,134 @@
+{
+  "roles": [
+    {
+      "id": "azure-data-engineer",
+      "name": "Azure Data Engineer",
+      "keywords": [
+        "Azure Data Factory", "Azure Synapse Analytics", "Azure Databricks",
+        "Azure SQL Database", "Data Lake", "ETL", "Data Pipeline",
+        "Azure DevOps", "Python", "PySpark", "SQL", "Power BI",
+        "Data Warehousing", "Azure Functions", "Azure Storage",
+        "Data Modeling", "Azure Stream Analytics", "Cosmos DB"
+      ],
+      "titleVariations": [
+        "Azure Data Engineer",
+        "Senior Azure Data Engineer",
+        "Azure Big Data Engineer",
+        "Microsoft Azure Data Engineer",
+        "Cloud Data Engineer - Azure"
+      ]
+    },
+    {
+      "id": "frontend-developer",
+      "name": "Frontend Developer",
+      "keywords": [
+        "React.js", "Next.js", "JavaScript", "TypeScript", "HTML5", "CSS3",
+        "Redux", "Material UI", "Tailwind CSS", "REST API", "GraphQL",
+        "Responsive Design", "Jest", "Webpack", "Git", "Agile"
+      ],
+      "titleVariations": [
+        "Frontend Developer",
+        "Senior Frontend Developer",
+        "React.js Developer",
+        "UI Developer",
+        "Frontend Engineer"
+      ]
+    },
+    {
+      "id": "fullstack-developer",
+      "name": "Full Stack Developer",
+      "keywords": [
+        "React.js", "Node.js", "Express.js", "MongoDB", "SQL",
+        "REST API", "GraphQL", "Docker", "AWS", "Azure",
+        "TypeScript", "Redis", "Microservices", "CI/CD", "Git"
+      ],
+      "titleVariations": [
+        "Full Stack Developer",
+        "Senior Full Stack Developer",
+        "MERN Stack Developer",
+        "Full Stack Engineer",
+        "Software Engineer"
+      ]
+    },
+    {
+      "id": "automation-tester",
+      "name": "Automation Tester",
+      "keywords": [
+        "Selenium", "Playwright", "Cypress", "TestNG", "JUnit",
+        "API Testing", "Postman", "Java", "Python", "JavaScript",
+        "CI/CD", "Jenkins", "Git", "Agile", "Test Automation Framework"
+      ],
+      "titleVariations": [
+        "Automation Tester",
+        "Senior Automation Test Engineer",
+        "QA Automation Engineer",
+        "Test Automation Specialist",
+        "SDET"
+      ]
+    },
+    {
+      "id": "backend-developer",
+      "name": "Backend Developer",
+      "keywords": [
+        "Node.js", "Express.js", "Python", "Django", "Flask",
+        "REST API", "GraphQL", "MongoDB", "PostgreSQL", "MySQL",
+        "Redis", "Docker", "Kubernetes", "AWS", "Microservices"
+      ],
+      "titleVariations": [
+        "Backend Developer",
+        "Senior Backend Developer",
+        "Backend Engineer",
+        "API Developer",
+        "Server-Side Developer"
+      ]
+    },
+    {
+      "id": "devops-engineer",
+      "name": "DevOps Engineer",
+      "keywords": [
+        "Docker", "Kubernetes", "Jenkins", "GitLab CI/CD", "Terraform",
+        "AWS", "Azure", "Linux", "Shell Scripting", "Python",
+        "Ansible", "Monitoring", "Prometheus", "Grafana", "Git"
+      ],
+      "titleVariations": [
+        "DevOps Engineer",
+        "Senior DevOps Engineer",
+        "Site Reliability Engineer",
+        "Cloud DevOps Engineer",
+        "Infrastructure Engineer"
+      ]
+    },
+    {
+      "id": "cloud-engineer",
+      "name": "Cloud Engineer",
+      "keywords": [
+        "AWS", "Azure", "GCP", "Cloud Architecture", "Terraform",
+        "CloudFormation", "Lambda", "EC2", "S3", "VPC",
+        "IAM", "Security", "Networking", "Cost Optimization", "Migration"
+      ],
+      "titleVariations": [
+        "Cloud Engineer",
+        "Senior Cloud Engineer",
+        "Cloud Solutions Architect",
+        "Cloud Infrastructure Engineer",
+        "Multi-Cloud Engineer"
+      ]
+    },
+    {
+      "id": "ml-engineer",
+      "name": "Machine Learning Engineer",
+      "keywords": [
+        "Python", "TensorFlow", "PyTorch", "Scikit-learn", "Pandas",
+        "NumPy", "Machine Learning", "Deep Learning", "NLP", "Computer Vision",
+        "MLOps", "Model Deployment", "AWS SageMaker", "Azure ML", "Docker"
+      ],
+      "titleVariations": [
+        "Machine Learning Engineer",
+        "Senior ML Engineer",
+        "AI Engineer",
+        "Data Scientist",
+        "MLOps Engineer"
+      ]
+    }
+  ]
+}

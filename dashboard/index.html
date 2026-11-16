@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="dashboard-token" content="__TOKEN__">
+<title>Resume Builder · Operations</title><link rel="stylesheet" href="/dashboard.css">
+<script defer src="/dashboard.js"></script>
+<script defer src="/workflow.js"></script>
+</head>
+<body>
+<header><div class="brand"><span class="mark" aria-hidden="true">R</span> Resume Builder</div><span id="health" class="pill">Connecting</span></header>
+<main>
+<section id="active-workflow" class="panel workflow" aria-label="Candidate processing" hidden>
+<h2 id="active-candidate"></h2>
+<progress id="workflow-progress" max="100" value="0" aria-label="Candidate processing progress"></progress>
+<p id="workflow-stage" role="status"></p><small id="workflow-time"></small>
+</section>
+<section class="hero">
+<div><h1>Resume operations</h1><p id="heartbeat">Reading watcher status…</p></div>
+<form id="submit"><input type="file" id="candidate" aria-label="Candidate file" required><button type="submit">Import candidate</button><small>Word, PDF, text, images, or candidate JSON</small><progress id="import-progress" aria-label="Import progress" max="100" value="0" hidden></progress><small id="import-stage" role="status" hidden></small><small id="feedback" role="status"></small></form>
+</section>
+<section class="panel review" id="review" hidden>
+<div class="section-head"><h2>Review extracted candidate details</h2><button id="discard" type="button">Discard draft</button></div>
+<div class="review-grid"><label>Source text<textarea id="source" readonly></textarea></label><label>Candidate JSON<textarea id="draft" spellcheck="false"></textarea></label></div>
+<div class="section-head"><small id="review-feedback" role="status">Check names, roles and dates against the source.</small><button id="publish" type="button">Confirm and queue</button></div>
+</section>
+<details class="panel workflow" id="candidate-workspace">
+<summary>Create a role-targeted resume</summary>
+<form id="candidate-form">
+<div class="candidate-grid">
+<label>Full name<input name="full_name" required maxlength="120"></label>
+<label>Email<input name="email" type="email" required maxlength="254"></label>
+<label>Headline<input name="headline" maxlength="140"></label>
+<label>Phone<input name="phone" type="tel" maxlength="50"></label>
+<label>Location<input name="location" maxlength="150"></label>
+<label>LinkedIn<input name="linkedin" maxlength="250"></label>
+<label>GitHub<input name="github" maxlength="250"></label>
+<label>Target role<select name="role" required></select></label>
+<label>Template<select name="template" required></select></label>
+<label>Additional target keywords<textarea name="keywords" rows="2" placeholder="One per line"></textarea></label>
+<label>Confirmed skills<textarea name="skills" rows="2" placeholder="One per line"></textarea></label>
+<label>Certifications<textarea name="certifications" rows="2" placeholder="One per line"></textarea></label>
+</div>
+<p id="role-keywords"></p>
+<label>Professional summary<textarea name="summary" rows="3"></textarea></label>
+<div id="experience-entries"></div><button type="button" id="add-experience">Add experience</button>
+<div id="education-entries"></div><button type="button" id="add-education">Add education</button>
+<label class="verify-facts"><input name="verified" type="checkbox"> I confirm these candidate facts are accurate.</label>
+<div class="candidate-actions"><button type="submit" value="preview">Preview and score</button>
+<button type="submit" value="queue">Queue verified resume</button></div>
+<p id="candidate-feedback" role="status"></p>
+</form>
+<div id="candidate-preview" hidden><h3>Resume preview</h3><p id="preview-score"></p><p id="preview-keywords"></p><pre id="preview-content"></pre></div>
+</details>
+<section class="metrics" aria-label="Job counts">
+<div><span>Waiting</span><strong id="queued">—</strong></div><div><span>Completed jobs</span><strong id="ok">—</strong></div><div><span>Awaiting retry</span><strong id="failed">—</strong></div><div><span>Published revisions</span><strong id="published">—</strong></div>
+</section>
+<p id="alert" role="status" hidden></p>
+<nav aria-label="Dashboard sections"><button data-panel="inbox" aria-pressed="true">Inbox</button><button data-panel="outputs" aria-pressed="false">Resume outputs</button><button data-panel="logs" aria-pressed="false">Logs</button></nav>
+<section id="inbox" class="panel"><div class="section-head"><h2>Candidate inbox</h2><input id="filter" type="search" placeholder="Find a file" aria-label="Find an inbox file"></div><div class="scroll"><table><thead><tr><th>File</th><th>Status</th><th>Last activity</th></tr></thead><tbody id="jobs"></tbody></table></div></section>
+<section id="outputs" class="panel" hidden><div class="section-head"><h2>Resume revisions</h2><input id="output-filter" type="search" placeholder="Find a candidate" aria-label="Find a candidate"></div><div id="revisions" class="revision-list"></div></section>
+<section id="logs" class="panel" hidden><div class="section-head"><h2>Operations logs</h2><select id="log-select" aria-label="Log file"></select></div><pre id="log-content">Select an available log.</pre></section>
+</main>
+</body>
+</html>
