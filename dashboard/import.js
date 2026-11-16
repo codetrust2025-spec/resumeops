@@ -151,6 +151,9 @@
     stage('Imported ' + count + ' candidate sections. Select a role, then Continue to review and correct the prefilled details.', 100);
   }
 
+  document.getElementById('template-import').addEventListener('click', () => {
+    fileInput.click(); // Same-page picker: do not navigate to /operations.
+  });
   fileInput.addEventListener('change', () => {
     button.disabled = busy || !fileInput.files.length;
     progress.hidden = true;
