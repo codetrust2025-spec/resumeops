@@ -7,16 +7,30 @@
 <title>Resume builder · ResumeOps</title>
 <link rel="stylesheet" href="/builder.css">
 <script defer src="/builder.js"></script>
+<script defer src="/import.js"></script>
 </head>
 <body>
 <header class="masthead"><div class="width header-inner">
 <a class="brand" href="/"><span aria-hidden="true">R</span> ResumeOps</a>
-<nav aria-label="Main navigation"><a href="/" aria-current="page">Builder</a><a href="#history">History</a><a href="/operations">Operations ↗</a></nav>
+<nav aria-label="Main navigation"><a href="/" aria-current="page">Builder</a><a href="#history">History</a></nav>
 </div></header>
 <main class="width">
 <section class="intro"><h1>Create a resume</h1><p>Choose a target role, enter verified facts, and generate a resume you can review and download.</p></section>
 <div class="layout">
 <section class="panel editor" aria-label="Resume builder">
+<section class="import-panel" aria-labelledby="import-title">
+<h2 id="import-title">Start with an existing resume</h2>
+<p>Upload a resume to prefill the steps below. Review all extracted facts before generating.</p>
+<div class="import-controls">
+<label for="resume-upload">Resume file
+<input id="resume-upload" type="file" accept=".pdf,.docx,.doc,.odt,.rtf,.txt,.md,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp,.json" aria-describedby="import-formats"></label>
+<button type="button" id="import-resume" disabled>Import and prefill</button>
+</div>
+<small id="import-formats">PDF, Word, TXT, Markdown, image, or candidate JSON · Maximum 12 MB (JSON 1 MB)</small>
+<progress id="resume-import-progress" max="100" value="0" aria-label="Resume import progress" hidden></progress>
+<p id="resume-import-status" role="status" aria-live="polite"></p>
+<details id="import-evidence" hidden><summary>Compare imported source text</summary><label>Original resume text<textarea id="import-source" readonly rows="7"></textarea></label></details>
+</section>
 <ol id="steps" class="steps" aria-label="Creation steps">
 <li aria-current="step"><span>1</span> Role</li><li><span>2</span> Personal details</li>
 <li><span>3</span> Experience</li><li><span>4</span> Review</li>
@@ -73,7 +87,7 @@
 <section class="panel template-panel"><h2>Selected template</h2>
 <div class="sheet" aria-hidden="true"><i></i><i></i><b></b><i></i><i></i><b></b><i></i><i></i><i></i></div>
 <h3 id="template-name">Standard</h3><p id="template-note">A readable single-column layout with room for experience.</p>
-<a href="/operations">Import an existing document ↗</a>
+<button type="button" id="template-import" class="text-link">Import an existing document</button>
 </section>
 <section class="panel activity" id="generation" hidden aria-live="polite"><h2>Generation progress</h2><progress id="job-progress" max="100" value="0"></progress><p id="job-stage"></p><small id="job-timestamp"></small></section>
 </aside>

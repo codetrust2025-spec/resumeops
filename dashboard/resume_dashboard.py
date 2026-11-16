@@ -320,6 +320,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                       '/operations': ('operations.html', 'text/html'),
                       '/builder.css': ('builder.css', 'text/css'),
                       '/builder.js': ('builder.js', 'text/javascript'),
+                      '/import.js': ('import.js', 'text/javascript'),
                       '/dashboard.css': ('dashboard.css', 'text/css'),
                       '/dashboard.js': ('dashboard.js', 'text/javascript'),
                       '/workflow.js': ('workflow.js', 'text/javascript')}

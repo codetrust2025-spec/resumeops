@@ -102,7 +102,7 @@ const entryFields = {
     ['end','Education end'],['details','Education details']],
 };
 
-function addEntry(kind) {
+function addEntry(kind, focus = true) {
   const entry = document.createElement('fieldset');
   entry.append(rows('legend',kind === 'experience' ? 'Work entry' : 'Education entry'));
   const grid = rows('div','','fields');
@@ -122,7 +122,7 @@ function addEntry(kind) {
   remove.addEventListener('click', () => entry.remove());
   entry.append(grid,remove);
   el(kind+'-entries').append(entry);
-  grid.querySelector('input').focus();
+  if (focus) grid.querySelector('input').focus();
 }
 el('add-experience').addEventListener('click', () => addEntry('experience'));
 el('add-education').addEventListener('click', () => addEntry('education'));
@@ -308,6 +308,17 @@ el('another').addEventListener('click', () => {
   el('experience-entries').replaceChildren();
   el('education-entries').replaceChildren();
   form.reset();
+  // Reset the inline source upload whenever a new candidate starts.
+  const importedFile = el('resume-upload');
+  if (importedFile) {
+    importedFile.value='';
+    el('import-resume').disabled=true;
+    el('resume-import-progress').hidden=true;
+    el('resume-import-progress').value=0;
+    el('resume-import-status').textContent='';
+    el('import-source').value='';
+    el('import-evidence').hidden=true;
+  }
   fields.role.value='';
   roleChanged();
   updateExperience();
