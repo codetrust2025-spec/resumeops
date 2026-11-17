@@ -6,7 +6,9 @@ const el = id => document.getElementById(id);
 const form = el('candidate');
 const fields = form.elements;
 const steps = [...form.querySelectorAll('[data-step]')];
-const token = document.querySelector('meta[name=dashboard-token]').content;
+let token = document.querySelector('meta[name=dashboard-token]').content;
+ResumeAuth.setToken(token);
+ResumeAuth.onToken(value => { token = value; });
 const STEP = {START:0, INPUT:1, ROLE:2, PERSONAL:3, EXPERIENCE:4, REVIEW:5, GENERATE:6, PROCESSING:7, RESULTS:8};
 const STEP_NAMES = ['Start','Input','Role','Personal details','Experience & education','Review',
   'Generate','Processing','Results'];
@@ -56,9 +58,9 @@ function forgetJob() {
 }
 
 async function request(path, payload) {
-  const response = await fetch(path, payload === undefined ? {} : {
-    method:'POST', headers:{'Content-Type':'application/json','X-Dashboard-Token':token},
-    body:JSON.stringify(payload),
+  // Session expiry pauses the call (nothing on the page is lost) and resumes it after sign-in.
+  const response = await ResumeAuth.call(path, payload === undefined ? {} : {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload),
   });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || 'The request failed.');
@@ -559,6 +561,7 @@ form.addEventListener('submit', async event => {
     queuedAt = Date.now();
     seenWatched = false;
     rememberJob(result.name, JSON.stringify(submitted));
+    forgetDraft();
     el('result-success').hidden = true;
     ++selection;               // the previous result stays in history; hide it so it is not mistaken for this job
     shownRevision = '';
@@ -595,7 +598,7 @@ function showAts(ats) {
     rows('h3', 'Improvement suggestions'), suggestions.children.length ? suggestions : rows('p', 'No rubric gaps detected.'));
 }
 function setTileLink(tile, href, note) {
-  if (href) { tile.href = href; tile.removeAttribute('aria-disabled'); tile.removeAttribute('tabindex'); }
+  if (href) { tile.href = href; tile.target = '_blank'; tile.rel = 'noopener noreferrer'; tile.removeAttribute('aria-disabled'); tile.removeAttribute('tabindex'); }
   else { tile.removeAttribute('href'); tile.setAttribute('aria-disabled', 'true'); tile.tabIndex = -1; }
   if (note !== undefined) el('overleaf-note').textContent = note;
 }
@@ -651,7 +654,7 @@ async function showRevision(revision, navigate = true) {
   shownRevision = revision.key;
   try {
     const detail = await request(params('/api/revision', {key:revision.key}));
-    const source = await fetch(artifact(revision.key, 'main.tex'));
+    const source = await ResumeAuth.call(artifact(revision.key, 'main.tex'));
     if (!source.ok) throw new Error('LaTeX source is unavailable.');
     const latex = await source.text();
     if (ticket !== selection) return false;
@@ -659,12 +662,15 @@ async function showRevision(revision, navigate = true) {
     el('preview-text').replaceChildren(rows('p', profileText(detail.profile), 'review-line'));
     el('latex-source').textContent = latex;
     el('download-latex').href = artifact(revision.key, 'main.tex', true);
+    el('download-latex').target = '_blank';
     el('copy-status').textContent = '';
     const links = [];
     for (const name of ['resume.pdf', 'overleaf.pdf']) {
       if (!revision.files.includes(name)) continue;
       const link = rows('a', name === 'resume.pdf' ? 'Download PDF' : 'Download verified Overleaf PDF', 'button secondary');
       link.href = artifact(revision.key, name, true);
+      link.target = '_blank';   // a sign-in redirect opens there, never replacing this page
+      link.rel = 'noopener';
       links.push(link);
     }
     if (revision.url) {
@@ -705,6 +711,7 @@ el('copy-latex').addEventListener('click', async () => {
 
 /* ---------- Reset ---------- */
 function clearForm() {
+  forgetDraft();
   el('description').value = '';
   el('experience-entries').replaceChildren();
   el('education-entries').replaceChildren();
@@ -1026,6 +1033,44 @@ async function applyImport(data) {
   showStep(STEP.ROLE);
 }
 
+/* ---------- Draft safety: survive a reload or re-sign-in without losing typed details ---------- */
+const DRAFT_KEY = 'resumeops.draft';   // sessionStorage: this tab only, cleared on Generate or reset
+let draftTimer = 0;
+function saveDraft() {
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(() => {
+    if (activeStep < STEP.INPUT || activeStep > STEP.GENERATE) return;
+    const data = payload();
+    const filled = Object.values(data.profile).some(value => Array.isArray(value) ? value.length : value) || data.target.role;
+    if (!filled) return;
+    try {
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify({data, source: el('import-source').value,
+        step: activeStep, yearsTouched, saved: Date.now()}));
+    } catch {}
+  }, 400);
+}
+function forgetDraft() {
+  clearTimeout(draftTimer);
+  try { sessionStorage.removeItem(DRAFT_KEY); } catch {}
+}
+form.addEventListener('input', saveDraft);
+form.addEventListener('change', saveDraft);
+async function restoreDraft(navigate = true) {
+  let draft = null;
+  try { draft = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || 'null'); } catch {}
+  if (!draft || !draft.data || !draft.data.profile) return false;
+  await applyImport({profile: draft.data.profile, target: draft.data.target, source: draft.source || ''});
+  yearsTouched = Boolean(draft.yearsTouched);
+  if (draft.data.target && Number.isInteger(draft.data.target.experience_years)) {
+    fields.years.value = String(draft.data.target.experience_years);
+    updateExperience();
+  }
+  furthestStep = Math.max(furthestStep, Math.min(draft.step || STEP.ROLE, STEP.REVIEW));
+  showStep(navigate ? Math.min(Math.max(draft.step || STEP.ROLE, STEP.ROLE), STEP.EXPERIENCE) : STEP.PROCESSING, false);
+  feedback('Unsaved candidate details were restored on this tab. Review them before generating.');
+  return true;
+}
+
 /* ---------- Start up ---------- */
 applyLayout();
 updateExperience();
@@ -1048,6 +1093,7 @@ async function init() {
     fields.role.replaceChildren(new Option('Select a role', ''), ...roles.map(role => new Option(role.name, role.id)));
     fields.template.replaceChildren(...Object.entries(templates).map(([key, name]) => new Option(name, key)));
     showTemplate();
+    await restoreDraft(!(restored && restored.name));
   } catch (error) {
     feedback(error.message, true);
   }
