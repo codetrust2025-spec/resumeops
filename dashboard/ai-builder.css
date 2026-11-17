@@ -1,5 +1,6 @@
 .ai-layout{max-width:860px;margin:auto;padding-bottom:3rem}
-.ai-nav{display:flex;justify-content:space-between;align-items:center;min-height:3.25rem}
+.ai-nav{display:flex;justify-content:space-between;align-items:center;min-height:3.25rem;gap:.5rem}
+.ai-nav-actions{display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;gap:.75rem}
 .ai-panel{background:white;border:1px solid #d5deec;border-radius:1rem;padding:clamp(1rem,4vw,2rem);margin-bottom:1rem}
 .ai-panel h2{margin-top:0}
 .ai-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem;margin:1rem 0}
