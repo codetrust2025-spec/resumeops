@@ -28,19 +28,34 @@ async function claimEditor() {
 let active = false;
 const pause = () => new Promise(resolve => setTimeout(resolve, 1200));
 const newId = () => crypto.randomUUID().replaceAll('-','');
-function showProgress(title, message, kind = 'working', metrics = null) {
+function showProgress(title, message, kind = 'working', metrics = null, progress = null) {
   const panel = ai('ai-progress');
   panel.hidden = false;
   panel.dataset.progressState = kind;
   ai('ai-progress-title').textContent = title;
-  // Avoid repeating identical announcements to screen-reader users on each poll.
+  // Keep screen-reader updates stable while frequent Ollama stream metrics arrive.
   if (ai('ai-status').textContent !== message) ai('ai-status').textContent = message;
-  ai('ai-progress-value').textContent = kind === 'complete' ? '100%' : kind === 'error' ? '!' : '';
+  const reported = progress && Number.isFinite(progress.percent) ? progress.percent : 0;
+  const percent = kind === 'complete' ? 100 : Math.max(0, Math.min(99, reported));
+  const ring = ai('ai-progress-ring');
+  ring.setAttribute('aria-valuenow', String(percent));
+  ai('ai-progress-value').textContent = percent + '%';
+  ring.querySelector('.ai-ring-fill').style.strokeDashoffset = String(175.93 * (1 - percent / 100));
+  const completed = kind === 'complete' ? 5 : progress?.steps_completed ?? 0;
+  const total = progress?.steps_total ?? 5;
+  const fields = progress?.fields_emitted ?? 0;
+  const fieldTotal = progress?.fields_total ?? 0;
+  const stepText = kind === 'complete' ? '5 of 5 stages complete' :
+    'Step ' + Math.min(total, completed + 1) + ' of ' + total +
+    ' · ' + completed + ' completed' +
+    (fields && fieldTotal ? ' · ' + fields + '/' + fieldTotal + ' AI fields emitted' : '');
+  ai('ai-progress-steps').textContent = kind === 'info' ? '' :
+    stepText + ' · Stage-based progress, not time remaining';
   const details = [];
   if (metrics && typeof metrics === 'object') {
     if (Number.isFinite(metrics.chars) && metrics.chars > 0)
       details.push(metrics.chars.toLocaleString() + ' characters generated');
-    // The API field is called "tokens" but records Ollama stream chunks, not token counts.
+    // Server "tokens" are Ollama stream chunks, not guaranteed tokenizer tokens.
     if (Number.isFinite(metrics.tokens) && metrics.tokens > 0)
       details.push(metrics.tokens.toLocaleString() + ' stream chunks');
     if (Number.isFinite(metrics.elapsed) && metrics.elapsed >= 0)
@@ -48,10 +63,11 @@ function showProgress(title, message, kind = 'working', metrics = null) {
   }
   ai('ai-progress-metrics').textContent = details.join(' · ');
 }
-const status = text => showProgress('Resume builder', text, 'info');
+const status = message => showProgress('Resume builder', message, 'info');
 function updateProgress(record, title) {
-  const stage = record.stage || (record.status === 'queued' ? 'Waiting for the import worker' : 'Processing resume');
-  showProgress(title, stage, 'working', record.metrics);
+  const stage = record.status === 'queued' ? 'Queued for the processing worker' :
+    record.stage || 'Processing resume';
+  showProgress(title, stage, 'working', record.metrics, record.progress);
 }
 
 function node(tag,text) {
