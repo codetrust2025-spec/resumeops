@@ -53,6 +53,7 @@ class Workspace:
         self.inbox = self.root / 'inbox'
         self.output = self.root / 'output'
         self.logs = self.root / 'logs'
+        self.approvals = self.root / 'approvals'
         self.inbox.mkdir(exist_ok=True)
         sys.path.insert(0, str(code_root.resolve() if code_root else self.root))
         from resume_bot.workflow import normalize_request
@@ -189,16 +190,32 @@ class Workspace:
         except (OSError, subprocess.SubprocessError) as exc:
             raise ValueError('Local document conversion failed. Try exporting the file as DOCX or text-based PDF.') from exc
 
-    def enqueue(self, data):
+    def enqueue(self, data, approval=None):
         profile, target = self.normalize(json.loads(data.decode('utf-8-sig')))
+        if target and target.get('approved') and approval is None:
+            raise ValueError('Only the AI review can mark a resume as candidate-approved')
+        if approval is not None:
+            if not target:
+                raise ValueError('An approved resume needs a target role')
+            target['approved'] = True
         request = {'profile': profile, 'target': target} if target else profile
         payload = json.dumps(request, ensure_ascii=False, indent=2).encode('utf-8')
         slug = re.sub(r'[^a-z0-9]+', '-', profile['full_name'].lower()).strip('-')[:45] or 'candidate'
         digest = hashlib.sha256(payload).hexdigest()
         target = self.inbox / f'{slug}-{digest}.json'
+        if approval is not None:
+            # The audit record is written before the job exists, so no job can run without one.
+            self.record_approval(target.name, payload, approval)
         if target.exists():
             return {'name': target.name, 'created': False}
-        fd, temporary = tempfile.mkstemp(prefix='.dashboard-', suffix='.tmp', dir=self.inbox)
+        if not self.publish(target, payload):
+            return {'name': target.name, 'created': False}
+        return {'name': target.name, 'created': True}
+
+    def publish(self, target, payload):
+        """Atomically create target with payload; never overwrite. Returns False if it already existed."""
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix='.dashboard-', suffix='.tmp', dir=target.parent)
         try:
             with os.fdopen(fd, 'wb') as stream:
                 stream.write(payload)
@@ -208,10 +225,29 @@ class Workspace:
                 # A hard link publishes the finished file atomically without overwriting a job.
                 os.link(temporary, target)
             except FileExistsError:
-                return {'name': target.name, 'created': False}
+                return False
         finally:
             Path(temporary).unlink(missing_ok=True)
-        return {'name': target.name, 'created': True}
+        return True
+
+    def record_approval(self, job, payload, approval):
+        """Append-only, permanent record of what the candidate approved for one inbox job."""
+        content = {'schema': 'resumeops-approval-1', 'job': job,
+                   'resume_sha256': hashlib.sha256(payload).hexdigest(),
+                   'operation': approval['operation'], 'approved_by': approval['approved_by'],
+                   'attested': True, 'claims': approval['claims']}
+        identity = hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()[:32]
+        record = {**content, 'record_id': identity,
+                  'recorded_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+        target = self.approvals / Path(job).stem / f'{identity}.json'
+        self.publish(target, json.dumps(record, ensure_ascii=False, indent=2).encode('utf-8'))
+        return target
+
+    def approvals_for(self, job):
+        folder = self.approvals / Path(job).stem
+        if not re.fullmatch(r'[a-z0-9-]+-[0-9a-f]{64}\.json', job) or not folder.is_dir():
+            return []
+        return sorted((read_json(path) for path in folder.glob('*.json')), key=lambda item: item and item.get('recorded_at') or '')
 
     def revision_key(self, output):
         path = Path(output) if output else None
@@ -558,7 +594,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                         durable.freeze_review(account, operation, {'resume': payload, 'claims': reviewed['approved_claims']})
                     except ImportConflict as exc:
                         return self.send_json({'error': str(exc)}, 409)
-                    result = workspace.enqueue(json.dumps(payload).encode())
+                    result = workspace.enqueue(json.dumps(payload).encode(), approval={
+                        'operation': operation, 'approved_by': account, 'claims': reviewed['approved_claims']})
                     return self.send_json(result, 201 if result['created'] else 200)
                 if self.path == '/api/retry':
                     from resume_bot.pipeline import request_retry
@@ -615,6 +652,8 @@ def main():
     parser.add_argument('--web-url', help='Dashboard HTTPS origin on Cloudflare')
     parser.add_argument('--access-team', help='Cloudflare Zero Trust team name')
     parser.add_argument('--access-audience', help='Cloudflare Access application AUD tag')
+    parser.add_argument('--ai-first', action='store_true',
+                        help='Serve the AI builder at / (the classic builder stays at /workflow)')
     args = parser.parse_args()
     web_url = args.web_url.rstrip('/') if args.web_url else None
     access_options = (web_url, args.access_team, args.access_audience)
@@ -642,7 +681,7 @@ def main():
     origin = f'http://127.0.0.1:{args.port}'
     request_handler = handler(
         Workspace(args.root, args.model, args.code_root), origin, secrets.token_hex(32), phone_url, args.phone_user,
-        web_origin=web_url, access_verifier=verifier, ai_first=True,
+        web_origin=web_url, access_verifier=verifier, ai_first=args.ai_first,
     )
     request_handler.resume_imports()
     server = ThreadingHTTPServer(('127.0.0.1', args.port), request_handler)

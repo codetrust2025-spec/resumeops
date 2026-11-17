@@ -16,6 +16,7 @@ from resume_dashboard import Workspace, handler
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from resume_bot.ingest import read_resume_text
+from resume_bot.claim_audit import claim_violations, unaccounted_pdf_words
 from resume_bot.pipeline import scan
 
 DRAFT = {
@@ -28,15 +29,25 @@ DRAFT = {
 }
 
 
-def verify_completed(page, workspace, candidate, *, education_first):
-    scan(workspace.inbox, workspace.output, once=True, polish_enabled=False)
+def verify_completed(page, workspace, candidate, *, education_first, builder):
+    job = next(path for path in workspace.inbox.glob('*.json')
+               if json.loads(path.read_text(encoding='utf-8'))['profile']['full_name'] == candidate)
+    request = json.loads(job.read_text(encoding='utf-8'))
+    assert request['target']['approved'] is True
+    # Production runs the watcher with AI polishing on; approved resumes must still bypass it.
+    with patch('resume_bot.pipeline.polish', side_effect=AssertionError('approved resume was reworded')):
+        scan(workspace.inbox, workspace.output, once=True, polish_enabled=True)
     expect(page.locator('#result-success')).to_be_visible(timeout=15000)
+    records = workspace.approvals_for(job.name)
+    assert len(records) == 1, records
+    assert not claim_violations(request['profile'], records[0]), claim_violations(request['profile'], records[0])
     with page.expect_download() as pdf:
         page.locator('#tile-pdf').click()
     downloaded = workspace.root / 'browser-download.pdf'
     pdf.value.save_as(downloaded)
     text = read_resume_text(downloaded)
     assert candidate in text and 'Python' in text, text
+    assert not unaccounted_pdf_words(text, request['profile']), (unaccounted_pdf_words(text, request['profile']), text)
     for excluded in ('Unconfirmed Vendor Tool', 'Increased revenue', 'Unbuilt portfolio idea',
                      'Unearned certification', 'Testing', DRAFT['professional_summary']):
         assert excluded not in text, (excluded, text)
@@ -50,16 +61,17 @@ def verify_completed(page, workspace, candidate, *, education_first):
     assert b'\\documentclass' in latex.value.path().read_bytes()
     page.locator('#nav-history').click()
     expect(page.locator('#history').get_by_text(candidate, exact=True)).to_be_visible()
-    page.goto(page.url.split('/workflow')[0] + '/')
+    page.goto(page.url.split('/workflow')[0] + builder)
     expect(page.get_by_label('Full name')).to_have_value('')
 
 
-def check():
+def check(ai_first=False):
+    builder = '/' if ai_first else '/ai-builder'
     with tempfile.TemporaryDirectory(prefix='resumeops-ai-') as directory:
         workspace = Workspace(Path(directory), code_root=ROOT)
         with ThreadingHTTPServer(('127.0.0.1', 0), handler(workspace, '', 'test-token')) as server:
             origin = f'http://127.0.0.1:{server.server_port}'
-            server.RequestHandlerClass = handler(workspace, origin, 'test-token', ai_first=True)
+            server.RequestHandlerClass = handler(workspace, origin, 'test-token', ai_first=ai_first)
             threading.Thread(target=server.serve_forever, daemon=True).start()
             try:
                 with patch('resume_bot.ollama.Ollama.generate', return_value=DRAFT), sync_playwright() as pw:
@@ -80,11 +92,14 @@ def check():
 
                     page.context.route(origin + '/**', route_access)
                     page.add_init_script('window.open = () => null')
-                    page.goto(origin + '/')
+                    home = page.request.get(origin + '/').text()
+                    assert ('id="ai-form"' in home) is ai_first and ('id="candidate"' in home) is not ai_first
+                    assert 'id="candidate"' in page.request.get(origin + '/workflow').text()
+                    page.goto(origin + builder)
                     page.get_by_label('Full name').fill('Previous Candidate')
                     page.get_by_label('Phone').fill('555-0101')
                     second = page.context.new_page()
-                    second.goto(origin + '/')
+                    second.goto(origin + builder)
                     expect(second.get_by_role('status')).to_contain_text('open in another tab')
                     assert not second.get_by_label('Full name').count()
                     second.close()
@@ -154,11 +169,11 @@ def check():
                     with closing(sqlite3.connect(workspace.root / '.resumeops-imports.sqlite3')) as db:
                         saved = json.loads(db.execute('SELECT result FROM imports WHERE id=?', (request['id'],)).fetchone()[0])
                     assert saved['_queued_review']['claims'][0]['provenance'] == 'verified_from_source'
-                    verify_completed(page, workspace, 'AI First Synthetic', education_first=True)
+                    verify_completed(page, workspace, 'AI First Synthetic', education_first=True, builder=builder)
 
                     desktop = browser.new_context(viewport={'width': 1360, 'height': 960})
                     senior = desktop.new_page()
-                    senior.goto(origin + '/')
+                    senior.goto(origin + builder)
                     senior.get_by_label('Target role').select_option('fullstack-developer')
                     senior.get_by_label('Total years of experience').fill('9')
                     senior.get_by_label('Full name').fill('Senior Synthetic')
@@ -180,13 +195,15 @@ def check():
                     senior.get_by_role('button', name='Preview and check ATS').click()
                     senior.get_by_role('button', name='Generate resume').click()
                     senior.wait_for_url(origin + '/workflow')
-                    verify_completed(senior, workspace, 'Senior Synthetic', education_first=False)
+                    verify_completed(senior, workspace, 'Senior Synthetic', education_first=False, builder=builder)
                     browser.close()
             finally:
                 server.shutdown()
                 server.RequestHandlerClass.stop_imports()
-    print('AI-first mobile browser, same-tab Access recovery, approved-only ATS, immutable queue, and replay passed.')
+    print(f"AI builder at {builder}: mobile, same-tab Access recovery, approved-only ATS, immutable queue, replay, "
+          "verbatim approved render, permanent approval record, and full PDF claim audit passed.")
 
 
 if __name__ == '__main__':
-    check()
+    check(ai_first=False)  # Phase 1: classic builder at /, AI builder at /ai-builder
+    check(ai_first=True)   # Phase 2: AI builder at /, classic builder at /workflow

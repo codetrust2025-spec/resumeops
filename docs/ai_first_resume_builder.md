@@ -1,8 +1,8 @@
 # ResumeOps: AI-first resume builder (implementation contract)
 
-Status: **integration branch, pending release verification**. The dashboard serves the
-AI-first intake at its root and uses the existing workflow view for progress, verified
-outputs and history. This branch incorporates PR #17 for testing; review and rollout
+Status: **integration branch, pending release verification**. The AI-first intake is served
+at `/ai-builder`; it uses the existing workflow view for progress, verified outputs and
+history. This branch incorporates PR #17 for testing; review and rollout
 of that dependency remain independent release gates.
 
 
@@ -61,6 +61,34 @@ Do not combine React + Angular, AWS + Azure, databases, or other incompatible st
 - Role keywords are attributed to the curated ResumeOps catalog. External keyword
   attribution requires terms from an authorized source with its URL and retrieval date.
 - The dashboard recovers approved work through the PR #17 Access flow.
+
+## Two-phase rollout
+
+The supervisor that is already running in production checks for the classic builder at `/`
+and only learns new checks when its process restarts. The release therefore ships in two phases:
+
+1. **Phase 1 (default).** `/` keeps the classic builder, `/ai-builder` serves the AI-first
+   builder, `/workflow` serves the classic builder. This passes the running supervisor's
+   unchanged health check. The new supervisor additionally verifies `/ai-builder` and its
+   assets whenever a release ships them.
+2. **Phase 2 (owner-run).** After an administrator restarts the supervisor task, set
+   `"ai_first": true` in `dashboard-config.json`. The supervisor then starts the dashboard
+   with `--ai-first`, serving the AI builder at `/` and the classic builder at `/workflow`.
+   Removing the key (or setting it to `false`) and restarting returns to Phase 1.
+
+## Approval records and claim audit
+
+- An approved resume is queued with `target.approved: true`, which only `/api/ai-queue` can
+  set. The watcher renders it exactly as approved and never applies AI polishing to it; the
+  usual fact, LaTeX and PDF verification still runs.
+- Before the job is created, the dashboard writes a permanent record to
+  `approvals/<job>/<record-id>.json` in the data root: job name, resume SHA-256, operation,
+  hashed approver identity, attestation, timestamp and every approved claim with its
+  provenance. Records are created with an atomic no-overwrite link; replays are deduplicated
+  and a different approval adds a new record. They are not part of the 24-hour import store.
+- `resume_bot/claim_audit.py` checks that each summary, skill, responsibility, project detail,
+  certification and achievement traces to an approved claim, and that every word in the PDF
+  comes from the approved request or fixed template headings.
 
 ## Release gates
 

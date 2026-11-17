@@ -57,14 +57,28 @@ def fetch(port, path, host=None):
 
 def health(port, config):
     mime, homepage = fetch(port, '/')
-    ai_first = b'id="ai-form"' in homepage
-    if mime != 'text/html' or (not ai_first and b'id="candidate"' not in homepage):
+    ai_homepage = b'id="ai-form"' in homepage
+    if mime != 'text/html' or (not ai_homepage and b'id="candidate"' not in homepage):
         raise RuntimeError('/: missing expected builder')
     assets = [
         ('/dashboard.js', 'text/javascript', b'function'),
         ('/dashboard.css', 'text/css', b'{'),
     ]
-    if ai_first:
+    ai_builder = ai_homepage
+    if not ai_homepage:
+        # Phase 1: the classic builder stays at /, and a release that ships the AI builder
+        # must also serve it completely at /ai-builder. Older releases return 404 there.
+        try:
+            mime, page = fetch(port, '/ai-builder')
+        except HTTPError as error:
+            if error.code != 404:
+                raise
+            page = None
+        if page is not None:
+            if mime != 'text/html' or b'id="ai-form"' not in page:
+                raise RuntimeError('/ai-builder: missing expected builder')
+            ai_builder = True
+    if ai_builder:
         assets.extend([
             ('/ai-builder.js', 'text/javascript', b'function'),
             ('/ai-builder.css', 'text/css', b'.ai-layout'),
@@ -72,7 +86,7 @@ def health(port, config):
             ('/auth-renewed.js', 'text/javascript', b'BroadcastChannel'),
             ('/workflow', 'text/html', b'id="candidate"'),
         ])
-    if ai_first or b'/builder.js' in homepage:
+    if ai_builder or b'/builder.js' in homepage:
         assets.extend([
             ('/builder.js', 'text/javascript', b'function'),
             ('/builder.css', 'text/css', b'.masthead'),
@@ -108,6 +122,7 @@ def spawn(name, port, config, output):
         sys.executable, '-u', str(folder / 'resume_dashboard.py'), '--root', str(project),
         '--port', str(port), '--model', config['model'], '--web-url', config['web_url'],
         '--access-team', config['team'], '--access-audience', config['audience'],
+        *(['--ai-first'] if config.get('ai_first') is True else []),
     ], cwd=folder, stdout=output, stderr=subprocess.STDOUT, env=env)
 
 def stop(process):

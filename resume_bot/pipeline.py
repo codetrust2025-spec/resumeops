@@ -145,6 +145,11 @@ def process(source, output_root, *, ai=None, polish_enabled=True, overleaf=False
 def _process(source, original_source, output_root, *, ai, polish_enabled, overleaf,
              browser_profile, max_pages, refresh_overleaf, t):
     source_digest = _source_digest(source)
+    if source.suffix == '.json' and polish_enabled:
+        # Candidate-approved resumes are rendered exactly as approved; AI may not reword them.
+        request_target = normalize_request(_read_json(source))[1]
+        if request_target and request_target.get('approved'):
+            polish_enabled = False
     uses_ai = polish_enabled or source.suffix != '.json'
     ai = (ai or Ollama()) if uses_ai else None
     model_name = getattr(ai, 'model', '') if uses_ai else 'disabled'
@@ -231,7 +236,8 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
             (f"{runtime['gpu_percent']}% of {runtime['model']} in GPU memory" if runtime else
              'Ollama did not report GPU placement')))
     else:
-        t.skip('ai', 'AI polishing is disabled; candidate text used as supplied')
+        t.skip('ai', 'Candidate-approved content rendered exactly as approved' if target and target.get('approved')
+               else 'AI polishing is disabled; candidate text used as supplied')
     t.enter('checks', 'Checking generated content against the candidate input')
     _verify_cached_profile(original, profile, years)
     t.units_done(1, 2, 'Every tailored line is grounded in the candidate input')
