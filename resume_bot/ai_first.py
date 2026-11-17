@@ -159,7 +159,7 @@ def experience_strategy(years):
     return '8 or more years: emphasize evidenced architecture, technical direction and impact. Do not assume management.'
 
 
-def suggest_sections(candidate, ai, *, evidence=None, market_terms=None, requirements=None):
+def suggest_sections(candidate, ai, *, evidence=None, market_terms=None, requirements=None, on_progress=None):
     """Get untrusted AI suggestions for review; never enqueue or render a resume.
 
     evidence: text extracted from a candidate's uploaded resume; the server must distinguish
@@ -216,7 +216,7 @@ def suggest_sections(candidate, ai, *, evidence=None, market_terms=None, require
         json.dumps(market_terms, ensure_ascii=False) +
         '\nPUBLIC ROLE REQUIREMENTS (context only): ' + json.dumps(requirements, ensure_ascii=False)
     )
-    raw = generate(ai, instructions)
+    raw = generate(ai, instructions, on_progress=on_progress)
     if not isinstance(raw, dict):
         raise IntakeError('Ollama returned an invalid suggestion document')
     raw_summary = _string(raw.get('professional_summary', ''), 'summary', 2500)
