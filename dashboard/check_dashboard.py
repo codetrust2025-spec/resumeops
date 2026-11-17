@@ -83,11 +83,13 @@ class DashboardTest(unittest.TestCase):
                 progress_headers = {**draft_headers, 'X-Resume-Import-ID': 'a' * 32}
                 progress_path = '/api/import-progress?id=' + 'a' * 32
 
-                def verify_progress(*args, for_review):
+                def verify_progress(*args, for_review, on_progress=None):
                     self.assertTrue(for_review)
                     with request(progress_path, headers=headers) as response:
                         self.assertEqual(json.load(response)['stage'],
                                          'Extracting candidate details with Ollama')
+                    # Streamed Ollama counters are passed through as measured metrics.
+                    on_progress({'phase': 'generating', 'chars': 120, 'chunks': 30, 'elapsed': 3.0})
                     with self.assertRaises(HTTPError) as denied_progress:
                         request(progress_path)
                     self.assertEqual(denied_progress.exception.code, 403)

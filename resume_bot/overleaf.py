@@ -72,8 +72,14 @@ def _compile_and_download(page, destination):
     event.value.save_as(str(destination))
 
 
+# Browser steps; on_step(done, current) reports how many finished and what is running now.
+OVERLEAF_STEP_COUNT = 6
+
+
 def import_zip(zip_path, project_name, browser_profile, *, pdf_path,
-               saved_url=None, headless=True, timeout_ms=90000):
+               saved_url=None, headless=True, timeout_ms=90000, on_step=lambda done, label: None):
+    """``on_step(done, current)``: steps finished out of OVERLEAF_STEP_COUNT and the running step.
+    Compiling and downloading happen inside one editor action, so they finish together."""
     try:
         from playwright.sync_api import sync_playwright, Error as PlaywrightError
     except ImportError as exc:
@@ -88,9 +94,11 @@ def import_zip(zip_path, project_name, browser_profile, *, pdf_path,
         if journal.exists() and not saved_url:
             saved_url = json.loads(journal.read_text(encoding='utf-8')).get('url')
         try:
+            on_step(0, 'Opening authorized browser session')
             with sync_playwright() as playwright:
                 context = playwright.chromium.launch_persistent_context(
                     str(profile), channel="chrome", headless=headless, accept_downloads=True)
+                on_step(1, 'Opening Overleaf project')
                 try:
                     page = context.pages[0] if context.pages else context.new_page()
                     page.set_default_timeout(timeout_ms)
@@ -120,11 +128,14 @@ def import_zip(zip_path, project_name, browser_profile, *, pdf_path,
                                 upload.set_input_files(str(named))
                                 page.wait_for_url(EDITOR, wait_until='domcontentloaded')
                             status = 'uploaded'
+                    on_step(3, 'Waiting for the Overleaf editor')
                     if not _editor_url(page.url):
                         raise OverleafError('Overleaf editor unavailable; check the authorized session')
                     url = page.url
                     write_json(journal, {'project_name': project_name, 'state': 'editor', 'url': url})
+                    on_step(4, 'Compiling on Overleaf and downloading the PDF')
                     _compile_and_download(page, pdf_path)
+                    on_step(6, 'Overleaf PDF downloaded')
                     return {'status': status, 'project_name': project_name, 'url': url}
                 finally:
                     context.close()

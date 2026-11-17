@@ -1,4 +1,5 @@
 """Extract source text and build source-evidenced fields; fail closed on unsupported/unclear input."""
+from .ollama import generate
 import json
 import re
 import subprocess
@@ -89,7 +90,7 @@ def _review_schema():
     return obj(fields)
 
 
-def extract_profile(source, ai, *, for_review=False):
+def extract_profile(source, ai, *, for_review=False, on_progress=None):
     """The model must quote source spans for every fact. All claims get substring validation."""
     prompt = '''Return ONLY a JSON object describing this candidate's actual resume, NOT an improved version.
 For every individual factual field use {"value":"EXACT verbatim substring from input","evidence":"EXACT surrounding substring that includes value"}.
@@ -110,9 +111,9 @@ INPUT:
             'Use short verbatim quotes. Set evidence equal to value when possible. '
             'Include at most three short bullets per role, and leave uncertain fields blank.\nINPUT:\n',
             1)
-        data = ai.generate(prompt, schema=_review_schema())
+        data = generate(ai, prompt, schema=_review_schema(), on_progress=on_progress)
     else:
-        data = ai.generate(prompt)
+        data = generate(ai, prompt, on_progress=on_progress)
 
     def read_field(field, required=False):
         try:

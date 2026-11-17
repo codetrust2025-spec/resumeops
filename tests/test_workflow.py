@@ -80,7 +80,10 @@ class WorkflowTests(unittest.TestCase):
                        side_effect=DatabaseUnavailable('Database is unavailable')):
                 result = scan(inbox, root / 'output', **opts)['job.json']
             self.assertTrue(result['blocked'])
-            self.assertEqual(result['percent'], 95)
+            # The MongoDB save is part of "Verify final outputs and save evidence" (93-99%):
+            # the job stops there and never reports 100%.
+            self.assertEqual(result['failed_stage'], 'verify')
+            self.assertTrue(93 <= result['percent'] <= 99, result['percent'])
             output = next((root / 'output').glob('*/*/resume.pdf'))
             previous = output.read_bytes()
             with patch('resume_bot.pipeline.time.time', return_value=time.time() + 121), patch(

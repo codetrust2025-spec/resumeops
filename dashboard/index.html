@@ -6,6 +6,7 @@
 <meta name="dashboard-token" content="__TOKEN__">
 <title>Resume builder · ResumeOps</title>
 <link rel="stylesheet" href="/builder.css">
+<script defer src="/live.js"></script>
 <script defer src="/builder.js"></script>
 <script defer src="/import.js"></script>
 </head>
@@ -89,11 +90,11 @@
 <h3 id="template-name">Standard</h3><p id="template-note">A readable single-column layout with room for experience.</p>
 <button type="button" id="template-import" class="text-link">Import an existing document</button>
 </section>
-<section class="panel activity" id="generation" hidden aria-live="polite"><h2>Generation progress</h2><progress id="job-progress" max="100" value="0"></progress><p id="job-stage"></p><small id="job-timestamp"></small></section>
+<section class="panel activity live" id="generation" hidden aria-live="polite" aria-atomic="false"><div class="live-head"><h2 id="job-title">Processing Resume — 0%</h2><span id="job-state" class="live-state"></span></div><progress id="job-progress" max="100" value="0" aria-label="Resume generation progress"></progress><dl class="live-grid"><dt>Stage</dt><dd id="job-stage"></dd><dt>Elapsed</dt><dd id="job-elapsed">00:00</dd><dt>Status</dt><dd id="job-status"></dd></dl><p id="job-detail" class="live-detail"></p><ul id="job-warnings" class="live-warnings"></ul><ol id="job-stages" class="live-stages" aria-label="Processing stages"></ol><div class="live-foot"><small id="job-timestamp"></small><span class="actions"><button type="button" id="job-next" class="secondary">Start next candidate</button><button type="button" id="job-retry" class="secondary" hidden>Retry now</button></span></div><p id="job-others" class="live-others" hidden></p></section>
 </aside>
 </div>
 <section class="panel results" id="results" hidden>
-<div class="result-head"><div><h2>Resume results</h2><p id="result-name"></p></div><button type="button" class="secondary" id="another">Generate another</button></div>
+<div class="result-head"><div><h2>Resume results</h2><p id="result-success" class="success" role="status" hidden>Resume completed successfully. The builder is ready for the next candidate.</p><p id="result-name"></p></div><button type="button" class="secondary" id="another">Generate another</button></div>
 <div role="tablist" aria-label="Resume result views" class="tabs"><button type="button" role="tab" id="tab-preview" aria-controls="result-preview" aria-selected="true">Resume Preview</button><button type="button" role="tab" id="tab-latex" aria-controls="result-latex" aria-selected="false" tabindex="-1">LaTeX Code</button><button type="button" role="tab" id="tab-ats" aria-controls="result-ats" aria-selected="false" tabindex="-1">ATS Analysis</button></div>
 <div role="tabpanel" id="result-preview" aria-labelledby="tab-preview"><div class="actions" id="pdf-actions"></div><iframe id="pdf-preview" title="PDF preview" hidden></iframe><div id="preview-text"></div></div>
 <div role="tabpanel" id="result-latex" aria-labelledby="tab-latex" hidden><div class="actions"><button type="button" class="secondary" id="copy-latex">Copy LaTeX</button><a id="download-latex" class="button secondary">Download LaTeX</a></div><p id="copy-status" role="status"></p><pre id="latex-source"></pre></div>
