@@ -163,16 +163,23 @@ class Workspace:
                 source_text = read_resume_text(source)
             if not 120 <= len(source_text.strip()) <= 75000:
                 raise ValueError('The source needs 120–75,000 characters of readable résumé text.')
+            report('Document text ready')
             report('Extracting candidate details with Ollama')
             model = Ollama(model=self.model, url='http://127.0.0.1:11434')
 
             def measured(metrics):
-                # Extraction output length is unknown, so only measured counters are reported.
-                report('Extracting candidate details with Ollama', {
-                    'phase': metrics['phase'], 'chars': metrics['chars'], 'tokens': metrics['chunks'],
-                    'elapsed': round(metrics.get('elapsed', 0), 1)})
-            return {'profile': extract_profile(source_text, model, for_review=True, on_progress=measured),
-                    'source': source_text}
+                # Count top-level JSON fields as the model actually emits them. This
+                # is a completed-field fraction, never a predicted time-to-finish.
+                fields = {'phase': metrics['phase'], 'chars': metrics['chars'],
+                          'tokens': metrics['chunks'], 'fields_emitted': metrics.get('fields_emitted', 0),
+                          'fields_total': 15, 'elapsed': round(metrics.get('elapsed', 0), 1)}
+                stage = ('Ollama output received' if metrics['phase'] == 'done' else
+                         'Ollama retrying without streaming' if metrics['phase'] == 'fallback'
+                         else 'Extracting candidate details with Ollama')
+                report(stage, fields)
+            profile = extract_profile(source_text, model, for_review=True, on_progress=measured)
+            report('Candidate fields validated')
+            return {'profile': profile, 'source': source_text}
 
     @staticmethod
     def _tool(arguments):
@@ -391,14 +398,27 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
         request = json.loads(data)
         candidate = request['candidate']
         evidence = request['source']
+        report('Preparing role intelligence')
         intelligence = role_intelligence(candidate['role'], workspace.root)
         report('Drafting suggestions with Ollama')
         model = Ollama(model=workspace.model, url='http://127.0.0.1:11434')
+
+        def measured(metrics):
+            payload = {'phase': metrics['phase'], 'chars': metrics['chars'],
+                       'tokens': metrics['chunks'], 'fields_emitted': metrics.get('fields_emitted', 0),
+                       'fields_total': 8, 'elapsed': round(metrics.get('elapsed', 0), 1)}
+            report('Ollama output received' if metrics['phase'] == 'done' else
+                   'Ollama retrying without streaming' if metrics['phase'] == 'fallback' else
+                   'Drafting suggestions with Ollama', payload)
+
         draft = suggest_sections(candidate, model, evidence=evidence, market_terms=intelligence['terms'],
                                  requirements=[line for item in intelligence['sources']
-                                               for line in item.get('responsibilities', [])])
+                                               for line in item.get('responsibilities', [])],
+                                 on_progress=measured)
         draft.update(source=evidence, intelligence=intelligence)
-        return {**draft, 'claims': claims_for_review(draft)}
+        claims = claims_for_review(draft)
+        report('AI suggestions validated')
+        return {**draft, 'claims': claims}
 
     durable = DurableImports(workspace.root, process_draft)
 
