@@ -27,7 +27,7 @@
 <input id="resume-upload" type="file" accept=".pdf,.docx,.doc,.odt,.rtf,.txt,.md,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp,.json" aria-describedby="import-formats"></label>
 <button type="button" id="import-resume" disabled>Import and prefill</button>
 </div>
-<small id="import-formats">PDF, Word, TXT, Markdown, image, or candidate JSON · Maximum 12 MB (JSON 1 MB)</small>
+<small id="import-formats">PDF, Word, TXT, Markdown, image, or candidate JSON · Maximum 12 MB (JSON 1 MB). After selecting a file, tap Import and prefill.</small>
 <progress id="resume-import-progress" max="100" value="0" aria-label="Resume import progress" hidden></progress>
 <p id="resume-import-status" role="status" aria-live="polite"></p>
 <details id="import-evidence" hidden><summary>Compare imported source text</summary><label>Original resume text<textarea id="import-source" readonly rows="7"></textarea></label></details>
@@ -88,7 +88,6 @@
 <section class="panel template-panel"><h2>Selected template</h2>
 <div class="sheet" aria-hidden="true"><i></i><i></i><b></b><i></i><i></i><b></b><i></i><i></i><i></i></div>
 <h3 id="template-name">Standard</h3><p id="template-note">A readable single-column layout with room for experience.</p>
-<button type="button" id="template-import" class="text-link">Import an existing document</button>
 </section>
 <section class="panel activity live" id="generation" hidden aria-live="polite" aria-atomic="false"><div class="live-head"><h2 id="job-title">Processing Resume — 0%</h2><span id="job-state" class="live-state"></span></div><progress id="job-progress" max="100" value="0" aria-label="Resume generation progress"></progress><dl class="live-grid"><dt>Stage</dt><dd id="job-stage"></dd><dt>Elapsed</dt><dd id="job-elapsed">00:00</dd><dt>Status</dt><dd id="job-status"></dd></dl><p id="job-detail" class="live-detail"></p><ul id="job-warnings" class="live-warnings"></ul><ol id="job-stages" class="live-stages" aria-label="Processing stages"></ol><div class="live-foot"><small id="job-timestamp"></small><span class="actions"><button type="button" id="job-next" class="secondary">Start next candidate</button><button type="button" id="job-retry" class="secondary" hidden>Retry now</button></span></div><p id="job-others" class="live-others" hidden></p></section>
 </aside>
