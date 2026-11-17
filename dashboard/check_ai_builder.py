@@ -108,6 +108,19 @@ def check(ai_first=False):
                     assert 'id="candidate"' in page.request.get(origin + '/workflow').text()
                     page.goto(origin + builder)
                     assert_tap_targets(page, '.ai-nav-actions a, .ai-nav-actions button')
+                    # The import spinner is directly under the title, never a bottom sticky banner.
+                    expect(page.locator('#ai-progress')).to_be_hidden()
+                    page.evaluate("""() => updateProgress({
+                      status:'processing', stage:'Extracting candidate details with Ollama',
+                      metrics:{chars:1280,tokens:27,elapsed:9.3}}, 'Importing resume')""")
+                    expect(page.locator('#ai-progress')).to_be_visible()
+                    expect(page.get_by_role('status')).to_contain_text('Extracting candidate details')
+                    expect(page.locator('#ai-progress-metrics')).to_contain_text('1,280 characters generated')
+                    expect(page.locator('#ai-progress-metrics')).to_contain_text('27 stream chunks')
+                    expect(page.locator('#ai-progress-value')).to_have_text('')
+                    assert page.locator('#ai-progress').evaluate(
+                        "(item) => getComputedStyle(item).position !== 'sticky' && "
+                        "item.getBoundingClientRect().top < innerHeight")
                     page.get_by_label('Full name').fill('Previous Candidate')
                     page.get_by_label('Phone').fill('555-0101')
                     page.wait_for_function("""async () =>
@@ -139,6 +152,7 @@ def check(ai_first=False):
                                                                   'buffer': b'Synthetic resume'})
                         page.get_by_role('button', name='Import details').click()
                         expect(page.get_by_role('status')).to_contain_text('Details imported')
+                        expect(page.locator('#ai-progress-value')).to_have_text('100%')
                     expect(page.get_by_label('Full name')).to_have_value('AI First Synthetic')
                     expect(page.get_by_label('Phone')).to_have_value('')
                     # A lone year extracted as the start date is the graduation year.

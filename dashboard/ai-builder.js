@@ -28,7 +28,32 @@ async function claimEditor() {
 let active = false;
 const pause = () => new Promise(resolve => setTimeout(resolve, 1200));
 const newId = () => crypto.randomUUID().replaceAll('-','');
-const status = text => { ai('ai-status').textContent = text; };
+function showProgress(title, message, kind = 'working', metrics = null) {
+  const panel = ai('ai-progress');
+  panel.hidden = false;
+  panel.dataset.progressState = kind;
+  ai('ai-progress-title').textContent = title;
+  // Avoid repeating identical announcements to screen-reader users on each poll.
+  if (ai('ai-status').textContent !== message) ai('ai-status').textContent = message;
+  ai('ai-progress-value').textContent = kind === 'complete' ? '100%' : kind === 'error' ? '!' : '';
+  const details = [];
+  if (metrics && typeof metrics === 'object') {
+    if (Number.isFinite(metrics.chars) && metrics.chars > 0)
+      details.push(metrics.chars.toLocaleString() + ' characters generated');
+    // The API field is called "tokens" but records Ollama stream chunks, not token counts.
+    if (Number.isFinite(metrics.tokens) && metrics.tokens > 0)
+      details.push(metrics.tokens.toLocaleString() + ' stream chunks');
+    if (Number.isFinite(metrics.elapsed) && metrics.elapsed >= 0)
+      details.push(Math.floor(metrics.elapsed) + 's elapsed');
+  }
+  ai('ai-progress-metrics').textContent = details.join(' · ');
+}
+const status = text => showProgress('Resume builder', text, 'info');
+function updateProgress(record, title) {
+  const stage = record.stage || (record.status === 'queued' ? 'Waiting for the import worker' : 'Processing resume');
+  showProgress(title, stage, 'working', record.metrics);
+}
+
 function node(tag,text) {
   const element = document.createElement(tag);
   if (text) element.textContent = text;
@@ -100,20 +125,20 @@ function handle(action) {
     if (active) return;
     active = true;
     for (const panel of panels) ai(panel).inert = true;
-    try { await action(); } catch(error) {status(error.message);}
+    try { await action(); } catch(error) {showProgress('Unable to complete', error.message, 'error');}
     finally {
       for (const panel of panels) ai(panel).inert = false;
       active = false;
     }
   };
 }
-async function poll(id) {
+async function poll(id, title = 'Processing resume') {
   for (;;) {
     const draft = await api('/api/import-progress?id=' + id);
     if (draft.status === 'complete') return draft;
     if (draft.status === 'error') throw new Error(draft.error || 'Could not complete the draft.');
     if (draft.status === 'unknown') throw new Error('The saved operation is unavailable. Start it again.');
-    status(draft.stage);
+    updateProgress(draft, title);
     await pause();
   }
 }
@@ -134,7 +159,7 @@ function splitDegree(text, details) {
 }
 async function importFile() {
   const job = state.import;
-  status('Importing resume...');
+  showProgress('Importing resume', 'Uploading document...', 'working');
   if (job.file) {
     const response = await ResumeAuth.call('/api/draft',{method:'POST',body:job.file,headers:{
       'X-Resume-Extension':job.file.name.toLowerCase().match(/\.(pdf|docx|txt)$/)?.[0] || '',
@@ -144,7 +169,7 @@ async function importFile() {
     delete job.file;
     await save();
   }
-  const {profile} = await poll(job.id);
+  const {profile} = await poll(job.id, 'Importing resume');
   const next = Object.fromEntries(basic.map(([key]) => [key,profile[key] || '']));
   next.role = intake().role;
   next.work_experience = (profile.experience || []).map(item => Object.fromEntries(
@@ -157,7 +182,7 @@ async function importFile() {
   state.importId = job.id;
   delete state.import;
   await save();
-  status('Details imported. Check the fields before drafting.');
+  showProgress('Resume import complete', 'Details imported. Check the fields before drafting.', 'complete');
 }
 function renderReview(draft) {
   ai('ai-intake').hidden = true;
@@ -213,10 +238,10 @@ function renderReview(draft) {
 }
 async function draftContent() {
   const draft = state.draft;
-  status('Drafting with Ollama...');
+  showProgress('Drafting resume', 'Starting Ollama...', 'working');
   await api('/api/ai-draft',draft);
-  renderReview(await poll(draft.id));
-  status('Review your AI suggestions.');
+  renderReview(await poll(draft.id, 'Drafting resume'));
+  showProgress('AI draft complete', 'Review your AI suggestions.', 'complete');
 }
 function selected() {
   const claims = {};
@@ -348,4 +373,4 @@ async function init() {
     else if (state.draft) await draftContent();
   })();
 }
-init().catch(error => status(error.message));
+init().catch(error => showProgress('Builder unavailable', error.message, 'error'));
