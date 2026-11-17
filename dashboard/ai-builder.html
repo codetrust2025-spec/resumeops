@@ -16,10 +16,18 @@
 <main class="width ai-layout">
 <header class="intro"><h1>Resume builder</h1><p>Enter your details or import a resume. Review AI suggestions before creating your resume.</p></header>
 <section id="ai-progress" class="ai-progress" aria-label="Resume progress" hidden>
-  <div class="ai-progress-ring" aria-hidden="true"><span id="ai-progress-value"></span></div>
+  <div class="ai-progress-ring" id="ai-progress-ring" role="progressbar"
+       aria-label="Completed processing checkpoints" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+    <svg viewBox="0 0 72 72" aria-hidden="true" focusable="false">
+      <circle class="ai-ring-track" cx="36" cy="36" r="28"></circle>
+      <circle class="ai-ring-fill" cx="36" cy="36" r="28"></circle>
+    </svg>
+    <span id="ai-progress-value">0%</span>
+  </div>
   <div class="ai-progress-copy">
     <strong id="ai-progress-title"></strong>
     <p id="ai-status" role="status" aria-live="polite"></p>
+    <p id="ai-progress-steps" class="ai-progress-steps"></p>
     <p id="ai-progress-metrics" class="ai-progress-metrics"></p>
   </div>
 </section>
