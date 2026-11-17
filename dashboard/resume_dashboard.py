@@ -280,6 +280,8 @@ class Workspace:
 
         for candidate in plain_dirs(self.output):
             for revision in plain_dirs(candidate.path):
+                if revision.name.startswith('resume-build-'):
+                    continue  # the watcher's unpublished build folder, possibly left by a failed attempt
                 try:
                     with os.scandir(revision.path) as entries:
                         files = {entry.name: entry for entry in entries

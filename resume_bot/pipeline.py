@@ -252,7 +252,8 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
     ats = analyze(profile, target, keywords) if target else None
     t.units_done(2, 2, f"ATS keyword coverage {ats['score']}%" if ats else 'No target role; ATS check not applicable')
     folder.parent.mkdir(parents=True,exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=folder.parent,prefix='resume-build-') as temp:
+    # A briefly locked leftover must not fail a build whose outputs were already published.
+    with tempfile.TemporaryDirectory(dir=folder.parent,prefix='resume-build-',ignore_cleanup_errors=True) as temp:
         working=Path(temp)
         t.enter('latex', 'Rendering LaTeX from the verified profile')
         latex = render(profile, template, years)
@@ -299,13 +300,24 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
         # Move only published outputs; TeX temporary build files are deliberately omitted.
         folder.mkdir(parents=True,exist_ok=True)
         for item in ('main.tex','profile.json','resume.pdf','overleaf-project.zip','audit.json','result.json'):
-            os.replace(working/item,folder/item)
+            _replace(working/item,folder/item)
     _verify_upload_source(folder, profile, template, years)
     if overleaf:
         report = _sync_overleaf(folder, report, profile, browser_profile, max_pages, refresh_overleaf, t)
     else:
         t.skip('overleaf', 'Overleaf publishing is disabled')
     return _finish(report, folder, overleaf, t)
+
+
+def _replace(source, target, attempts=8, delay=0.25):
+    """os.replace that waits out the brief locks Windows scanners and indexers take on new files."""
+    for attempt in range(attempts):
+        try:
+            return os.replace(source, target)
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay * (attempt + 1))
 
 
 def _finish(report, folder, overleaf, t):
