@@ -175,7 +175,11 @@ def analyze(profile, target, keywords=None, today=None):
              'add the missing dated roles or lower the experience level.')
     evidence_checks = (
         (6, any(entry['bullets'] for entry in profile['experience']), 'Describe verified work contributions.'),
-        (4, any(entry['start'] for entry in profile['experience']), 'Provide confirmed dates for employment.'),
+        (4, (any(entry.get('end') for entry in profile['education'])
+             if target.get('experience_years') == 0 else
+             any(entry['start'] for entry in profile['experience'])),
+         ('Provide a confirmed graduation year.' if target.get('experience_years') == 0 else
+          'Provide confirmed dates for employment.')),
         (5, bool(profile['education'] or profile.get('projects') or profile['certifications']),
          'Include verified education, projects, or certifications when available.'),
         (5, experience['supported'], level),
