@@ -3,6 +3,7 @@ probe. It must stay cheap as outputs grow: no per-file Path.resolve() (a handle 
 which real-time scanning makes slow) and no re-parsing of unchanged result.json files."""
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -13,6 +14,14 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'dashboard'))
 import resume_dashboard  # noqa: E402
 from resume_dashboard import ARTIFACTS, Workspace  # noqa: E402
+
+
+def link_directory(target, link):
+    if os.name == 'nt':
+        subprocess.run(['cmd.exe', '/d', '/c', 'mklink', '/J', str(link), str(target)],
+                       check=True, capture_output=True, timeout=10)
+    else:
+        os.symlink(target, link, target_is_directory=True)
 
 
 def make_revision(output, candidate, revision, files=ARTIFACTS, result=None):
@@ -68,9 +77,10 @@ class StatusScanTests(unittest.TestCase):
     def test_symlinked_folders_outside_output_are_ignored(self):
         outside = Path(tempfile.mkdtemp(dir=self.root))
         make_revision(outside, 'escape', 'eee555')
-        os.symlink(outside / 'escape', self.workspace.output / 'escape')
+        link_directory(outside / 'escape', self.workspace.output / 'escape')
         target = make_revision(self.workspace.output, 'real', 'rrr666', files=('result.json',))
-        os.symlink(outside / 'escape' / 'eee555' / 'resume.pdf', target / 'resume.pdf')
+        if os.name != 'nt':
+            os.symlink(outside / 'escape' / 'eee555' / 'resume.pdf', target / 'resume.pdf')
         revisions = self.workspace.status()['revisions']
         self.assertEqual([item['key'] for item in revisions], ['real/rrr666'])
         self.assertEqual(revisions[0]['files'], ['result.json'])
@@ -106,7 +116,7 @@ class StatusScanReviewTests(unittest.TestCase):
         storage.mkdir()
         data = self.root / 'data'
         data.mkdir()
-        os.symlink(storage, data / 'output')
+        link_directory(storage, data / 'output')
         workspace = Workspace(data, code_root=ROOT)
         real_output = storage / 'cand' / 'abc123def456'
         self.assertEqual(workspace.revision_key(str(real_output)), 'cand/abc123def456')
