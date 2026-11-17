@@ -47,6 +47,8 @@ def main():
             return route.fulfill(status=302, headers={'Location': 'https://example-team.cloudflareaccess.com/cdn-cgi/access/login'})
         if '/auth/renewed' in request.url:
             expired['mode'] = None   # signing in at the team domain renews the session
+        if '/api/artifact?key=session-test' in request.url:
+            return route.fulfill(status=200, content_type='application/pdf', body=b'%PDF-1.7 session test')
         return route.continue_()
 
     results = {}
@@ -186,9 +188,21 @@ def main():
         assert drafts == ['.txt'], drafts
         results['import_polling_after_expiry'] = 'completed'
 
-        # Downloads open in their own tab, so an Access redirect can never replace the builder.
-        script = Path(__file__).with_name('builder.js').read_text()
-        assert "link.target = '_blank'" in script and "el('download-latex').target = '_blank'" in script
+        # A download denied by Access resumes after sign-in.
+        expired['mode'] = '401'
+        fresh.evaluate('''() => {
+            const action = {url: '/api/artifact?key=session-test', name: 'session-test.pdf'};
+            ResumeRecovery.put('download', action).then(() => ResumeRecovery.download(action));
+        }''')
+        expect(fresh.locator('#auth-banner')).to_be_visible(timeout=10000)
+        with fresh.expect_download(timeout=20000) as download:
+            with imports.expect_page():
+                fresh.get_by_role('button', name='Sign in again').click()
+        assert download.value.suggested_filename == 'session-test.pdf'
+        assert download.value.path().read_bytes() == b'%PDF-1.7 session test'
+        fresh.wait_for_function("ResumeRecovery.read('download').then(action => !action)")
+        results['download_after_expiry'] = True
+
         assert not errors, errors
         results['expired_requests_answered_by_edge'] = hits['expired']
         browser.close()
