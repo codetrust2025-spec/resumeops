@@ -174,7 +174,12 @@ def analyze(profile, target, keywords=None, today=None):
              f"{experience['dated_years'] if experience['dated_years'] is not None else 'no'} years; "
              'add the missing dated roles or lower the experience level.')
     evidence_checks = (
-        (6, any(entry['bullets'] for entry in profile['experience']), 'Describe verified work contributions.'),
+        # Freshers have no employment: described projects ("Name - details") are their contributions.
+        (6, (any(isinstance(item, str) and ' - ' in item for item in profile.get('projects') or [])
+             if target.get('experience_years') == 0 else
+             any(entry['bullets'] for entry in profile['experience'])),
+         ('Describe verified project contributions.' if target.get('experience_years') == 0 else
+          'Describe verified work contributions.')),
         (4, (any(entry.get('end') for entry in profile['education'])
              if target.get('experience_years') == 0 else
              any(entry['start'] for entry in profile['experience'])),

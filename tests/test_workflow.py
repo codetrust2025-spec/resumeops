@@ -46,6 +46,22 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn('Provide a confirmed graduation year.',
                          analyze(profile, target)['suggestions'])
 
+    def test_fresher_contributions_come_from_described_projects(self):
+        profile, target = normalize_request(targeted())
+        target['experience_years'] = 0
+        profile['experience'] = []
+        profile['projects'] = ['Campus Event Portal']
+        suggestions = analyze(profile, target)['suggestions']
+        self.assertIn('Describe verified project contributions.', suggestions)
+        self.assertNotIn('Describe verified work contributions.', suggestions)
+        bare = analyze(profile, target)['breakdown'][2]['points']
+        profile['projects'] = ['Campus Event Portal - React app listing college events']
+        described = analyze(profile, target)
+        self.assertNotIn('Describe verified project contributions.', described['suggestions'])
+        self.assertEqual(described['breakdown'][2]['points'], bare + 6)
+        target['experience_years'] = 2
+        self.assertIn('Describe verified work contributions.', analyze(profile, target)['suggestions'])
+
     def test_ats_rubric_distinguishes_coverage_from_section_and_evidence_points(self):
         job = targeted()
         profile, target = normalize_request(job)
