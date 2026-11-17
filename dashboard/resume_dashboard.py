@@ -54,6 +54,8 @@ class Workspace:
         self.output = self.root / 'output'
         self.logs = self.root / 'logs'
         self.approvals = self.root / 'approvals'
+        self._result_cache = {}
+        self._revision_lock = Lock()
         self.inbox.mkdir(exist_ok=True)
         sys.path.insert(0, str(code_root.resolve() if code_root else self.root))
         from resume_bot.workflow import normalize_request
@@ -95,33 +97,8 @@ class Workspace:
                     name = profile.get('full_name') if isinstance(profile, dict) else None
                     if isinstance(name, str):
                         job['candidate'] = name[:120]
-        revisions = []
-        for path in self.output.glob('*/*/result.json'):
-            if not contained(path, self.output):
-                continue
-            result = read_json(path)
-            if not isinstance(result, dict):
-                continue
-            try:
-                modified = path.stat().st_mtime
-            except OSError:
-                continue
-            remote = result.get('overleaf') or {}
-            url = remote.get('url', '')
-            if not re.fullmatch(r'https://www\.overleaf\.com/project/[A-Za-z0-9_-]+', url):
-                url = ''
-            revisions.append({
-                'key': path.parent.relative_to(self.output).as_posix(),
-                'candidate': result.get('candidate', 'Candidate'),
-                'model': result.get('model', ''),
-                'ats': result.get('ats'),
-                'modified': modified, 'url': url,
-                'pages': (result.get('pdf_checks') or {}).get('pages'),
-                'sha256': remote.get('pdf_sha256', ''),
-                'files': [name for name in ARTIFACTS if (path.parent / name).is_file()
-                          and contained(path.parent / name, self.output)],
-            })
-        revisions.sort(key=lambda item: item['modified'], reverse=True)
+        with self._revision_lock:
+            revisions = self._revisions()
         alert = self.logs / 'current-alert.txt'
         last_scan = (health or {}).get('last_scan')
         return {'jobs': jobs, 'revisions': revisions,
@@ -248,8 +225,76 @@ class Workspace:
         return records_for(self.approvals, job)
 
     def revision_key(self, output):
-        path = Path(output) if output else None
-        return path.resolve().relative_to(self.output.resolve()).as_posix() if path and contained(path, self.output) else ''
+        # Pure path arithmetic: the watcher records absolute output paths, so no file is opened here.
+        # Downloads still go through artifact(), which resolves and contains every path it serves.
+        if not output:
+            return ''
+        path = os.path.normcase(os.path.abspath(output))
+        base = os.path.normcase(os.path.abspath(self.output))
+        try:
+            relative = os.path.relpath(path, base)
+        except ValueError:
+            return ''
+        parts = Path(relative).parts
+        return '/'.join(parts) if len(parts) == 2 and '..' not in parts else ''
+
+    def _revisions(self):
+        """List verified revisions with one directory listing per folder and cached result.json.
+
+        Path.resolve() opens a handle per file on Windows, which real-time scanning makes slow;
+        this scan opens only result.json files that changed since the previous scan."""
+        revisions, seen = [], set()
+
+        def plain_dirs(folder):
+            try:
+                with os.scandir(folder) as entries:
+                    return [entry for entry in entries if entry.is_dir(follow_symlinks=False)
+                            and not entry.is_symlink() and not getattr(entry, 'is_junction', lambda: False)()]
+            except OSError:
+                return []
+
+        for candidate in plain_dirs(self.output):
+            for revision in plain_dirs(candidate.path):
+                try:
+                    with os.scandir(revision.path) as entries:
+                        files = {entry.name: entry for entry in entries
+                                 if entry.is_file(follow_symlinks=False) and not entry.is_symlink()}
+                except OSError:
+                    continue
+                entry = files.get('result.json')
+                if entry is None:
+                    continue
+                try:
+                    info = entry.stat(follow_symlinks=False)
+                except OSError:
+                    continue
+                stamp = (info.st_mtime_ns, info.st_size)
+                cached = self._result_cache.get(entry.path)
+                if cached is None or cached[0] != stamp:
+                    cached = (stamp, read_json(Path(entry.path)))
+                    self._result_cache[entry.path] = cached
+                seen.add(entry.path)
+                result = cached[1]
+                if not isinstance(result, dict):
+                    continue
+                remote = result.get('overleaf') or {}
+                url = remote.get('url', '')
+                if not re.fullmatch(r'https://www\.overleaf\.com/project/[A-Za-z0-9_-]+', url):
+                    url = ''
+                revisions.append({
+                    'key': candidate.name + '/' + revision.name,
+                    'candidate': result.get('candidate', 'Candidate'),
+                    'model': result.get('model', ''),
+                    'ats': result.get('ats'),
+                    'modified': info.st_mtime, 'url': url,
+                    'pages': (result.get('pdf_checks') or {}).get('pages'),
+                    'sha256': remote.get('pdf_sha256', ''),
+                    'files': [name for name in ARTIFACTS if name in files],
+                })
+        for stale in set(self._result_cache) - seen:
+            del self._result_cache[stale]
+        revisions.sort(key=lambda item: item['modified'], reverse=True)
+        return revisions
 
     def revision(self, key):
         from resume_bot.workflow import analyze
