@@ -75,6 +75,9 @@ def check(screenshots):
                     'buffer':json.dumps({'profile':{
                         'full_name':'Jordan Import Example','email':'jordan@example.com',
                         'headline':'Frontend Developer','skills':['React','TypeScript'],
+                        'projects':[{'name':'Campus Events Portal',
+                            'description':'React app listing college events'}, 'Expense tracker CLI'],
+                        'certifications':[{'name':'Example Cloud Practitioner'}],
                         'experience':[{'company':'Example Studio','position':'Developer',
                             'start':'January 2020','end':'Present',
                             'bullets':['Built frontend dashboards']}],
@@ -94,6 +97,10 @@ def check(screenshots):
                 expect(import_page.locator('#count-experience')).to_have_text('(1)')
                 expect(import_page.get_by_label('Employer')).to_have_value('Example Studio')
                 expect(import_page.get_by_label('Verified skills')).to_have_value('React\nTypeScript')
+                # Structured projects/certifications must survive import, not be silently dropped.
+                expect(import_page.get_by_label('Verified projects')).to_have_value(
+                    'Campus Events Portal — React app listing college events\nExpense tracker CLI')
+                expect(import_page.get_by_label('Verified certifications')).to_have_value('Example Cloud Practitioner')
                 # Complete imported cards stay collapsed with a one-line summary.
                 expect(import_page.locator('#experience-entries .entry')).not_to_have_attribute('open', '')
                 expect(import_page.locator('#experience-entries .entry summary')).to_contain_text('Developer · Example Studio')
