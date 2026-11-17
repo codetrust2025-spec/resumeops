@@ -989,7 +989,12 @@ mobileLayout.addEventListener('change', applyLayout);
 async function applyImport(data) {
   const profile = data.profile;
   const asText = value => typeof value === 'string' ? value : '';
-  const joinLines = value => Array.isArray(value) ? value.filter(item => typeof item === 'string').join('\n') : '';
+  // Projects and certifications may arrive as {name, description} objects (AI-first intake, candidate JSON).
+  const itemText = item => typeof item === 'string' ? item.trim() :
+    item && typeof item === 'object' && !Array.isArray(item) ?
+      [item.name || item.title, item.description || item.summary || item.details]
+        .filter(part => typeof part === 'string' && part.trim()).map(part => part.trim()).join(' — ') : '';
+  const joinLines = value => Array.isArray(value) ? value.map(itemText).filter(Boolean).join('\n') : '';
   const target = data.target && typeof data.target === 'object' && !Array.isArray(data.target) ? data.target : {};
   for (const key of ['full_name','email','phone','location','current_company','headline','linkedin','github','portfolio','summary']) {
     fields[key].value = asText(profile[key]);
