@@ -90,6 +90,7 @@ def _text_items(value, maximum=20):
 # source-verbatim quantified statements may be presented for approval.
 QUANTIFIED_CLAIM = re.compile(
     r'(?:[$€£₹]\s*\d[\d,.]*'
+    r'|\b\d+(?:[.,]\d+)?\s*%'
     r'|\b\d+(?:[.,]\d+)?\s*(?:%|percent|x|times|users?|customers?|clients?|'
     r'employees?|engineers?|developers?|members?|people|hours?|days?|weeks?|'
     r'requests?|transactions?|tickets?|bugs?|features?|projects?|services?|'
