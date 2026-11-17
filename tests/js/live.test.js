@@ -96,3 +96,10 @@ test('GPU placement and the technical failure detail are reported, never invente
   assert.match(failed.gpu, /100% in GPU memory/);
   assert.equal(failed.heartbeat, '—');
 });
+
+test('deterministic and exhausted failures say they are not retried automatically', () => {
+  const failed = {...base, status: 'failed', error: 'Processing failed.', last: 1050, next_retry: null};
+  assert.match(Live.describe({...failed, retryable: false}, 1060, {}).status, /not retried automatically/);
+  assert.match(Live.describe({...failed, retryable: true}, 1060, {}).status, /automatic retries used up/);
+  assert.match(Live.describe({...failed, next_retry: 1200}, 1060, {}).status, /automatic retry in 02:20/);
+});

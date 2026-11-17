@@ -609,6 +609,12 @@ el('tile-history').addEventListener('click', () => showHistory());
 
 function showTailoring(tailoring, experience) {
   const pane = el('ai-result');
+  if (tailoring && (tailoring.skipped || tailoring.model_output_rejected)) {
+    el('ai-note').textContent = tailoring.skipped ? 'Nothing to tailor' : 'AI reply discarded';
+    pane.replaceChildren(rows('p', tailoring.skipped || ('The AI reply was discarded (' + tailoring.model_output_rejected +
+      '). The resume uses the candidate\'s verified text unchanged.')));
+    return;
+  }
   if (!tailoring) {
     el('ai-note').textContent = 'Not tailored';
     pane.replaceChildren(rows('p', 'This revision was generated before AI tailoring was available, or AI tailoring was disabled.'));
