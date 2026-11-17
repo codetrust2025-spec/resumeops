@@ -15,6 +15,14 @@
 <header class="top"><div class="width ai-nav"><strong>ResumeOps</strong><span class="ai-nav-actions"><a href="/workflow#history">History</a><button class="secondary" id="ai-reset" type="button">Clear saved draft</button></span></div></header>
 <main class="width ai-layout">
 <header class="intro"><h1>Resume builder</h1><p>Enter your details or import a resume. Review AI suggestions before creating your resume.</p></header>
+<section id="ai-progress" class="ai-progress" aria-label="Resume progress" hidden>
+  <div class="ai-progress-ring" aria-hidden="true"><span id="ai-progress-value"></span></div>
+  <div class="ai-progress-copy">
+    <strong id="ai-progress-title"></strong>
+    <p id="ai-status" role="status" aria-live="polite"></p>
+    <p id="ai-progress-metrics" class="ai-progress-metrics"></p>
+  </div>
+</section>
 <section id="ai-intake" class="ai-panel">
   <h2>Candidate details</h2>
   <div class="ai-upload">
@@ -44,7 +52,6 @@
   <h2>Resume preview and ATS</h2><div id="ai-preview-content"></div>
   <button type="button" class="primary" id="ai-generate">Generate resume</button>
 </section>
-<p id="ai-status" role="status" aria-live="polite"></p>
 </main>
 </body>
 </html>
