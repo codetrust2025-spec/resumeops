@@ -50,6 +50,9 @@ def render(profile, template="standard", years=None):
         out.append(r'\section*{PROFESSIONAL SUMMARY}'+'\n'+paragraph(profile['summary'])+'\n')
     if profile['skills']:
         out.append(r'\section*{TECHNICAL SKILLS}'+'\n'+r'\textbf{Skills:} '+r' \textbullet{} '.join(paragraph(x) for x in profile['skills'])+'\n')
+    if profile.get('competencies'):
+        out.append(r'\section*{CORE COMPETENCIES}'+'\n'+
+                   r' \textbullet{} '.join(paragraph(item) for item in profile['competencies'])+'\n')
     def experience_section():
         if profile['experience']:
             out.append(r'\section*{PROFESSIONAL EXPERIENCE}'+'\n')

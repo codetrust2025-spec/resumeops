@@ -5,19 +5,29 @@ from .ai_first import IntakeError, validate_intake
 from .workflow import ROLES, analyze, matched_terms, normalize_request
 
 
-def role_intelligence(role):
-    from .workflow import role_keywords
+def role_intelligence(role, root=None):
+    from .market import relevant_sources, title_words
+    from .workflow import valid_role_title
 
-    catalog = ROLES.get(role)
-    if not catalog:
-        raise IntakeError('Choose a supported target role')
-    terms = role_keywords({'role': role, 'keywords': []})
-    return {
-        'label': catalog['name'],
-        'terms': terms,
-        'sources': [{'label': 'ResumeOps role catalog (curated)', 'url': '', 'terms': terms}],
-    }
-
+    if not valid_role_title(role):
+        raise IntakeError('Enter a valid target job title')
+    title = ' '.join(role.split())
+    exact = next((key for key, row in ROLES.items()
+                  if title.casefold() in {key.casefold(), row['name'].casefold()}), None)
+    if exact:
+        title = ROLES[exact]['name']
+    sources = relevant_sources(title, root)
+    keywords = list(dict.fromkeys(term for row in sources for term in row['terms']))
+    if not keywords:
+        family = exact
+        if not family:
+            candidates = [(len(title_words(title) & title_words(row['name'])), key) for key, row in ROLES.items()]
+            ranked = sorted(candidates, reverse=True)
+            if ranked[0][0] >= 2 and ranked[0][0] > ranked[1][0]:
+                family = ranked[0][1]
+        keywords = ROLES[family]['keywords'] if family else []
+        sources.append({'label': 'ResumeOps role catalog (curated)', 'url': '', 'terms': keywords})
+    return {'label': title, 'role': exact or 'custom', 'terms': keywords[:40], 'sources': sources}
 
 
 def claims_for_review(draft):
@@ -88,11 +98,15 @@ def approved_resume(draft, approval):
         for item in candidate['education']]
     profile['experience'] = experience
     profile['skills'] = []
+    # A pending draft created before custom titles must replay its original normalized payload.
+    legacy_review = isinstance(draft.get('intelligence'), dict) and 'role' not in draft['intelligence']
+    profile['competencies'] = []
     profile['certifications'] = []
     profile['achievements'] = []
     profile['coding_platforms'] = [' '.join(filter(None, item.values())) for item in candidate['coding_platforms']]
     source = draft.get('source', '')
     audit = []
+    used_content = set()
     for key, claim in claims.items():
         if key not in selection:
             continue
@@ -105,6 +119,11 @@ def approved_resume(draft, approval):
             if text.casefold() not in source.casefold():
                 raise IntakeError('Remove quantified claims that are absent from the source resume')
         section = claim['section']
+        if not legacy_review and section in ('Responsibility', 'Project detail'):
+            normalized = ' '.join(re.findall(r'\w+', text.casefold()))
+            if normalized in used_content:
+                raise IntakeError('Keep work responsibilities and project details distinct; remove duplicate text')
+            used_content.add(normalized)
         provenance = claim['provenance']
         if text != claim['text']:
             provenance = 'candidate_confirmed'
@@ -113,8 +132,8 @@ def approved_resume(draft, approval):
         if section == 'Summary':
             profile['summary'] = text
         elif section in ('Skill', 'Competency'):
-            if text.casefold() not in {term.casefold() for term in profile['skills']}:
-                profile['skills'].append(text)
+            if text.casefold() not in {term.casefold() for term in profile['skills'] + profile['competencies']}:
+                profile['skills' if section == 'Skill' or legacy_review else 'competencies'].append(text)
         elif section == 'Responsibility':
             experience[claim['index']]['bullets'].append(text)
         elif section == 'Project detail':
@@ -127,14 +146,27 @@ def approved_resume(draft, approval):
             if text.casefold() not in source.casefold():
                 raise IntakeError('Confirm achievements that occur in the source resume')
             profile['achievements'].append(text)
+    research = draft.get('intelligence') or role_intelligence(candidate['role'])
+    known_terms = list(dict.fromkeys(term for row in ROLES.values() for term in row['keywords']))
+    known_terms.extend(research['terms'])
+    candidate_technologies = ' '.join([source, *profile['skills'], *profile['competencies']])
+    for selected in ([] if legacy_review else audit):
+        if selected['section'] not in ('Responsibility', 'Project detail'):
+            continue
+        terms = matched_terms(known_terms, selected['text'])
+        if set(terms) - set(matched_terms(terms, candidate_technologies)):
+            raise IntakeError('A work or project bullet includes a technology not found in your resume or confirmed skills.')
     profile['projects'] = [
         item['name'] + (' - ' + ' '.join(project_details[index]) if project_details[index] else '')
         for index, item in enumerate(candidate['projects'])
     ]
     if profile['projects']:
         profile['projects'] = profile['projects'][:30]
-    target = {'role': candidate['role'], 'template': 'standard',
+    role = research.get('role') or role_intelligence(candidate['role'])['role']
+    target = {'role': role, 'template': 'standard', 'keywords': [] if legacy_review else research['terms'],
               'experience_years': min(25, int(candidate['years_of_experience']))}
+    if role == 'custom':
+        target['role_title'] = research['label']
     profile, target = normalize_request({'profile': profile, 'target': target})
     return {'profile': profile, 'target': target, 'ats': analyze(profile, target), 'approved_claims': audit,
             'project_names': [item['name'] for item in candidate['projects'][:30]]}

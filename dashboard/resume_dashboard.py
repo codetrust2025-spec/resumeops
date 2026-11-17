@@ -227,7 +227,8 @@ class Workspace:
         content = {'schema': 'resumeops-approval-1', 'job': job,
                    'resume_sha256': hashlib.sha256(payload).hexdigest(),
                    'operation': approval['operation'], 'approved_by': approval['approved_by'],
-                   'attested': True, 'claims': approval['claims'], 'project_names': approval.get('project_names', [])}
+                   'attested': True, 'claims': approval['claims'], 'project_names': approval.get('project_names', []),
+                   'market_sources': approval.get('market_sources', [])}
         identity = hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()[:32]
         record = {**content, 'record_id': identity,
                   'recorded_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
@@ -388,10 +389,12 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
         request = json.loads(data)
         candidate = request['candidate']
         evidence = request['source']
-        intelligence = role_intelligence(candidate['role'])
+        intelligence = role_intelligence(candidate['role'], workspace.root)
         report('Drafting suggestions with Ollama')
         model = Ollama(model=workspace.model, url='http://127.0.0.1:11434')
-        draft = suggest_sections(candidate, model, evidence=evidence, market_terms=intelligence['terms'])
+        draft = suggest_sections(candidate, model, evidence=evidence, market_terms=intelligence['terms'],
+                                 requirements=[line for item in intelligence['sources']
+                                               for line in item.get('responsibilities', [])])
         draft.update(source=evidence, intelligence=intelligence)
         return {**draft, 'claims': claims_for_review(draft)}
 
@@ -665,7 +668,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                         return self.send_json({'error': str(exc)}, 409)
                     result = workspace.enqueue(json.dumps(payload).encode(), approval={
                         'operation': operation, 'approved_by': account, 'claims': reviewed['approved_claims'],
-                        'project_names': reviewed['project_names']})
+                        'project_names': reviewed['project_names'],
+                        'market_sources': draft.get('intelligence', {}).get('sources', [])})
                     return self.send_json(result, 201 if result['created'] else 200)
                 if self.path == '/api/retry':
                     from resume_bot.pipeline import request_retry

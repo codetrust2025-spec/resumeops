@@ -116,7 +116,7 @@ def check(ai_first=False):
                     expect(page.get_by_label('Full name')).to_have_value('AI First Synthetic')
                     expect(page.get_by_label('Phone')).to_have_value('')
                     access['armed'] = True
-                    page.get_by_label('Target role').select_option('fullstack-developer')
+                    page.get_by_label('Target role').fill('Full Stack Developer')
                     page.get_by_label('Total years of experience').fill('0')
                     page.get_by_label('Full name').fill('AI First Synthetic')
                     page.get_by_label('Email').fill('ai-first@example.com')
@@ -175,7 +175,7 @@ def check(ai_first=False):
                     desktop = browser.new_context(viewport={'width': 1360, 'height': 960})
                     senior = desktop.new_page()
                     senior.goto(origin + builder)
-                    senior.get_by_label('Target role').select_option('fullstack-developer')
+                    senior.get_by_label('Target role').fill('Principal Platform Engineer')
                     senior.get_by_label('Total years of experience').fill('9')
                     senior.get_by_label('Full name').fill('Senior Synthetic')
                     senior.get_by_label('Email').fill('senior@example.com')

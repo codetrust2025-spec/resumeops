@@ -7,6 +7,7 @@ import unicodedata
 APPROVED_PROVENANCE = {'verified_from_source', 'unverified_suggestion', 'unsupported_role_keyword',
                        'candidate_confirmed'}
 CLAIM_FIELDS = (('summary', ('Summary',)), ('skills', ('Skill', 'Competency')),
+                ('competencies', ('Competency',)),
                 ('certifications', ('Earned certification',)), ('achievements', ('Achievement',)))
 
 
@@ -85,6 +86,8 @@ def matches_pdf_text(observed, profile, years):
         parts.extend(['PROFESSIONAL SUMMARY', profile['summary']])
     if profile['skills']:
         parts.extend(['TECHNICAL SKILLS', 'Skills:', *profile['skills']])
+    if profile.get('competencies'):
+        parts.extend(['CORE COMPETENCIES', *profile['competencies']])
     work = ['PROFESSIONAL EXPERIENCE'] if experience else []
     for entry in experience:
         work.extend([entry['position'], entry['company'], entry['start'], entry['end'], entry['location'],
