@@ -25,6 +25,10 @@ Set optional environment values from `.env.example` in the service account envir
 
 The watcher retries transient Ollama, MongoDB, browser and build failures with backoff. Missing facts must be supplied or corrected at intake. An identical source and model reuse the previous revision and validated PDF. The Overleaf upload journal prevents a new submission when the previous outcome is ambiguous.
 
+## Restarting the watcher after a deployment
+
+The watcher keeps the code it loaded at startup. To load new `resume_bot` code without an administrator console, create an empty file named `.resume-bot-restart` in the inbox. The watcher finishes the job it is running, removes the file, and exits between jobs. `start_windows.ps1` restarts it about 30 seconds later with the code now on disk. To confirm which code is running, read `inbox/.resume-bot-health.json`: `code` lists the git blob id of every loaded `resume_bot/*.py` file, and `pid` and `started` identify the process. Each generated `result.json` records `ollama_runtime`, which is Ollama's `/api/ps` report of how much of the model sat in GPU memory.
+
 ## Tests and release gates
 
 ```powershell
