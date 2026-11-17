@@ -534,7 +534,11 @@ el('next').addEventListener('click', async () => {
 });
 
 /* ---------- Start ---------- */
-el('start-create').addEventListener('click', () => { feedback(''); showStep(STEP.INPUT); });
+el('start-create').addEventListener('click', () => {
+  if (location.pathname === '/workflow') { location.assign('/ai-builder'); return; }
+  feedback('');
+  showStep(STEP.INPUT);
+});
 el('start-history').addEventListener('click', () => showHistory());
 form.addEventListener('change', event => {
   if (event.target.name === 'source') clearValidation();
@@ -1098,6 +1102,7 @@ async function init() {
     fields.role.replaceChildren(new Option('Select a role', ''), ...roles.map(role => new Option(role.name, role.id)));
     fields.template.replaceChildren(...Object.entries(templates).map(([key, name]) => new Option(name, key)));
     showTemplate();
+    if (location.hash === '#history') showHistory();
     await restoreDraft(!(restored && restored.name));
     restoring=false;
     document.dispatchEvent(new Event('resumeops-builder-ready'));

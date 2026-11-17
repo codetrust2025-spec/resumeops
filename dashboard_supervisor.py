@@ -40,6 +40,9 @@ def release(name):
     files = REQUIRED
     if (folder / 'index.html').is_file() and '/builder.js' in (folder / 'index.html').read_text(encoding='utf-8'):
         files += ('builder.js', 'builder.css', 'operations.html')
+    if (folder / 'ai-builder.html').is_file():
+        files += ('ai-builder.html', 'ai-builder.js', 'ai-builder.css', 'recovery.js',
+                  'auth.js', 'auth-renewed.js', 'durable_imports.py')
     missing = [file for file in files
                if not (folder / file).is_file() or not (folder / file).stat().st_size]
     if missing:
@@ -53,23 +56,32 @@ def fetch(port, path, host=None):
         return response.headers.get_content_type(), response.read()
 
 def health(port, config):
-    for route, content_type, marker in (
-        ('/', 'text/html', b'id="candidate"'),
+    mime, homepage = fetch(port, '/')
+    ai_first = b'id="ai-form"' in homepage
+    if mime != 'text/html' or (not ai_first and b'id="candidate"' not in homepage):
+        raise RuntimeError('/: missing expected builder')
+    assets = [
         ('/dashboard.js', 'text/javascript', b'function'),
         ('/dashboard.css', 'text/css', b'{'),
-    ):
-        actual_type, body = fetch(port, route)
-        if actual_type != content_type or marker not in body:
-            raise RuntimeError(f'{route}: missing expected application content')
-    if b'/builder.js' in fetch(port, '/')[1]:
-        for route, mime, marker in (
+    ]
+    if ai_first:
+        assets.extend([
+            ('/ai-builder.js', 'text/javascript', b'function'),
+            ('/ai-builder.css', 'text/css', b'.ai-layout'),
+            ('/recovery.js', 'text/javascript', b'indexedDB'),
+            ('/auth-renewed.js', 'text/javascript', b'BroadcastChannel'),
+            ('/workflow', 'text/html', b'id="candidate"'),
+        ])
+    if ai_first or b'/builder.js' in homepage:
+        assets.extend([
             ('/builder.js', 'text/javascript', b'function'),
             ('/builder.css', 'text/css', b'.masthead'),
             ('/operations', 'text/html', b'id="submit"'),
-        ):
-            actual, body = fetch(port, route)
-            if actual != mime or marker not in body:
-                raise RuntimeError(f'{route}: missing expected application content')
+        ])
+    for route, content_type, marker in assets:
+        actual_type, body = fetch(port, route)
+        if actual_type != content_type or marker not in body:
+            raise RuntimeError(f'{route}: missing expected application content')
     mime, body = fetch(port, '/api/status')
     status = json.loads(body)
     if (mime != 'application/json' or not isinstance(status.get('healthy'), bool)

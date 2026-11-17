@@ -63,8 +63,10 @@
         button.disabled = true;
         status.textContent = 'Saving your work before signing in...';
         try {
-          await checkpoint();
-          root.location.assign('/auth/renewed?return=builder');
+          if (owner) await checkpoint();
+          const destination = document.body.hasAttribute('data-ai-builder') ? 'ai-builder' :
+            root.location.pathname === '/workflow' ? 'workflow' : 'builder';
+          root.location.assign('/auth/renewed?return=' + destination);
         } catch {
           status.textContent = 'Could not save your work. Allow pop-ups and try again.';
           button.disabled = false;

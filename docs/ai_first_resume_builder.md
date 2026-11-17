@@ -1,6 +1,10 @@
 # ResumeOps: AI-first resume builder (implementation contract)
 
-Status: **foundation only**. This document and the `resume_bot/ai_first.py` module do not replace the live builder, do not add API routes and do not allow generation from unreviewed AI statements. Deploy only after the complete candidate-input / suggestion-review / queue path is implemented and tested. Keep PR #17 (durable Cloudflare imports) independent.
+Status: **integration branch, pending release verification**. The dashboard serves the
+AI-first intake at its root and uses the existing workflow view for progress, verified
+outputs and history. This branch incorporates PR #17 for testing; review and rollout
+of that dependency remain independent release gates.
+
 
 ## Candidate input — exactly fourteen categories
 
@@ -45,15 +49,18 @@ No candidate-written summary, objective, skills, achievement bullets, work dutie
 
 Do not combine React + Angular, AWS + Azure, databases, or other incompatible stacks in a single project without candidate-supplied evidence or explicit confirmation. Separate work responsibilities from project implementation. Only use metrics supplied in evidence or confirmed from actual measurements; never invent impact percentages.
 
-## Code changes still needed before release
+## Implementation scope
 
-- **UI** `dashboard/index.html`, `builder.js`, `import.js`: replace old manual section-entry tabs with exact fourteen fields; add AI Draft + evidence review. Remove resume template, professional headline, manual skills, summary, certifications, keyword and job description questions from candidate input. Choose template internally.
-- **Import mapping** `resume_bot/ingest.py`: extract candidate basics into intake and keep original resume details as internal source evidence, never discard useful facts. Add education specialization/year/CGPA, named projects, coding platform links, explicit role/title and accurate experience years.
-- **AI drafting** `resume_bot/ai_first.py`: initial input validator and non-publishable suggestion contract exist; add secure persisted draft IDs, source citations, model output validation, prompt-injection protection, and candidate approval endpoint.
-- **Approval + queue** `dashboard/resume_dashboard.py`, `resume_bot/workflow.py` and `profile.py`: server-side enforce reviewed evidence and actual-claim status. Never trust approval flags only from client. Map confirmed output to existing validated profile, add core competencies/approved project details and safe education metadata.
-- **Output** `resume_bot/latex.py`: sections for confirmed competencies, professional experience, technically accurate projects, actual achievements and *earned* certifications only; never render proposed ideas or training recommendations as established claims.
-- **Job sources**: use current public Naukri/JD postings through an authorized, source-attributed mechanism if accessible. Fall back to existing role taxonomy; do not scrape authenticated or restricted content. Include timestamp, role, sources and relevance, with privacy and caching controls.
-- **Tests**: fourteen inputs only; imports from PDF/DOCX/TXT; manual flow; zero experience/education; multiple roles and education records; proposed skills/technologies/metrics rejected until confirmed; proposed projects never shown as completed; certifications not earned; duplicate prevention; session recovery; ATS verification; real PDF/Overleaf consistency; phone UI.
+- Exactly fourteen intake categories on the AI-first page, with PDF, DOCX and TXT
+  prefill. Import evidence stays in the authenticated server-side draft.
+- Ollama proposals are opt-in, editable and scoped to their source experience or
+  supplied project. Portfolio ideas and learning recommendations cannot enter the
+  queue. Selected claims and the final normalized payload are enforced server-side.
+- Each immutable approval queues through the existing watcher. Replaying the same
+  approval returns the same job; attempting to change an approved draft returns 409.
+- Role keywords use the curated catalog and show the overlapping terms from the
+  published Naukri Pulse article with its date and link. No live listing feed is used.
+- The dashboard recovers approved work through the PR #17 Access flow.
 
 ## Release gates
 

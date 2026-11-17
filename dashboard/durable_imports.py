@@ -32,6 +32,21 @@ class DurableImports:
                 status TEXT, stage TEXT, created REAL, started REAL, activity REAL,
                 metrics TEXT, result TEXT, PRIMARY KEY(owner,id))''')
 
+    def freeze_review(self, owner, identifier, payload):
+        with closing(self.connection()) as db, db:
+            db.execute('BEGIN IMMEDIATE')
+            job = db.execute("SELECT result FROM imports WHERE owner=? AND id=? AND extension='.ai' AND status='complete'",
+                             (owner, identifier)).fetchone()
+            if not job:
+                raise ImportConflict('The draft is no longer available')
+            result = json.loads(job['result'])
+            previous = result.get('_queued_review')
+            if previous is not None and previous != payload:
+                raise ImportConflict('This draft already has a different approved resume')
+            result['_queued_review'] = payload
+            db.execute('UPDATE imports SET result=? WHERE owner=? AND id=?',
+                       (json.dumps(result), owner, identifier))
+
     def connection(self):
         db = sqlite3.connect(self.path, timeout=10)
         db.row_factory = sqlite3.Row
@@ -75,6 +90,7 @@ class DurableImports:
         if not item or (item['status'] in ('complete','error') and item['activity'] < now - RETENTION):
             return None
         data = json.loads(item['result']) if item['result'] else {}
+        data.pop('_queued_review', None)
         data.update(status=item['status'], stage=item['stage'], started=item['started'],
                     activity=item['activity'], now=now)
         if item['metrics']:

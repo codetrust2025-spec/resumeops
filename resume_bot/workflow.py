@@ -133,6 +133,7 @@ def analyze(profile, target, keywords=None, today=None):
     keywords = role_keywords(target) if keywords is None else keywords
     evidence = [profile['headline'], profile['summary'], *profile['skills'], *profile['certifications']]
     evidence.extend(profile.get('projects', []))
+    evidence.extend(profile.get('achievements', []))
     for entry in profile['experience']:
         evidence.extend([entry['position'], *entry['bullets']])
     for entry in profile['education']:
