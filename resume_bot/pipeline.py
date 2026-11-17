@@ -210,6 +210,8 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
         t.units_done(1, 1, 'Saved LaTeX matches the verified profile')
         t.enter('pdf', 'Verifying the saved local PDF')
         verify_pdf(folder / 'resume.pdf', cached, max_pages)
+        if target and target.get('approved'):
+            _audit_approved_pdf(folder / 'resume.pdf', cached)
         t.units_done(1, 1, 'Saved local PDF verified')
         if overleaf:
             completed = _sync_overleaf(folder, completed, cached, browser_profile, max_pages,
@@ -260,6 +262,9 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
         built=compile_latex(working)
         t.units_done(1, 2, 'Local PDF compiled; checking pages and text')
         audit['pdf_checks']=verify_pdf(built,profile,max_pages=max_pages)
+        if target and target.get('approved'):
+            _audit_approved_pdf(built, profile)
+            audit['pdf_checks']['approved_claim_audit'] = 'passed'
         shutil.copyfile(built,working/'resume.pdf')
         pages = audit['pdf_checks'].get('pages')
         t.units_done(2, 2, f'Local PDF verified ({pages} page{"s" if pages != 1 else ""})')
@@ -293,6 +298,14 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
     else:
         t.skip('overleaf', 'Overleaf publishing is disabled')
     return _finish(report, folder, overleaf, t)
+
+
+def _audit_approved_pdf(pdf, profile):
+    """Fail the job if the PDF of a candidate-approved resume contains any unapproved wording."""
+    from .claim_audit import unaccounted_pdf_words
+    leftovers = unaccounted_pdf_words(read_resume_text(pdf), profile)
+    if leftovers:
+        raise BuildError('Approved resume PDF contains unapproved text: ' + ' '.join(leftovers[:12]))
 
 
 def _finish(report, folder, overleaf, t):

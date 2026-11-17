@@ -65,7 +65,8 @@ class ApprovedRequestTests(unittest.TestCase):
             source.write_text(json.dumps({**REQUEST, 'target': {**REQUEST['target'], 'approved': True}}))
             with patch('resume_bot.pipeline.polish', side_effect=AssertionError('approved resume was reworded')):
                 result = process(source, Path(directory) / 'output', polish_enabled=True)
-            self.assertEqual(result['ai_model'] if 'ai_model' in result else 'disabled', 'disabled')
+            self.assertEqual(result['model'], 'disabled')
+            self.assertEqual(result['pdf_checks']['approved_claim_audit'], 'passed')
             profile = json.loads((Path(result['output']) / 'profile.json').read_text())
             self.assertEqual(profile['summary'], PROFILE['summary'])
             self.assertEqual(profile['experience'][0]['bullets'], PROFILE['experience'][0]['bullets'])
@@ -76,7 +77,8 @@ class ApprovalRecordTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             workspace = Workspace(Path(directory), code_root=ROOT)
             durable = DurableImports(Path(directory), draft=lambda *args: {})
-            durable.enqueue('owner', 'b' * 32, '.ai', b'{}')
+            with patch.object(durable, 'start'):  # keep the row; no background worker in this test
+                durable.enqueue('owner', 'b' * 32, '.ai', b'{}')
             result = workspace.enqueue(json.dumps(REQUEST).encode(), approval=approval())
             self.assertTrue(result['created'])
             job = json.loads((workspace.inbox / result['name']).read_text())
@@ -86,7 +88,7 @@ class ApprovalRecordTests(unittest.TestCase):
             self.assertEqual(record['claims'], CLAIMS)
             self.assertTrue(record['attested'])
             with closing(durable.connection()) as db, db:
-                db.execute('UPDATE imports SET activity=?', (time.time() - RETENTION - 1,))
+                db.execute("UPDATE imports SET status='complete', activity=?", (time.time() - RETENTION - 1,))
                 durable.purge(db, time.time())
                 self.assertEqual(db.execute('SELECT COUNT(*) FROM imports').fetchone()[0], 0)
             self.assertEqual(workspace.approvals_for(result['name']), [record])
@@ -176,22 +178,57 @@ class SupervisorHealthTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, '/ai-builder'):
                 dashboard_supervisor.health(port, {'web_url': 'https://resumeops.tech'})
 
-    def test_ai_first_is_opt_in_through_config(self):
-        captured = {}
+    def test_ai_first_is_opt_in_through_an_environment_variable_old_releases_ignore(self):
+        captured = []
 
         class Popen:
             def __init__(self, arguments, **kwargs):
-                captured['arguments'] = arguments
+                captured.append((arguments, kwargs['env']))
 
         config = {'project_root': str(ROOT), 'tool_paths': [], 'model': 'm', 'web_url': 'https://resumeops.tech',
                   'team': 't', 'audience': 'a'}
         with patch.object(dashboard_supervisor, 'release', return_value=ROOT / 'dashboard'), \
-                patch.object(dashboard_supervisor.subprocess, 'Popen', Popen):
+                patch.object(dashboard_supervisor.subprocess, 'Popen', Popen), \
+                patch.dict(dashboard_supervisor.os.environ, {'RESUMEOPS_AI_FIRST': '1'}):
             dashboard_supervisor.spawn('x', 1, config, None)
-            self.assertNotIn('--ai-first', captured['arguments'])
             dashboard_supervisor.spawn('x', 1, {**config, 'ai_first': True}, None)
-            self.assertIn('--ai-first', captured['arguments'])
+        (classic_args, classic_env), (ai_args, ai_env) = captured
+        self.assertNotIn('RESUMEOPS_AI_FIRST', classic_env)
+        self.assertEqual(ai_env['RESUMEOPS_AI_FIRST'], '1')
+        # No new command-line flag: an older release (rollback target) must still start.
+        self.assertEqual(classic_args, ai_args)
+        self.assertFalse(any(argument.startswith('--ai') for argument in ai_args))
 
+
+class ShippedPageTests(unittest.TestCase):
+    def test_pages_have_no_double_encoded_characters(self):
+        for name in ('index.html', 'ai-builder.html', 'operations.html'):
+            with self.subTest(name=name):
+                text = (ROOT / 'dashboard' / name).read_text(encoding='utf-8')
+                self.assertNotRegex(text, 'Â|â€')
+
+
+class WatcherClaimAuditTests(unittest.TestCase):
+    def test_watcher_fails_an_approved_job_whose_pdf_has_unapproved_text(self):
+        from resume_bot import pipeline
+        real = pipeline.render
+
+        def injected(profile, template='standard', years=None):
+            return real(profile, template, years).replace('\\end{document}', 'Led a team of 40 engineers\n\\end{document}')
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'job.json'
+            source.write_text(json.dumps({**REQUEST, 'target': {**REQUEST['target'], 'approved': True}}))
+            with patch('resume_bot.pipeline.render', side_effect=injected):
+                with self.assertRaisesRegex(Exception, 'unapproved text: led team of 40 engineers'):
+                    pipeline.process(source, Path(directory) / 'output', polish_enabled=True)
+            plain = Path(directory) / 'plain.json'
+            plain.write_text(json.dumps(REQUEST))
+            with patch('resume_bot.pipeline.render', side_effect=injected), \
+                    patch('resume_bot.pipeline.polish', side_effect=lambda profile, *a, **k: (profile, {'changed': 0, 'rejected': 0})):
+                # Non-approved jobs keep their existing checks; the claim audit is only for approved resumes.
+                result = pipeline.process(plain, Path(directory) / 'output', polish_enabled=False)
+            self.assertNotIn('approved_claim_audit', result['pdf_checks'])
 
 if __name__ == '__main__':
     unittest.main()

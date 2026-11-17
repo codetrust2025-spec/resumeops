@@ -204,7 +204,7 @@ class Workspace:
         digest = hashlib.sha256(payload).hexdigest()
         target = self.inbox / f'{slug}-{digest}.json'
         if approval is not None:
-            # The audit record is written before the job exists, so no job can run without one.
+            # The approval record is written before the job file is published.
             self.record_approval(target.name, payload, approval)
         if target.exists():
             return {'name': target.name, 'created': False}
@@ -247,7 +247,8 @@ class Workspace:
         folder = self.approvals / Path(job).stem
         if not re.fullmatch(r'[a-z0-9-]+-[0-9a-f]{64}\.json', job) or not folder.is_dir():
             return []
-        return sorted((read_json(path) for path in folder.glob('*.json')), key=lambda item: item and item.get('recorded_at') or '')
+        records = [record for record in map(read_json, folder.glob('*.json')) if isinstance(record, dict)]
+        return sorted(records, key=lambda item: item.get('recorded_at') or '')
 
     def revision_key(self, output):
         path = Path(output) if output else None
@@ -653,7 +654,8 @@ def main():
     parser.add_argument('--access-team', help='Cloudflare Zero Trust team name')
     parser.add_argument('--access-audience', help='Cloudflare Access application AUD tag')
     parser.add_argument('--ai-first', action='store_true',
-                        help='Serve the AI builder at / (the classic builder stays at /workflow)')
+                        help='Serve the AI builder at / (the classic builder stays at /workflow); '
+                             'the supervisor sets RESUMEOPS_AI_FIRST=1 instead')
     args = parser.parse_args()
     web_url = args.web_url.rstrip('/') if args.web_url else None
     access_options = (web_url, args.access_team, args.access_audience)
@@ -681,7 +683,7 @@ def main():
     origin = f'http://127.0.0.1:{args.port}'
     request_handler = handler(
         Workspace(args.root, args.model, args.code_root), origin, secrets.token_hex(32), phone_url, args.phone_user,
-        web_origin=web_url, access_verifier=verifier, ai_first=args.ai_first,
+        web_origin=web_url, access_verifier=verifier, ai_first=args.ai_first or os.environ.get('RESUMEOPS_AI_FIRST') == '1',
     )
     request_handler.resume_imports()
     server = ThreadingHTTPServer(('127.0.0.1', args.port), request_handler)

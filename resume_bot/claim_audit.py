@@ -81,7 +81,7 @@ def unaccounted_pdf_words(pdf_text, profile):
         # Rendering joins fields with separators; remove whole values, longest first.
         for item in ordered:
             value = re.sub(r'(?<!\w)' + re.escape(item) + r'(?!\w)', ' ', value)
-        return re.findall(r'[^\W_]{2,}', value)
+        return re.findall(r'[^\W_]{2,}|\d', value)
 
     leftovers = strip(text)
     if leftovers:

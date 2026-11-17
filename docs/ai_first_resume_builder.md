@@ -73,8 +73,12 @@ and only learns new checks when its process restarts. The release therefore ship
    assets whenever a release ships them.
 2. **Phase 2 (owner-run).** After an administrator restarts the supervisor task, set
    `"ai_first": true` in `dashboard-config.json`. The supervisor then starts the dashboard
-   with `--ai-first`, serving the AI builder at `/` and the classic builder at `/workflow`.
-   Removing the key (or setting it to `false`) and restarting returns to Phase 1.
+   with `RESUMEOPS_AI_FIRST=1` (an environment variable, so older releases used for rollback
+   simply ignore it), serving the AI builder at `/` and the classic builder at `/workflow`.
+   Removing the key (or setting it to `false`) returns to Phase 1 on the next dashboard start.
+3. **Deploy order.** Update the watcher's `resume_bot` code and restart the watcher first, then
+   promote the dashboard release. An older watcher rejects approved jobs (fails safe), and the
+   dashboard imports `resume_bot.ai_review` from the project root.
 
 ## Approval records and claim audit
 
@@ -88,7 +92,10 @@ and only learns new checks when its process restarts. The release therefore ship
   and a different approval adds a new record. They are not part of the 24-hour import store.
 - `resume_bot/claim_audit.py` checks that each summary, skill, responsibility, project detail,
   certification and achievement traces to an approved claim, and that every word in the PDF
-  comes from the approved request or fixed template headings.
+  comes from the approved request or fixed template headings. The watcher runs the PDF part
+  on every approved job (fresh and cached) and fails the job on any unapproved word; the
+  browser acceptance test additionally matches each line against the stored approval record.
+- The approver is stored as the dashboard's session-owner hash, not as an email address.
 
 ## Release gates
 

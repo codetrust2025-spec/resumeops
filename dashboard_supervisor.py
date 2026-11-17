@@ -118,11 +118,14 @@ def spawn(name, port, config, output):
     if config.get('code_root'):
         env['RESUMEOPS_CODE_ROOT'] = config['code_root']
     env['PATH'] = os.pathsep.join([*config['tool_paths'], env['PATH']])
+    # An environment variable, not a flag: releases that predate it ignore it, so rollback still works.
+    env.pop('RESUMEOPS_AI_FIRST', None)
+    if config.get('ai_first') is True:
+        env['RESUMEOPS_AI_FIRST'] = '1'
     return subprocess.Popen([
         sys.executable, '-u', str(folder / 'resume_dashboard.py'), '--root', str(project),
         '--port', str(port), '--model', config['model'], '--web-url', config['web_url'],
         '--access-team', config['team'], '--access-audience', config['audience'],
-        *(['--ai-first'] if config.get('ai_first') is True else []),
     ], cwd=folder, stdout=output, stderr=subprocess.STDOUT, env=env)
 
 def stop(process):

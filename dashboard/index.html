@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="dashboard-token" content="__TOKEN__">
 <meta name="theme-color" content="#0f2140">
-<title>Resume builder Â· ResumeOps</title>
+<title>Resume builder · ResumeOps</title>
 <link rel="stylesheet" href="/builder.css">
 <script defer src="/auth.js"></script>
 <script defer src="/recovery.js"></script>
@@ -75,7 +75,7 @@
 <label for="resume-upload" class="file-label">Resume file
 <input id="resume-upload" type="file" accept=".pdf,.docx,.doc,.odt,.rtf,.txt,.md,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp,.json" aria-describedby="import-formats"></label>
 <button type="button" id="import-resume" class="primary" disabled><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg>Import and prefill</button>
-<small id="import-formats">PDF, Word, TXT, Markdown, image or candidate JSON Â· up to 12 MB (JSON 1 MB). Nothing is generated until you confirm.</small>
+<small id="import-formats">PDF, Word, TXT, Markdown, image or candidate JSON · up to 12 MB (JSON 1 MB). Nothing is generated until you confirm.</small>
 <progress id="resume-import-progress" max="100" value="0" aria-label="Resume import progress" hidden></progress>
 <p id="resume-import-status" role="status" aria-live="polite"></p>
 </div>
@@ -152,11 +152,11 @@
 </section>
 
 <section data-step="7" class="step live" id="generation" aria-live="polite" aria-atomic="false" hidden>
-<header class="step-head"><span class="badge">8</span><div><h2 id="job-title" tabindex="-1">Processing Resume â€” 0%</h2><p id="job-candidate">Your resume is being prepared. Progress comes from the watcher in real time.</p></div><span id="job-state" class="live-state"></span></header>
+<header class="step-head"><span class="badge">8</span><div><h2 id="job-title" tabindex="-1">Processing Resume — 0%</h2><p id="job-candidate">Your resume is being prepared. Progress comes from the watcher in real time.</p></div><span id="job-state" class="live-state"></span></header>
 <ol id="job-pipeline" class="pipeline" aria-label="Processing pipeline"></ol>
 <div class="progress-card"><div class="progress-top"><span class="spinner" aria-hidden="true"></span><div><strong id="job-percent">0%</strong><small id="job-count">0 of 8 complete</small></div></div>
 <progress id="job-progress" max="100" value="0" aria-label="Resume generation progress"></progress></div>
-<dl class="live-grid"><dt>Stage</dt><dd id="job-stage"></dd><dt>Status</dt><dd id="job-status"></dd><dt>Elapsed</dt><dd id="job-elapsed">00:00</dd><dt><svg class="icon" aria-hidden="true"><use href="#i-heart"/></svg>Last heartbeat</dt><dd id="job-heartbeat">â€”</dd><dt><svg class="icon" aria-hidden="true"><use href="#i-gpu"/></svg>GPU / Ollama</dt><dd id="job-gpu">Not reported yet</dd></dl>
+<dl class="live-grid"><dt>Stage</dt><dd id="job-stage"></dd><dt>Status</dt><dd id="job-status"></dd><dt>Elapsed</dt><dd id="job-elapsed">00:00</dd><dt><svg class="icon" aria-hidden="true"><use href="#i-heart"/></svg>Last heartbeat</dt><dd id="job-heartbeat">—</dd><dt><svg class="icon" aria-hidden="true"><use href="#i-gpu"/></svg>GPU / Ollama</dt><dd id="job-gpu">Not reported yet</dd></dl>
 <p id="job-detail" class="live-detail"></p><p id="job-error-detail" class="live-detail mono" hidden></p>
 <ul id="job-warnings" class="live-warnings"></ul>
 <details class="more stage-list"><summary>All measured stages</summary><ol id="job-stages" class="live-stages" aria-label="Processing stages"></ol></details>
@@ -169,7 +169,7 @@
 <p id="result-success" class="success" role="status" hidden>Resume completed successfully. The builder is cleared and ready for the next candidate.</p>
 <div class="result-grid">
 <button type="button" class="tile" data-tab="tab-preview"><svg class="icon" aria-hidden="true"><use href="#i-doc"/></svg><span><b>Resume Preview</b><small>View the final resume</small></span></button>
-<button type="button" class="tile" data-tab="tab-ats"><span class="ring" id="ats-ring"><b id="ats-ring-value">â€“</b></span><span><b>ATS Score</b><small>ATS readiness score</small></span></button>
+<button type="button" class="tile" data-tab="tab-ats"><span class="ring" id="ats-ring"><b id="ats-ring-value">–</b></span><span><b>ATS Score</b><small>ATS readiness score</small></span></button>
 <a class="tile" id="tile-pdf"><svg class="icon pdf" aria-hidden="true"><use href="#i-pdf"/></svg><span><b>PDF Download</b><small>Verified local PDF</small></span></a>
 <button type="button" class="tile" data-tab="tab-latex"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg><span><b>LaTeX Code</b><small>View or copy the .tex</small></span></button>
 <a class="tile" id="tile-overleaf" target="_blank" rel="noopener noreferrer"><svg class="icon green" aria-hidden="true"><use href="#i-link"/></svg><span><b>Overleaf Link</b><small id="overleaf-note">Open in Overleaf</small></span></a>
