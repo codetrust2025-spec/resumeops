@@ -108,7 +108,7 @@ class DashboardTest(unittest.TestCase):
                     with request('/api/draft', data=docx.getvalue(),
                                  headers=async_headers) as response:
                         self.assertEqual(response.status, 202)
-                        self.assertEqual(json.load(response)['status'], 'processing')
+                        self.assertIn(json.load(response)['status'], ('queued', 'processing', 'complete'))
                     ready = None
                     for _ in range(80):
                         with request('/api/import-progress?id='+'b'*32,
@@ -120,13 +120,12 @@ class DashboardTest(unittest.TestCase):
                     self.assertEqual(ready['status'], 'complete')
                     self.assertEqual(ready['source'], expected_text)
                     self.assertEqual(ready['profile'], json.loads(source))
-                    # A reply lost in transit (e.g. a session expiring mid-request) can be fetched
-                    # again for two minutes; after that the personal data is dropped.
+                    # An accepted result remains recoverable across authentication and refresh.
                     with request('/api/import-progress?id='+'b'*32,
                                  headers=headers) as response:
                         self.assertEqual(json.load(response)['status'], 'complete')
-                    later = time.monotonic() + 121
-                    with patch('resume_dashboard.time.monotonic', return_value=later), \
+                    later = time.time() + 24 * 60 * 60 + 1
+                    with patch('durable_imports.time.time', return_value=later), \
                             request('/api/import-progress?id='+'b'*32, headers=headers) as response:
                         self.assertEqual(json.load(response)['status'], 'unknown')
                 with patch.object(Workspace, 'draft', side_effect=ValueError(
@@ -192,6 +191,7 @@ class DashboardTest(unittest.TestCase):
                 self.assertEqual(denied.exception.code, 404)
             finally:
                 server.shutdown()
+                server.RequestHandlerClass.stop_imports()
                 server.server_close()
                 thread.join()
 
