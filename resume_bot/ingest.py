@@ -112,7 +112,72 @@ def _looks_like_name(line):
     words = line.split()
     return (2 <= len(words) <= 5 and not SECTIONS.match(line) and not re.search(r'[\d@/:|,]', line)
             and all(re.fullmatch(r"[A-Za-z][A-Za-z.'-]*", word) for word in words)
-            and sum(word[0].isupper() for word in words) >= len(words) - 1)
+            and sum(word[0].isupper() for word in words) >= len(words) - 1
+            # "Senior Data Analyst" is a headline, not a person.
+            and not any(TITLE_WORDS.match(word.strip('.')) for word in words))
+
+
+NAME_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9.'-]*")
+TITLE_WORDS = re.compile(r'^(?:resume|cv|curriculum|vitae|senior|junior|lead|principal|staff|chief|head|software|'
+                         r'data|engineer|developer|manager|analyst|consultant|intern|tester|architect|scientist|'
+                         r'designer|specialist|administrator|executive|associate|programmer|officer|trainee|'
+                         r'fresher|graduate|student|full|stack|frontend|backend|devops|cloud|qa)$', re.I)
+NAME_PARTICLES = {'de', 'da', 'del', 'van', 'von', 'der', 'bin', 'binti', 'al', 'el', 'la', 'le', 'di', 'du'}
+SEPARATORS = re.compile(r'\s*(?:\||•|·|–|—|\s-\s|,)\s*')
+INSTITUTION = re.compile(r'universit|college|institut|school|academy|vidyalaya|polytechnic', re.I)
+
+
+def _complete_name(name, head):
+    """A model may quote only part of the name line ("Priya Raman" from "Priya Example Raman").
+    Use the verbatim name segment of a header line that contains the quoted words in order.
+    Segments with job-title words, contact details or headings are never treated as names."""
+    words = _norm(name).split()
+    if not words:
+        return name
+    for line in head[:3]:
+        segment = SEPARATORS.split(line, maxsplit=1)[0].strip()
+        tokens = segment.split()
+        if (not len(words) < len(tokens) <= 8 or SECTIONS.match(segment) or EMAIL.search(segment)
+                or URL.search(segment) or not all(NAME_TOKEN.fullmatch(token) for token in tokens)
+                or any(TITLE_WORDS.match(token.strip('.')) for token in tokens)
+                or not all(token[0].isupper() or token in NAME_PARTICLES for token in tokens)):
+            continue
+        remaining = iter(token.casefold() for token in tokens)
+        if all(word in remaining for word in words):  # every quoted word, in the same order
+            return segment
+    return name
+
+
+def _complete_degree(entry, lines):
+    """Keep the branch with the degree when the model quoted only "B.Tech" from a line such as
+    "B.Tech, Computer Science, Example University, 2022". The result is a verbatim span."""
+    degree = entry.get('degree') or ''
+    if not degree:
+        return
+    pattern = re.compile(r'\s+'.join(map(re.escape, degree.split())), re.I)
+    for line in lines:
+        match = pattern.search(line)
+        if not match:
+            continue
+        rest = line[match.end():]
+        branch = re.match(r"(\s*(?:,|:|\s-\s|\s–\s|\(|\s+in\s+)\s*)([A-Za-z&/.' ]{2,80}?)\s*(\)|,|\||\s-\s|\s–\s|\d|$)",
+                          rest, re.I)
+        if not branch:
+            return
+        text = branch.group(2).strip()
+        institution = _norm(entry.get('institution') or '')
+        if (not text or len(text.split()) > 7 or INSTITUTION.search(text) or re.fullmatch(r'(?i)hons?\.?|honours', text)
+                or (institution and (_norm(text) in institution or institution in _norm(text)))
+                or _norm(text) in _norm(degree)):
+            return
+        if '(' in branch.group(1):
+            if branch.group(3) != ')':
+                return
+            end = match.end() + branch.end(3)  # keep "M.Tech (Data Science)" balanced
+        else:
+            end = match.end() + branch.start(2) + len(branch.group(2).rstrip())
+        entry['degree'] = line[match.start():end]
+        return
 
 
 def _section(source, names):
@@ -135,7 +200,7 @@ def _split_list(value):
     return [part for part in parts if part]
 
 
-def repair(out, source):
+def repair(out, source, name_hint=''):
     """Deterministic, verbatim-only fixes for common model slips. Every value set here is copied
     from the source text (or moved between fields) and is never invented."""
     lines = _lines(source)
@@ -143,11 +208,18 @@ def repair(out, source):
     # Name: the model sometimes leaves it empty or puts it in the headline.
     if out['full_name'] and out['headline'] and _norm(out['headline']) == _norm(out['full_name']):
         out['headline'] = ''
+    if not out['full_name'] and name_hint:
+        # A rejected, non-verbatim quote ("Venkata Reddy") only ever selects a verbatim header segment.
+        completed = _complete_name(name_hint, head)
+        out['full_name'] = completed if completed != name_hint else ''
     if not out['full_name'] and out['headline'] and _looks_like_name(out['headline']) and \
             any(_norm(out['headline']) == _norm(line) for line in head):
         out['full_name'], out['headline'] = out['headline'], ''
     if not out['full_name']:
         out['full_name'] = next((line for line in head if _looks_like_name(line)), '')
+    out['full_name'] = _complete_name(out['full_name'], head)
+    for entry in out['education']:
+        _complete_degree(entry, lines)
     if out['full_name'] and not out['headline']:
         index = next((i for i, line in enumerate(lines) if _norm(line) == _norm(out['full_name'])), None)
         following = lines[index + 1] if index is not None and index + 1 < len(lines) else ''
@@ -264,7 +336,8 @@ INPUT:
             raise ExtractionError('Invalid education')
         out['education'].append({k:read_field(item.get(k,{}),k in ('institution','degree'))
                                  for k in ('institution','degree','start','end','details')})
-    repair(out, source)
+    hint = (data.get('full_name') or {}).get('value', '') if isinstance(data.get('full_name'), dict) else ''
+    repair(out, source, hint if isinstance(hint, str) else '')
     if for_review:
         return out
     for key in ('portfolio', 'current_company'):

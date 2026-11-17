@@ -147,6 +147,64 @@ class ImportAccuracyTests(unittest.TestCase):
             write_pdf(path, RESUME)
             self.check(read_resume_text(path))
 
+    def truncating_model(self, name, degree):
+        """Production on 18 Nov 2026: "Synthetic Picker" from "Synthetic Picker Txt QA1118F", and
+        "B.Tech" quoted without its branch."""
+        model = SloppyModel()
+        original = model.generate
+
+        def generate(prompt, schema=None, on_progress=None):
+            data = original(prompt, schema=schema, on_progress=on_progress)
+            data['headline'] = {'value': 'Senior Data Analyst', 'evidence': 'Senior Data Analyst'}
+            data['full_name'] = {'value': name, 'evidence': name}
+            data['education'][0]['degree'] = {'value': degree, 'evidence': degree}
+            return data
+        model.generate = generate
+        return model
+
+    def test_truncated_name_and_degree_are_completed_from_the_source_in_every_format(self):
+        source = (RESUME.replace('Priya Example Raman', 'Venkata Sai Krishna Reddy QA1118F')
+                  .replace('B.Sc. Statistics, Example University', 'B.Tech, Computer Science, Example University'))
+        with tempfile.TemporaryDirectory() as directory:
+            docx, pdf = Path(directory) / 'resume.docx', Path(directory) / 'resume.pdf'
+            write_docx(docx, source)
+            texts = {'txt': source, 'docx': read_resume_text(docx)}
+            if shutil.which('pdflatex') and shutil.which('pdftotext'):
+                write_pdf(pdf, source)
+                texts['pdf'] = read_resume_text(pdf)
+            for kind, text in texts.items():
+                for quoted in ('Venkata Sai', 'Venkata Reddy', 'Venkata Sai Krishna Reddy QA1118F'):
+                    with self.subTest(kind=kind, quoted=quoted):
+                        profile = extract_profile(text, self.truncating_model(quoted, 'B.Tech'), for_review=True)
+                        self.assertEqual(profile['full_name'], 'Venkata Sai Krishna Reddy QA1118F')
+                        self.assertEqual(profile['headline'], 'Senior Data Analyst')
+                        self.assertEqual(profile['education'][0]['degree'], 'B.Tech, Computer Science')
+                        self.assertEqual(profile['education'][0]['institution'], 'Example University')
+
+    def test_name_completion_never_absorbs_titles_or_contact_details(self):
+        for line, quoted, expected in (
+                ('Rahul Kumar Senior Software Engineer', 'Rahul Kumar', 'Rahul Kumar'),
+                ('Anil Kumar | anil@example.com | Hyderabad', 'Anil', 'Anil Kumar'),
+                ('K. Bhavana Reddy', 'Bhavana Reddy', 'K. Bhavana Reddy'),
+                ('Maria de la Cruz', 'Maria Cruz', 'Maria de la Cruz')):
+            with self.subTest(line=line):
+                source = RESUME.replace('Priya Example Raman', line)
+                profile = extract_profile(source, self.truncating_model(quoted, 'B.Sc. Statistics'), for_review=True)
+                self.assertEqual(profile['full_name'], expected)
+
+    def test_degree_branch_is_only_taken_from_the_same_line(self):
+        for line, quoted, expected in (
+                ('Bachelor of Technology in Electronics and Communication Engineering, Example University, 2017 - 2020',
+                 'Bachelor of Technology', 'Bachelor of Technology in Electronics and Communication Engineering'),
+                ('M.Tech (Data Science), Example University, 2017 - 2020', 'M.Tech', 'M.Tech (Data Science)'),
+                ('MBA, Example University, 2017 - 2020', 'MBA', 'MBA'),
+                ('B.Sc. (Hons), Example University, 2017 - 2020', 'B.Sc.', 'B.Sc.')):
+            with self.subTest(line=line):
+                source = RESUME.replace('B.Sc. Statistics, Example University, 2017 - 2020', line)
+                profile = extract_profile(source, self.truncating_model('Priya Example Raman', quoted), for_review=True)
+                self.assertEqual(profile['education'][0]['degree'], expected)
+                self.assertIn(expected, source)  # verbatim, never invented
+
     def test_nothing_is_invented_when_the_source_lacks_it(self):
         bare = '\n'.join(line for line in RESUME.splitlines()
                          if 'linkedin' not in line and not line.startswith(('Projects', '- Open', '- Kaggle')))

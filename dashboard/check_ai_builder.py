@@ -29,6 +29,16 @@ DRAFT = {
 }
 
 
+def assert_tap_targets(page, selector):
+    """Header navigation must be at least 44 x 44 CSS px (WCAG 2.5.5) on phone and desktop."""
+    sizes = page.locator(selector).evaluate_all(
+        'items => items.filter(item => item.offsetParent).map(item => {'
+        'const box = item.getBoundingClientRect(); return [item.textContent.trim(), box.width, box.height]; })')
+    assert sizes, selector
+    small = [size for size in sizes if size[1] < 44 or size[2] < 44]
+    assert not small, small
+
+
 def verify_completed(page, workspace, candidate, *, education_first, builder):
     job = next(path for path in workspace.inbox.glob('*.json')
                if json.loads(path.read_text(encoding='utf-8')).get('profile', {}).get('full_name') == candidate)
@@ -97,6 +107,7 @@ def check(ai_first=False):
                     assert ('id="ai-form"' in home) is ai_first and ('id="candidate"' in home) is not ai_first
                     assert 'id="candidate"' in page.request.get(origin + '/workflow').text()
                     page.goto(origin + builder)
+                    assert_tap_targets(page, '.ai-nav-actions a, .ai-nav-actions button')
                     page.get_by_label('Full name').fill('Previous Candidate')
                     page.get_by_label('Phone').fill('555-0101')
                     page.wait_for_function("""async () =>
@@ -118,7 +129,8 @@ def check(ai_first=False):
                     second.close()
 
                     fixture = {'profile': {'full_name': 'AI First Synthetic', 'email': 'ai-first@example.com',
-                                           'education': [{'degree': 'BSc', 'institution': 'Imported University',
+                                           'education': [{'degree': 'B.Tech, Computer Science',
+                                                          'institution': 'Imported University',
                                                           'start': '2022', 'end': ''}]},
                                'source': 'AI First Synthetic, ai-first@example.com\nSkills: Python'}
                     access['armed'] = False
@@ -131,6 +143,9 @@ def check(ai_first=False):
                     expect(page.get_by_label('Phone')).to_have_value('')
                     # A lone year extracted as the start date is the graduation year.
                     expect(page.locator('#ai-education [name=graduation_year]')).to_have_value('2022')
+                    # Degree and branch arrive as one verbatim span and are split into their own fields.
+                    expect(page.locator('#ai-education [name=degree]')).to_have_value('B.Tech')
+                    expect(page.locator('#ai-education [name=specialization]')).to_have_value('Computer Science')
                     page.locator('#ai-education').get_by_role('button', name='Remove entry').click()
                     access['armed'] = True
                     page.get_by_label('Target role').fill('Full Stack Developer')
@@ -192,6 +207,7 @@ def check(ai_first=False):
                     desktop = browser.new_context(viewport={'width': 1360, 'height': 960})
                     senior = desktop.new_page()
                     senior.goto(origin + builder)
+                    assert_tap_targets(senior, '.ai-nav-actions a, .ai-nav-actions button')
                     senior.get_by_label('Target role').fill('Principal Platform Engineer')
                     senior.get_by_label('Total years of experience').fill('9')
                     senior.get_by_label('Full name').fill('Senior Synthetic')
