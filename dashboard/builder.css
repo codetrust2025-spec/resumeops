@@ -110,3 +110,10 @@ button,.button{display:inline-block;padding:9px 14px;border:1px solid var(--prim
   .live-stages{gap:3px;margin:6px 0}
   .live-stages li{font-size:.68rem;padding:2px 6px}
 }
+
+/* Explain the exact missing field instead of silently blocking Continue in collapsed sections. */
+.validation-notice{padding:10px 12px;margin:0 0 12px;border:1px solid #d78b90;
+  border-radius:8px;background:#fff4f4;color:#862334;font-weight:600;font-size:.88rem}
+input[aria-invalid="true"],select[aria-invalid="true"],textarea[aria-invalid="true"]{
+  border-color:#b52a43!important;box-shadow:0 0 0 2px #b52a4322}
+.resume-entry[open] [aria-invalid="true"]{scroll-margin-top:90px}
