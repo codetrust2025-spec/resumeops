@@ -27,6 +27,7 @@ class SessionApiTests(unittest.TestCase):
 
     def tearDown(self):
         self.server.shutdown()
+        self.server.RequestHandlerClass.stop_imports()
         self.server.server_close()
         self.temp.cleanup()
 
@@ -47,12 +48,20 @@ class SessionApiTests(unittest.TestCase):
         self.assertEqual(denied.exception.code, 403)
         self.assertIn(b'access denied', denied.exception.read())
 
+    def test_request_bound_to_a_different_account_is_denied(self):
+        owner = json.loads(self.get('/api/session')[1])['owner']
+        self.assertEqual(self.get('/api/status', {'X-Resume-Owner': owner})[0], 200)
+        with self.assertRaises(HTTPError) as denied:
+            self.get('/api/status', {'X-Resume-Owner': 'different-account'})
+        self.assertEqual(denied.exception.code, 403)
+
     def test_sign_in_return_page_notifies_the_waiting_tab(self):
         status, body = self.get('/auth/renewed')
         self.assertEqual(status, 200)
-        self.assertIn(b'<script defer src="/auth-renewed.js">', body)
-        self.assertNotIn(b'<script>', body)          # inline scripts are blocked by the page's CSP
+        self.assertIn(b'<script defer src="/auth-renewed.js"></script>', body)
+        self.assertNotIn(b'<script>', body)
         status, script = self.get('/auth-renewed.js')
+        self.assertEqual(status, 200)
         for marker in (b"BroadcastChannel('resumeops-auth')", b'resumeops.authRenewed', b'window.close()',
                        b"location.replace('/')"):
             self.assertIn(marker, script)
@@ -78,9 +87,12 @@ class SessionApiTests(unittest.TestCase):
             self.assertEqual(again['profile']['full_name'], 'Lost Reply Example')
             self.assertNotIn('delivered', again)
             # The same upload re-sent after a sign-in is not processed twice.
-            with self.assertRaises(HTTPError) as duplicate:
-                urlopen(Request(self.origin + '/api/draft', data=b'x' * 200, headers=headers), timeout=5)
-            self.assertEqual(duplicate.exception.code, 409)
+            with urlopen(Request(self.origin + '/api/draft', data=b'x' * 200, headers=headers), timeout=5) as duplicate:
+                self.assertEqual(duplicate.status, 202)
+                self.assertEqual(json.load(duplicate)['status'], 'complete')
+            with self.assertRaises(HTTPError) as conflict:
+                urlopen(Request(self.origin + '/api/draft', data=b'y' * 200, headers=headers), timeout=5)
+            self.assertEqual(conflict.exception.code, 409)
         finally:
             self.workspace.draft = original
 
