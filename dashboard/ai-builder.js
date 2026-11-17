@@ -238,7 +238,15 @@ function renderReview(draft) {
   ai('ai-intake').hidden = true;
   ai('ai-review').hidden = false;
   ai('ai-claims').replaceChildren();
+  const claimGroups = new Map();
   for (const claim of draft.claims) {
+    if (!claimGroups.has(claim.section)) {
+      const section = disclosure(claim.section, 'ai-review-section-' + claimGroups.size,
+                                 claimGroups.size === 0);
+      section.dataset.section = claim.section;
+      ai('ai-claims').append(section);
+      claimGroups.set(claim.section, section);
+    }
     const row = node('div');
     row.className='ai-claim';
     row.dataset.claim=claim.id;
@@ -259,8 +267,9 @@ function renderReview(draft) {
     text.rows=2; text.value=state.edits?.[claim.id] ?? state.approval?.claims?.[claim.id] ?? claim.text;
     text.setAttribute('aria-label','Edit ' + claim.section.toLowerCase());
     row.append(label,node('p',claim.reason),text);
-    ai('ai-claims').append(row);
+    claimGroups.get(claim.section).append(row);
   }
+  updateReviewCounts();
   ai('ai-attest').checked=state.approval?.attested === true;
   const suggestions = draft.suggestions;
   ai('ai-ideas').replaceChildren(node('h3','Portfolio ideas (not completed)'),
@@ -292,6 +301,7 @@ async function draftContent() {
   await api('/api/ai-draft',draft);
   renderReview(await poll(draft.id, 'Drafting resume'));
   showProgress('AI draft complete', 'Review your AI suggestions.', 'complete');
+  ai('ai-review').scrollIntoView({block:'start'});
 }
 function selected() {
   const claims = {};
@@ -302,6 +312,7 @@ function selected() {
     if (row.querySelector('input').checked) claims[row.dataset.claim] = text;
   }
   state.edits = edits;
+  updateReviewCounts();
   return {attested:ai('ai-attest').checked,claims};
 }
 async function preview() {
@@ -310,8 +321,18 @@ async function preview() {
   view.replaceChildren(node('h3',profile.full_name),
     node('p',[profile.email,profile.phone,profile.location,profile.linkedin,profile.github,profile.portfolio].filter(Boolean).join(' | ')));
   if (profile.current_company) view.append(node('p','Current company: ' + profile.current_company));
+  const score = node('p','ATS readiness: ' + ats.ats_readiness + '/100');
+  score.className = 'ai-score';
+  view.append(score);
   function section(title, entries) {
-    if (entries.length) view.append(node('h4',title),...entries);
+    if (!entries.length) return;
+    const group=disclosure(title + ' (' + entries.length + ')', 'ai-preview-section-' +
+      view.querySelectorAll('details').length, title === 'Professional summary');
+    const body = node('div');
+    body.className = 'ai-preview-items';
+    body.append(...entries);
+    group.append(body);
+    view.append(group);
   }
   section('Professional summary',profile.summary ? [node('p',profile.summary)] : []);
   section('Technical skills',profile.skills.map(text => node('p',text)));
@@ -326,21 +347,23 @@ async function preview() {
     ['certifications','Certifications'],['coding_platforms','Coding platforms']]) {
     section(title,(profile[key] || []).map(text => node('p',text)));
   }
-  view.append(node('p','ATS readiness: ' + ats.ats_readiness + '/100'),
-    node('p','Matched: ' + ats.matched.join(', ')),node('p','Missing: ' + ats.missing.join(', ')),
+  section('ATS analysis', [node('p','Matched: ' + ats.matched.join(', ')),
+    node('p','Missing: ' + ats.missing.join(', ')),
     ...ats.breakdown.map(part => node('p',part.label + ': ' + part.points + '/' + part.max)),
-    ...ats.suggestions.map(tip => node('p',tip)));
+    ...ats.suggestions.map(tip => node('p',tip))]);
   if (quality) {
-    view.append(node('h4','Review checks'),
+    section('Review checks', [
       node('p','Target role: ' + quality.role_title),
       node('p',quality.verified_claims + ' candidate-approved statements.'),
       node('p',quality.role_keywords_available ? quality.keyword_matches + ' relevant keyword matches.' :
         'No sourced or curated keyword list is available for this title.'),
       node('p',quality.experience_dates_support_level ? 'Selected experience level passes the date check.' :
-        'Check the selected experience level against the supplied employment dates.'));
+        'Check the selected experience level against the supplied employment dates.')]);
   }
+  ai('ai-review').hidden=true;
   ai('ai-result').hidden=false;
   status('Review the preview before generating.');
+  ai('ai-result').scrollIntoView({block:'start'});
 }
 async function queue() {
   const result = await api('/api/ai-queue',state.queuing);
@@ -424,6 +447,11 @@ async function init() {
   ai('ai-preview').addEventListener('click',handle(async () => {
     state.approval=selected(); await save(); await preview();
   }));
+  ai('ai-edit-review').addEventListener('click',() => {
+    ai('ai-result').hidden = true;
+    ai('ai-review').hidden = false;
+    ai('ai-review').scrollIntoView({block:'start'});
+  });
   ai('ai-generate').addEventListener('click',handle(async () => {
     state.queuing={id:state.draft.id,approval:structuredClone(state.approval)};
     await save();
