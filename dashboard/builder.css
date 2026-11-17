@@ -20,8 +20,6 @@ button,.button{display:inline-block;padding:9px 14px;border:1px solid var(--prim
 #resume-import-status.error{color:#8c2432}
 @media(max-width:760px){.import-panel{padding:12px}.import-controls{display:grid;grid-template-columns:minmax(0,1fr)}.import-controls button{width:100%}}
 
-.text-link{padding:0;border:0;background:none;color:var(--primary);font-size:.9rem;font-weight:500;text-align:left;text-decoration:underline;text-underline-offset:3px}
-.text-link:hover{color:#16355e}
 
 /* Compact, accessible iPhone / small-screen Resume Builder. Desktop markup and layout are unchanged:
    builder.js adds the collapsible groups and entry wrappers only at max-width 760px. */
