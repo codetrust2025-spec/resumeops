@@ -422,14 +422,26 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return self.send_content(data, mime + '; charset=utf-8')
             return self.send_json({'error': 'File unavailable.'}, 404)
 
+        def reject_post(self, message):
+            # Closing a socket with unread request bytes can reset it before Windows clients see
+            # the 403. Drain small requests without accepting the payload or waiting indefinitely.
+            try:
+                size = int(self.headers.get('Content-Length', '0'))
+                if 0 < size <= 65536:
+                    self.connection.settimeout(1)
+                    self.rfile.read(size)
+            except (ValueError, OSError):
+                pass
+            return self.send_json({'error': message}, 403)
+
         def do_POST(self):
             request_origin = self.request_origin()
             if (self.path not in ('/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry') or request_origin is None
                     or self.headers.get('Origin') != request_origin
                     or not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token)):
-                return self.send_json({'error': 'Request not authorized.'}, 403)
+                return self.reject_post('Request not authorized.')
             if not self.account_matches(request_origin):
-                return self.send_json({'error': 'Dashboard access denied for this session.'}, 403)
+                return self.reject_post('Dashboard access denied for this session.')
             drafting = self.path == '/api/draft'
             from resume_bot.ollama import OllamaError
             extension = self.headers.get('X-Resume-Extension', '').lower()
