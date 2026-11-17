@@ -60,9 +60,10 @@ def check(screenshots):
                     'name':'resume.exe','mimeType':'application/octet-stream','buffer':b'invalid'})
                 import_page.get_by_role('button', name='Import and prefill').click()
                 expect(import_page.locator('#resume-import-status')).to_contain_text('Unsupported file type')
-                with import_page.expect_file_chooser() as picker:
-                    import_page.get_by_role('button', name='Import an existing document').click()
-                picker.value.set_files({
+                # Exactly one import control exists; the template card never opens a second picker.
+                expect(import_page.locator('#template-import')).to_have_count(0)
+                expect(import_page.get_by_role('button', name='Import and prefill')).to_have_count(1)
+                import_page.locator('#resume-upload').set_input_files({
                     'name':'verified.json','mimeType':'application/json',
                     'buffer':json.dumps({'profile':{
                         'full_name':'Jordan Import Example','email':'jordan@example.com',
