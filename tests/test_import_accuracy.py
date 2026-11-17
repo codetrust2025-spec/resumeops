@@ -113,6 +113,27 @@ class ImportAccuracyTests(unittest.TestCase):
         self.check(RESUME)
         self.check(RESUME, for_review=False)   # the watcher's strict path validates the same result
 
+    def test_partial_model_project_list_is_completed_from_verbatim_source_titles(self):
+        model = SloppyModel()
+        original = model.generate
+
+        def only_first_project(prompt, schema=None, on_progress=None):
+            data = original(prompt, schema=schema, on_progress=on_progress)
+            title = 'Open-source SQL style checker for analysts'
+            data['projects'] = [{'value': title, 'evidence': title}]
+            return data
+
+        model.generate = only_first_project
+        source = RESUME.replace(
+            '- Kaggle notebook on retail demand patterns',
+            '- Kaggle notebook on retail demand patterns\n'
+            '- Built a notebook using published retail datasets')
+        profile = extract_profile(source, model, for_review=True)
+        self.assertEqual(profile['projects'], [
+            'Open-source SQL style checker for analysts',
+            'Kaggle notebook on retail demand patterns'])
+        self.assertNotIn('Built a notebook using published retail datasets', profile['projects'])
+
     def test_docx(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'resume.docx'
