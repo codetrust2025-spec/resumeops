@@ -4,7 +4,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
-from dashboard.durable_imports import DurableImports, ImportConflict
+from dashboard.durable_imports import DurableImports, ImportConflict, RETENTION
 
 
 class DurableImportTests(unittest.TestCase):
@@ -40,5 +40,23 @@ class DurableImportTests(unittest.TestCase):
                 self.assertEqual(calls, [('.txt', b'sample')])
                 with closing(restarted.connection()) as db:
                     self.assertIsNone(db.execute('SELECT document FROM imports').fetchone()[0])
+            finally:
+                restarted.stop()
+
+
+    def test_stale_queued_document_is_removed_before_inference(self):
+        with tempfile.TemporaryDirectory() as folder:
+            queue = DurableImports(Path(folder), lambda *args: self.fail('Expired input was processed'))
+            queue.stop()
+            queue.enqueue('alice', 'old', '.txt', b'abandoned document')
+            with closing(queue.connection()) as db, db:
+                db.execute('UPDATE imports SET activity=?', (time.time() - RETENTION - 1,))
+            restarted = DurableImports(Path(folder), queue.draft)
+            restarted.start()
+            try:
+                deadline = time.monotonic() + 5
+                while restarted.get('alice', 'old') is not None and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                self.assertIsNone(restarted.get('alice', 'old'))
             finally:
                 restarted.stop()

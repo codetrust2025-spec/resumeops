@@ -62,7 +62,10 @@
           return Promise.reject(new Error(result.error || 'Local extraction failed.'));
         }
         if(result.status==='unknown'){
-          if(!work.file) return Promise.reject(new Error('The saved import expired. Select the source file again.'));
+          if(!work.file) {
+            await ResumeRecovery.remove('import');
+            return Promise.reject(new Error('The saved import expired. Select the source file again.'));
+          }
           const outcome=await sendUpload(work);
           if(outcome.status===202){
             // Keep the file until the server has durably accepted it. Further recovery only needs the ID.
@@ -149,6 +152,7 @@
       await ResumeRecovery.remove('selected-import');
       fileInput.value='';
     } catch(error) {
+      if (work.extension === '.json') await ResumeRecovery.remove('import').catch(() => {});
       message('Import could not complete: '+error.message,true);
     } finally {
       busy=false;
@@ -156,6 +160,13 @@
       button.disabled=!fileInput.files.length;
     }
   }
+  async function withImportLock(action, onBusy = () => {}) {
+    await ResumeAuth.ready();
+    if (!navigator.locks) throw new Error('Import recovery requires a browser with Web Locks support.');
+    return navigator.locks.request('resumeops-import:' + ResumeAuth.owner, {ifAvailable:true},
+      lock => lock ? action() : onBusy());
+  }
+
   button.addEventListener('click',async () => {
     if(busy || !fileInput.files.length) return;
     const file=fileInput.files[0];
@@ -170,10 +181,17 @@
       return;
     }
     try {
-      const work={id:crypto.randomUUID().replaceAll('-',''),extension,file};
-      await ResumeRecovery.put('import',work);
-      await ResumeRecovery.remove('selected-import');
-      await run(work);
+      await withImportLock(async () => {
+        const pending = await ResumeRecovery.read('import');
+        if(pending) {
+          await run(pending);
+          return;
+        }
+        const work={id:crypto.randomUUID().replaceAll('-',''),extension,file};
+        await ResumeRecovery.put('import',work);
+        await ResumeRecovery.remove('selected-import');
+        await run(work);
+      }, () => message('An import is already open in another tab. Continue there or close that tab to resume here.', true));
     } catch(error) {
       message('Cannot save this upload for recovery. Check browser storage and retry.',true);
     }
@@ -182,7 +200,10 @@
     try {
       const work=await ResumeRecovery.read('import');
       if (work) {
-        await run(work);
+        await withImportLock(async () => {
+          const current = await ResumeRecovery.read('import');
+          if (current) await run(current);
+        });
       } else {
         const selected = await ResumeRecovery.read('selected-import');
         if (selected && !fileInput.files.length) {

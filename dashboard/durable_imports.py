@@ -40,7 +40,7 @@ class DurableImports:
 
     @staticmethod
     def purge(db, now):
-        db.execute("DELETE FROM imports WHERE activity < ? AND status IN ('complete','error')",
+        db.execute("DELETE FROM imports WHERE activity < ? AND status IN ('queued','complete','error')",
                    (now - RETENTION,))
 
     def enqueue(self, owner, identifier, extension, data):

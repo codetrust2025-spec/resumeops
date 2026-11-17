@@ -7,7 +7,20 @@ const ResumeRecovery = (() => {
     if (!database) database = new Promise((resolve,reject) => {
       const req = indexedDB.open('resumeops-recovery',1);
       req.onupgradeneeded = () => req.result.createObjectStore('work');
-      req.onsuccess = () => resolve(req.result);
+      req.onsuccess = () => {
+        const connection = req.result;
+        const tx = connection.transaction('work','readwrite');
+        const cursor = tx.objectStore('work').openCursor();
+        const cutoff = Date.now() - TTL;
+        cursor.onsuccess = () => {
+          const item = cursor.result;
+          if (!item) return;
+          if (item.value.saved < cutoff) item.delete();
+          item.continue();
+        };
+        tx.oncomplete = () => resolve(connection);
+        tx.onabort = () => reject(tx.error);
+      };
       req.onerror = () => reject(req.error);
     });
     return database;
@@ -24,9 +37,7 @@ const ResumeRecovery = (() => {
   }
   async function read(key) {
     const value=await run('readonly',(store,owner) => store.get(owner+':'+key));
-    if(!value) return null;
-    if(Date.now()-value.saved>TTL) {await remove(key);return null;}
-    return value.value;
+    return value && Date.now()-value.saved<=TTL ? value.value : null;
   }
   const put = (key,value) => run('readwrite',(store,owner) => store.put({saved:Date.now(),value},owner+':'+key));
   const remove = key => run('readwrite',(store,owner) => store.delete(owner+':'+key));

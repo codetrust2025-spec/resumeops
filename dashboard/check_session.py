@@ -24,10 +24,14 @@ def main():
     server.RequestHandlerClass = handler(workspace, url, 'token-1')
     threading.Thread(target=server.serve_forever, daemon=True).start()
     drafts = []
+    allow_draft = threading.Event()
+    allow_draft.set()
 
     def synthetic_draft(extension, data, report=lambda stage, metrics=None: None):
         drafts.append(extension)
         report('Extracting candidate details with Ollama')
+        if not allow_draft.wait(15):
+            raise RuntimeError('Timed out waiting for the browser test')
         time.sleep(1.5)
         return {'profile': {'full_name': 'Session Import Example', 'email': 'session.import@example.com',
                             'skills': ['Python'], 'experience': [{'company': 'Example Co', 'position': 'Engineer',
@@ -168,6 +172,7 @@ def main():
 
         # 6. Expiry while the import is being polled: the import still completes.
         drafts.clear()
+        allow_draft.clear()
         imports.close()
         imports = browser.new_context()
         imports.route(url + '/**', edge)
@@ -178,6 +183,18 @@ def main():
                                                          'buffer': b'Session Import Example resume again. ' * 10})
         fresh.get_by_role('button', name='Import and prefill').click()
         fresh.wait_for_function("ResumeRecovery.read('import').then(work => work && !work.file)")
+        second = imports.new_page()
+        second.goto(url)
+        second.get_by_role('button', name='Create Resume').click()
+        second.locator('#resume-upload').set_input_files({'name': 'second.txt', 'mimeType': 'text/plain',
+                                                         'buffer': b'Another synthetic candidate.'})
+        second.get_by_role('button', name='Import and prefill').click()
+        expect(second.locator('#resume-import-status')).to_contain_text('already open in another tab')
+        same_id = "(ResumeRecovery.read('import').then(work => work.id))"
+        assert second.evaluate(same_id) == fresh.evaluate(same_id)
+        second.close()
+        results['second_tab_kept_original_import'] = True
+        allow_draft.set()
         expired['mode'] = 'redirect'
         expect(fresh.locator('#auth-banner')).to_be_visible(timeout=10000)
         fresh.close()
