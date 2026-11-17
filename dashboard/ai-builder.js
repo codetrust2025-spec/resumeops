@@ -96,6 +96,35 @@ function control([key, label, type], value = '') {
   wrapper.append(input);
   return wrapper;
 }
+function disclosure(title, id, open = false) {
+  const detail = node('details');
+  detail.id = id;
+  detail.className = 'ai-disclosure';
+  detail.open = open;
+  detail.append(node('summary', title));
+  return detail;
+}
+function updateCounts() {
+  const optional = ai('ai-contact-summary');
+  if (optional) {
+    const count = basic.slice(4).filter(([key]) =>
+      ai('ai-basics').querySelector('[name=' + key + ']')?.value.trim()).length;
+    optional.textContent = count ? ' · ' + count + ' added' : ' · optional';
+  }
+  for (const [key,title] of collections) {
+    const count = ai('ai-' + key)?.children.length || 0;
+    const summary = ai('ai-section-' + key)?.querySelector('summary');
+    if (summary) summary.textContent = title + ' (' + count + ')';
+  }
+}
+function updateReviewCounts() {
+  for (const details of ai('ai-claims').querySelectorAll('details[data-section]')) {
+    const all = details.querySelectorAll('[data-claim]');
+    const checked = [...all].filter(item => item.querySelector('input[type=checkbox]').checked).length;
+    details.querySelector('summary').textContent =
+      details.dataset.section + ' · ' + checked + '/' + all.length + ' selected';
+  }
+}
 function addEntry(key, fields, value = {}) {
   const container = ai('ai-' + key);
   if (container.children.length >= 40) return;
@@ -104,8 +133,11 @@ function addEntry(key, fields, value = {}) {
   const group = node('div');
   group.className = 'ai-fields';
   for (const field of fields) group.append(control(field,value[field[0]] || ''));
-  entry.append(group,button('Remove entry',() => {entry.remove(); save();}));
+  entry.append(group,button('Remove entry',() => {
+    entry.remove(); updateCounts(); save();
+  }));
   container.append(entry);
+  updateCounts();
 }
 function intake() {
   const data = Object.fromEntries(basic.map(([key]) => [key,ai('ai-basics').querySelector('[name='+key+']').value]));
@@ -122,6 +154,7 @@ function fill(data) {
     ai('ai-' + key).replaceChildren();
     for (const item of data[key] || []) addEntry(key,fields,item);
   }
+  updateCounts();
 }
 async function save() {
   if (!ResumeAuth.owner) return;
@@ -198,6 +231,7 @@ async function importFile() {
   state.importId = job.id;
   delete state.import;
   await save();
+  ai('ai-upload-options').open = false;
   showProgress('Resume import complete', 'Details imported. Check the fields before drafting.', 'complete');
 }
 function renderReview(draft) {
@@ -322,13 +356,28 @@ async function init() {
     return;
   }
   ResumeAuth.onBeforeRenewal(save);
-  for (const field of basic) ai('ai-basics').append(control(field));
+  for (const field of basic.slice(0,4)) ai('ai-basics').append(control(field));
+  const contact = disclosure('Contact and profiles', 'ai-contact');
+  const summary = contact.querySelector('summary');
+  const count = node('span');
+  count.id = 'ai-contact-summary';
+  summary.append(count);
+  const contactFields = node('div');
+  contactFields.className = 'ai-fields ai-optional-fields';
+  for (const field of basic.slice(4)) contactFields.append(control(field));
+  contact.append(contactFields);
+  ai('ai-basics').append(contact);
   for (const [key,title,fields] of collections) {
-    const section=node('section'); section.className='ai-collection';
+    const section=disclosure(title, 'ai-section-' + key);
+    section.classList.add('ai-collection');
     const list=node('div'); list.id='ai-'+key;
-    section.append(node('h3',title),list,button('Add '+title.toLowerCase(),() => addEntry(key,fields)));
+    section.append(list,button('Add '+title.toLowerCase(),() => {
+      section.open = true;
+      addEntry(key,fields);
+    }));
     ai('ai-lists').append(section);
   }
+  updateCounts();
   const roles = node('datalist');
   roles.id='ai-roles';
   ai('ai-basics').append(roles);
@@ -348,7 +397,9 @@ async function init() {
     ai('ai-result').hidden = true;
     status('Saved draft cleared in this browser. Completed resumes remain in History.');
   }));
-  ai('ai-form').addEventListener('input',() => save().catch(error => status(error.message)));
+  ai('ai-form').addEventListener('input',() => {
+    updateCounts(); save().catch(error => status(error.message));
+  });
   ai('ai-form').addEventListener('submit',handle(async () => {
     state.draft={id:newId(),candidate:intake(),import_id:state.importId};
     delete state.approval;
