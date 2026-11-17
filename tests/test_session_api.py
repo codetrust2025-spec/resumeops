@@ -27,6 +27,7 @@ class SessionApiTests(unittest.TestCase):
 
     def tearDown(self):
         self.server.shutdown()
+        self.server.RequestHandlerClass.stop_imports()
         self.server.server_close()
         self.temp.cleanup()
 
@@ -50,8 +51,11 @@ class SessionApiTests(unittest.TestCase):
     def test_sign_in_return_page_notifies_the_waiting_tab(self):
         status, body = self.get('/auth/renewed')
         self.assertEqual(status, 200)
+        self.assertIn(b'<script src="/auth-renewed.js" defer></script>', body)
+        status, script = self.get('/auth-renewed.js')
+        self.assertEqual(status, 200)
         for marker in (b"BroadcastChannel('resumeops-auth')", b'resumeops.authRenewed', b'window.close()'):
-            self.assertIn(marker, body)
+            self.assertIn(marker, script)
 
     def test_finished_import_can_be_fetched_again_if_the_reply_was_lost(self):
         original = self.workspace.draft
@@ -74,9 +78,12 @@ class SessionApiTests(unittest.TestCase):
             self.assertEqual(again['profile']['full_name'], 'Lost Reply Example')
             self.assertNotIn('delivered', again)
             # The same upload re-sent after a sign-in is not processed twice.
-            with self.assertRaises(HTTPError) as duplicate:
-                urlopen(Request(self.origin + '/api/draft', data=b'x' * 200, headers=headers), timeout=5)
-            self.assertEqual(duplicate.exception.code, 409)
+            with urlopen(Request(self.origin + '/api/draft', data=b'x' * 200, headers=headers), timeout=5) as duplicate:
+                self.assertEqual(duplicate.status, 202)
+                self.assertEqual(json.load(duplicate)['status'], 'complete')
+            with self.assertRaises(HTTPError) as conflict:
+                urlopen(Request(self.origin + '/api/draft', data=b'y' * 200, headers=headers), timeout=5)
+            self.assertEqual(conflict.exception.code, 409)
         finally:
             self.workspace.draft = original
 
