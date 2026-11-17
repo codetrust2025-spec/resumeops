@@ -302,6 +302,7 @@ def _finish(report, folder, overleaf, t):
     if database['configured']:
         report['database'] = database
         DATABASE.update(database, checked=time.time())
+        write_json(folder / 'result.json', report)
     t.units_done(2, 2, 'Evidence saved' + (' (MongoDB unavailable; queued for retry)' if database['queued'] else
                                           ' to MongoDB' if database['saved'] else ''))
     t.complete('Verified PDF ready to download')

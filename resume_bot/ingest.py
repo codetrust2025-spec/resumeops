@@ -215,7 +215,7 @@ INPUT:
     if for_review:
         prompt = prompt.replace('INPUT:\n',
             'Use short verbatim quotes. Set evidence equal to value when possible. '
-            'Include at most three short bullets per role, and leave uncertain fields blank.\nINPUT:\n',
+            'Include EVERY bullet of every role (never drop one), and leave uncertain fields blank.\nINPUT:\n',
             1)
         data = generate(ai, prompt, schema=_review_schema(), on_progress=on_progress)
     else:
