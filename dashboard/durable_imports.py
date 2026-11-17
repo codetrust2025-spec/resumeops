@@ -8,6 +8,41 @@ from threading import Event, Lock, Thread
 
 RETENTION = 24 * 60 * 60
 
+def measured_progress(status, stage, metrics=None, extension=''):
+    """Report completed milestones and emitted JSON fields, not predicted elapsed time.
+
+    A percentage means fraction of explicit work checkpoints and JSON fields emitted.
+    It never means an ETA or an estimated percentage of wall-clock time.
+    """
+    metrics = metrics if isinstance(metrics, dict) else {}
+    total = 8 if extension == '.ai' else 15
+    emitted = metrics.get('fields_emitted', 0)
+    emitted = min(total, max(0, emitted)) if type(emitted) is int else 0
+    if status == 'complete':
+        percent, completed = 100, 5
+    elif status == 'queued':
+        percent, completed = 15, 1
+    elif stage in ('Candidate fields validated', 'AI suggestions validated'):
+        percent, completed = 95, 4
+    elif stage == 'Ollama output received':
+        percent, completed = 85, 3
+    elif stage in ('Extracting candidate details with Ollama', 'Drafting suggestions with Ollama'):
+        percent = min(79, 35 + (44 * emitted // total))
+        completed = 2
+    elif stage == 'Document text ready':
+        percent, completed = 35, 2
+    elif stage in ('Reading document', 'Preparing role intelligence', 'Ollama retrying without streaming'):
+        percent, completed = 15 if stage == 'Reading document' else 30, 1
+    else:
+        percent, completed = 0, 0
+    # An interrupted operation may not have an interpretable stage; do not
+    # reclassify a failure as successful completion.
+    if status == 'error':
+        percent = min(percent, 99)
+    return {'percent': percent, 'steps_completed': completed,
+            'steps_total': 5, 'fields_emitted': emitted, 'fields_total': total}
+
+
 class ImportConflict(ValueError):
     pass
 
@@ -85,16 +120,19 @@ class DurableImports:
     def get(self, owner, identifier):
         now = time.time()
         with closing(self.connection()) as db:
-            item = db.execute('SELECT status,stage,started,activity,metrics,result FROM imports WHERE owner=? AND id=?',
+            item = db.execute('SELECT status,stage,started,activity,metrics,result,extension FROM imports WHERE owner=? AND id=?',
                               (owner, identifier)).fetchone()
         if not item or (item['status'] in ('complete','error') and item['activity'] < now - RETENTION):
             return None
         data = json.loads(item['result']) if item['result'] else {}
         data.pop('_queued_review', None)
+        metrics = json.loads(item['metrics']) if item['metrics'] else None
         data.update(status=item['status'], stage=item['stage'], started=item['started'],
                     activity=item['activity'], now=now)
-        if item['metrics']:
-            data['metrics'] = json.loads(item['metrics'])
+        data.update(progress=measured_progress(
+            item['status'], item['stage'], metrics, item['extension']))
+        if metrics:
+            data['metrics'] = metrics
         return data
 
     def start(self):
