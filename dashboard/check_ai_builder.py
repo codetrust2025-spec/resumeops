@@ -99,6 +99,18 @@ def check(ai_first=False):
                     page.goto(origin + builder)
                     page.get_by_label('Full name').fill('Previous Candidate')
                     page.get_by_label('Phone').fill('555-0101')
+                    page.wait_for_function("""async () =>
+                      (await ResumeRecovery.read('ai-builder'))?.intake?.phone === '555-0101'""")
+                    # Dismissing the confirmation must not destroy a saved draft.
+                    page.once('dialog', lambda dialog: dialog.dismiss())
+                    page.get_by_role('button', name='Clear saved draft').click()
+                    expect(page.get_by_label('Full name')).to_have_value('Previous Candidate')
+                    # Explicitly confirming clears only this browser's in-progress AI draft.
+                    page.once('dialog', lambda dialog: dialog.accept())
+                    page.get_by_role('button', name='Clear saved draft').click()
+                    expect(page.get_by_label('Full name')).to_have_value('')
+                    page.reload()
+                    expect(page.get_by_label('Full name')).to_have_value('')
                     second = page.context.new_page()
                     second.goto(origin + builder)
                     expect(second.get_by_role('status')).to_contain_text('open in another tab')
