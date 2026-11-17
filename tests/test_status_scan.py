@@ -51,6 +51,12 @@ class StatusScanTests(unittest.TestCase):
         self.assertEqual(revisions['beta/bbb222']['files'], ['resume.pdf', 'result.json'])
         self.assertEqual(revisions['beta/bbb222']['pages'], 1)
 
+    def test_unpublished_build_folder_is_not_a_revision(self):
+        # A failed publish on 18 Nov 2026 left resume-build-*/result.json; history showed a broken entry.
+        make_revision(self.workspace.output, 'lead', '6f3483739a23')
+        make_revision(self.workspace.output, 'lead', 'resume-build-bs61b3ev', files=('result.json',))
+        self.assertEqual([item['key'] for item in self.workspace.status()['revisions']], ['lead/6f3483739a23'])
+
     def test_status_opens_no_handles_and_parses_unchanged_results_once(self):
         for index in range(30):
             make_revision(self.workspace.output, f'candidate-{index}', f'{index:012x}')
