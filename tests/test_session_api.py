@@ -48,6 +48,13 @@ class SessionApiTests(unittest.TestCase):
         self.assertEqual(denied.exception.code, 403)
         self.assertIn(b'access denied', denied.exception.read())
 
+    def test_request_bound_to_a_different_account_is_denied(self):
+        owner = json.loads(self.get('/api/session')[1])['owner']
+        self.assertEqual(self.get('/api/status', {'X-Resume-Owner': owner})[0], 200)
+        with self.assertRaises(HTTPError) as denied:
+            self.get('/api/status', {'X-Resume-Owner': 'different-account'})
+        self.assertEqual(denied.exception.code, 403)
+
     def test_sign_in_return_page_notifies_the_waiting_tab(self):
         status, body = self.get('/auth/renewed')
         self.assertEqual(status, 200)

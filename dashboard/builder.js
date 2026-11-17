@@ -1041,7 +1041,6 @@ async function applyImport(data) {
 }
 
 /* ---------- Draft safety: survive a reload or re-sign-in without losing typed details ---------- */
-let draftTimer = 0;
 let restoring = true;
 async function persistDraft() {
   if(restoring || activeStep < STEP.INPUT || activeStep > STEP.GENERATE) return;
@@ -1051,11 +1050,9 @@ async function persistDraft() {
     step:activeStep,yearsTouched});
 }
 function saveDraft() {
-  clearTimeout(draftTimer);
-  draftTimer=setTimeout(() => persistDraft().catch(() => {}),200);
+  persistDraft().catch(() => {});
 }
 function forgetDraft() {
-  clearTimeout(draftTimer);
   ResumeRecovery.remove('draft').catch(() => {});
 }
 form.addEventListener('input',saveDraft);
