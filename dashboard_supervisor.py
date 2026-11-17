@@ -19,6 +19,8 @@ CONFIG = HOME / 'dashboard-config.json'
 REQUIRED = ('index.html', 'dashboard.js', 'dashboard.css', 'resume_dashboard.py',
             'cloudflare_access.py', 'check_dashboard.py', 'check_cloudflare_access.py')
 PORT = 8765
+# A single slow probe must not kill in-flight uploads and downloads; restart after this many.
+HEALTH_FAILURES = 3
 LOGS = HOME / 'logs'
 
 def read(path):
@@ -164,6 +166,7 @@ def listen(name, port, config, output):
 def service(port, config, output):
     process = None
     running = ''
+    failures = 0
     try:
         while True:
             state = read(CONTROL)
@@ -187,14 +190,22 @@ def service(port, config, output):
                     time.sleep(5)
                     continue
                 running = selected
+                failures = 0
                 if requested:
                     write(CONTROL, {'active': running, 'previous': state['active']})
                     logging.info('Promoted %s; rollback release=%s', running, state['active'])
             try:
                 health(port, config)
+                failures = 0
             except Exception:
-                logging.exception('Dashboard health failed; restarting')
-                stop(process)
+                failures += 1
+                if failures >= HEALTH_FAILURES:
+                    logging.exception('Dashboard health failed %s times in a row; restarting', failures)
+                    stop(process)
+                    failures = 0
+                else:
+                    logging.warning('Dashboard health check %s/%s failed: %s', failures, HEALTH_FAILURES,
+                                    sys.exc_info()[1])
             time.sleep(5)
     finally:
         stop(process)
