@@ -117,5 +117,63 @@ class AIIntakeContract(unittest.TestCase):
                 validate_intake(data)
 
 
+class ScriptedAI:
+    """Returns the given entries, as qwen2.5:7b did in production on 18 Nov 2026."""
+    def __init__(self, responsibilities, writeups):
+        self.raw = {'professional_summary': 'Engineer', 'technical_skills': [],
+                    'core_competencies': [], 'experience_responsibilities': responsibilities,
+                    'project_writeups': writeups, 'project_ideas': [], 'key_achievements': [],
+                    'certification_recommendations': []}
+
+    def generate(self, prompt, schema=None):
+        self.prompt = prompt
+        return self.raw
+
+
+def two_jobs_one_project():
+    data = candidate()
+    data['years_of_experience'] = 10
+    data['work_experience'] = [
+        {'company': 'Current Corp', 'position': 'Lead Engineer', 'start': 'Jan 2021', 'end': 'Present'},
+        {'company': 'Earlier Labs', 'position': 'Engineer', 'start': 'Jul 2016', 'end': 'Dec 2020'}]
+    data['projects'] = [{'name': 'Demand forecasting platform'}]
+    return data
+
+
+class AIEntryIndexes(unittest.TestCase):
+    def test_one_based_index_for_single_job_and_project_is_kept(self):
+        ai = ScriptedAI([{'experience_index': 1, 'bullets': ['Maintained regression suites']}],
+                        [{'project_index': 1, 'bullets': ['Wrote checkout tests']}])
+        result = suggest_sections(candidate() | {'projects': [{'name': 'Checkout suite'}]}, ai)
+        self.assertEqual(result['suggestions']['experience_responsibilities'][0]['experience_index'], 0)
+        self.assertEqual(result['suggestions']['project_writeups'][0]['project_index'], 0)
+        self.assertIn('ZERO-BASED', ai.prompt)
+        self.assertIn('"0": "Checkout suite"', ai.prompt)
+
+    def test_echoed_company_decides_the_employer(self):
+        ai = ScriptedAI([{'experience_index': 1, 'company': 'Current Corp', 'bullets': ['Led design']},
+                         {'experience_index': 2, 'company': ' earlier  labs ', 'bullets': ['Built models']}],
+                        [{'project_index': 1, 'project_name': 'Demand forecasting platform',
+                          'bullets': ['Forecasting service']}])
+        suggestions = suggest_sections(two_jobs_one_project(), ai)['suggestions']
+        self.assertEqual([(e['experience_index'], e['suggestions'])
+                          for e in suggestions['experience_responsibilities']],
+                         [(0, ['Led design']), (1, ['Built models'])])
+        self.assertEqual(suggestions['project_writeups'][0]['project_index'], 0)
+
+    def test_one_based_list_without_names_is_shifted(self):
+        ai = ScriptedAI([{'experience_index': 1, 'bullets': ['Led design']},
+                         {'experience_index': 2, 'bullets': ['Built models']}], [])
+        entries = suggest_sections(two_jobs_one_project(), ai)['suggestions']['experience_responsibilities']
+        self.assertEqual([e['experience_index'] for e in entries], [0, 1])
+
+    def test_zero_based_list_is_unchanged_and_out_of_range_dropped(self):
+        ai = ScriptedAI([{'experience_index': 0, 'bullets': ['Led design']},
+                         {'experience_index': 1, 'bullets': ['Built models']},
+                         {'experience_index': 5, 'company': 'Invented Inc', 'bullets': ['Invented']}], [])
+        entries = suggest_sections(two_jobs_one_project(), ai)['suggestions']['experience_responsibilities']
+        self.assertEqual([e['experience_index'] for e in entries], [0, 1])
+
+
 if __name__ == '__main__':
     unittest.main()

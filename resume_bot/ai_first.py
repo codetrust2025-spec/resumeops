@@ -86,17 +86,37 @@ def _text_items(value, maximum=20):
             if isinstance(item, str) and item.strip()]
 
 
-def _draft_entries(value, key, limit=40):
-    """All AI-generated responsibilities are suggestions, never proof of work."""
+def _normalized_name(value):
+    return re.sub(r'\s+', ' ', value).strip().casefold() if isinstance(value, str) else ''
+
+
+def _draft_entries(value, key, limit=40, *, names=None, name_key=None):
+    """All AI-generated responsibilities are suggestions, never proof of work.
+
+    Local models often number entries from 1 although the prompt asks for zero-based indexes,
+    which silently drops the only entry or attaches bullets to the wrong employer. An echoed
+    name that matches exactly one candidate entry decides the index. Otherwise an index list
+    that never uses 0 and reaches the entry count is read as one-based.
+    """
     if not isinstance(value, list):
         return []
-    result = []
+    names = [_normalized_name(name) for name in names or []]
+    resolved = []
     for entry in value[:limit]:
-        if not isinstance(entry, dict) or type(entry.get(key)) is not int:
+        if not isinstance(entry, dict):
             continue
-        result.append({key: entry[key], 'suggestions': _text_items(entry.get('bullets'), 10),
-                       'status': 'requires_candidate_confirmation'})
-    return result
+        echoed = _normalized_name(entry.get(name_key)) if name_key else ''
+        matches = [index for index, name in enumerate(names) if echoed and name == echoed]
+        if len(matches) == 1:
+            resolved.append((matches[0], True, entry))
+        elif type(entry.get(key)) is int:
+            resolved.append((entry[key], False, entry))
+    numeric = [index for index, by_name, _ in resolved if not by_name]
+    one_based = bool(names) and bool(numeric) and min(numeric) >= 1 and max(numeric) == len(names)
+    return [{key: index if by_name or not one_based else index - 1,
+             'suggestions': _text_items(entry.get('bullets'), 10),
+             'status': 'requires_candidate_confirmation'}
+            for index, by_name, entry in resolved]
 
 
 def experience_strategy(years):
@@ -149,11 +169,19 @@ def suggest_sections(candidate, ai, *, evidence=None, market_terms=None, require
         'Use leadership terms only if directly supported. '
         'Return keys: professional_summary (string), technical_skills (string array), '
         'core_competencies (string array), experience_responsibilities (array of '
-        '{experience_index:int, bullets:[string]}), project_writeups (array of '
-        '{project_index:int, bullets:[string]}), project_ideas (array of '
+        '{experience_index:int, company:string, bullets:[string]}), project_writeups (array of '
+        '{project_index:int, project_name:string, bullets:[string]}), project_ideas (array of '
         '{title:string, description:string}), key_achievements (string array), '
         'certification_recommendations (string array). '
         'No fabricated metrics and no unsourced job-posting claims. '
+        'Indexes are ZERO-BASED; copy the exact company or project name with each entry. '
+        'Write responsibilities for every listed job and write-ups for every listed project. '
+        'EXPERIENCE INDEXES: ' + json.dumps(
+            {index: item['company'] for index, item in enumerate(candidate['work_experience'])},
+            ensure_ascii=False) +
+        ' PROJECT INDEXES: ' + json.dumps(
+            {index: item['name'] for index, item in enumerate(candidate['projects'])},
+            ensure_ascii=False) + ' '
         'CANDIDATE INPUT: ' + json.dumps(candidate, ensure_ascii=False) +
         '\nCANDIDATE SOURCE RESUME TEXT (may be empty): ' + evidence +
         '\nROLE MARKET KEYWORDS (suggestions only, not candidate facts): ' +
@@ -173,8 +201,11 @@ def suggest_sections(candidate, ai, *, evidence=None, market_terms=None, require
         'core_competencies': {'items': _text_items(raw.get('core_competencies')),
                               'status': 'requires_candidate_confirmation'},
         'experience_responsibilities': _draft_entries(
-            raw.get('experience_responsibilities'), 'experience_index'),
-        'project_writeups': _draft_entries(raw.get('project_writeups'), 'project_index'),
+            raw.get('experience_responsibilities'), 'experience_index',
+            names=[item['company'] for item in candidate['work_experience']], name_key='company'),
+        'project_writeups': _draft_entries(
+            raw.get('project_writeups'), 'project_index',
+            names=[item['name'] for item in candidate['projects']], name_key='project_name'),
         'project_ideas': [],
         'key_achievements': {'items': _text_items(raw.get('key_achievements')),
                              'status': 'requires_evidence_and_confirmation'},
