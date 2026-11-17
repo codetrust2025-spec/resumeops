@@ -262,9 +262,8 @@ class Workspace:
 
 RENEWED_PAGE = b'''<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Signed in \xc2\xb7 ResumeOps</title>
-<style>body{font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:90vh;color:#13213b}</style></head>
-<body><main><h1>Signed in</h1><p>ResumeOps is continuing in the other tab. You can close this one.</p></main>
-<script src="/auth-renewed.js" defer></script></body></html>'''
+<link rel="stylesheet" href="/builder.css"><script defer src="/auth-renewed.js"></script></head>
+<body><main class="width intro"><h1>Signed in</h1><p>ResumeOps is resuming your work.</p></main></body></html>'''
 
 
 def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,

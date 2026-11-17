@@ -130,13 +130,14 @@
       message('The selected file could not be saved for reload recovery.', true);
     }
   });
-  async function run(work) {
+  async function run(work, resumed = false) {
     if(busy) return;
     busy=true;
     button.disabled=true;
     fileInput.disabled=true;
     progress.value=0;
-    stage('Reading resume',0);
+    if (resumed) showStep(STEP.INPUT, false);
+    stage(resumed ? 'Resuming your import' : 'Reading resume',0);
     try {
       let data;
       if(work.extension==='.json'){
@@ -202,7 +203,7 @@
       if (work) {
         await withImportLock(async () => {
           const current = await ResumeRecovery.read('import');
-          if (current) await run(current);
+          if (current) await run(current, true);
         });
       } else {
         const selected = await ResumeRecovery.read('selected-import');

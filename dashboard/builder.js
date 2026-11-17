@@ -1055,6 +1055,8 @@ function saveDraft() {
 function forgetDraft() {
   ResumeRecovery.remove('draft').catch(() => {});
 }
+ResumeAuth.onBeforeRenewal(persistDraft);
+window.addEventListener('pagehide',saveDraft);
 form.addEventListener('input',saveDraft);
 form.addEventListener('change',saveDraft);
 ResumeRecovery.protectDownload(el('download-latex'),'main.tex');

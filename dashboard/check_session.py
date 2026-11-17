@@ -56,10 +56,16 @@ def main():
         return route.continue_()
 
     results = {}
+    csp = []
+
+    def check_csp(message):
+        if 'Content Security Policy' in message.text:
+            csp.append(message.text)
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         context = browser.new_context(viewport={'width': 1280, 'height': 900})
         context.route(url + '/**', edge)
+        context.on('console', check_csp)
         page = context.new_page()
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
@@ -219,6 +225,41 @@ def main():
         assert download.value.path().read_bytes() == b'%PDF-1.7 session test'
         fresh.wait_for_function("ResumeRecovery.read('download').then(action => !action)")
         results['download_after_expiry'] = True
+
+        # When pop-ups are blocked, keep the same browser tab and restore work from IndexedDB.
+        drafts.clear()
+        imports.close()
+        imports = browser.new_context()
+        imports.route(url + '/**', edge)
+        imports.on('console', check_csp)
+        same = imports.new_page()
+        same.add_init_script('window.open = () => null')
+        same.goto(url)
+        same.get_by_role('button', name='Create Resume').click()
+        same.locator('#resume-upload').set_input_files({'name': 'blocked.txt', 'mimeType': 'text/plain',
+                                                        'buffer': b'Synthetic candidate in blocked popup test.'})
+        same.get_by_role('button', name='Import and prefill').click()
+        same.wait_for_function("ResumeRecovery.read('import').then(work => work && !work.file)")
+        expired['mode'] = '401'
+        expect(same.locator('#auth-banner')).to_be_visible(timeout=10000)
+        same.get_by_role('button', name='Sign in again').click()
+        expect(same.get_by_role('heading', name='Choose a target role')).to_be_visible(timeout=20000)
+        assert same.url.rstrip('/') == url
+        assert same.get_by_label('Full name').input_value() == 'Session Import Example'
+        assert drafts == ['.txt'], drafts
+        same.wait_for_function("ResumeRecovery.read('import').then(work => !work)")
+
+        same.locator('[name=role]').select_option('fullstack-developer')
+        same.get_by_role('button', name='Continue').click()
+        same.get_by_label('Full name').fill('Blocked Popup Typed Example')
+        expired['mode'] = '401'
+        expect(same.locator('#auth-banner')).to_be_visible(timeout=10000)
+        same.get_by_role('button', name='Sign in again').click()
+        expect(same.locator('#builder-status')).to_contain_text('Unsaved candidate details were restored', timeout=20000)
+        same.locator('#steps li[data-target="3"] button').click()
+        expect(same.get_by_label('Full name')).to_have_value('Blocked Popup Typed Example')
+        results['blocked_popup_same_tab_renewal'] = 'import extracted once and typed details restored'
+        assert not csp, csp
 
         assert not errors, errors
         results['expired_requests_answered_by_edge'] = hits['expired']

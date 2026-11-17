@@ -8,6 +8,7 @@
   let initial;
   let banner;
   const listeners = [];
+  let checkpoint = async () => {};
   const pause = delay => new Promise(resolve => setTimeout(resolve, delay));
 
   function setToken(value) {
@@ -53,10 +54,21 @@
       button.className = 'primary';
       button.textContent = 'Sign in again';
       const status = document.createElement('small');
-      button.addEventListener('click', () => {
+      button.addEventListener('click', async () => {
         const tab = root.open('/auth/renewed','_blank');
-        status.textContent = tab ? 'Waiting for sign-in in the other tabâ€¦' :
-          'Allow pop-ups and try again. Your current tab stays open.';
+        if (tab) {
+          status.textContent = 'Waiting for sign-in in the other tab…';
+          return;
+        }
+        button.disabled = true;
+        status.textContent = 'Saving your work before signing in…';
+        try {
+          await checkpoint();
+          root.location.assign('/auth/renewed?return=builder');
+        } catch {
+          status.textContent = 'Could not save your work. Allow pop-ups and try again.';
+          button.disabled = false;
+        }
       });
       banner.append(text,button,status);
     }
@@ -142,5 +154,6 @@
     }
   }
   root.ResumeAuth = {call,headers,expired,waitForSession,session,ready,setToken,
+    onBeforeRenewal: fn => { checkpoint = fn; },
     get owner() { return owner; }, get token() { return token; }, onToken:fn => listeners.push(fn)};
 }(self));
