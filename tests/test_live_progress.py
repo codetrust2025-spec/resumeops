@@ -1,5 +1,6 @@
 """Measured progress: monotonic, banded, never 100 before verification, retries, heartbeat, API."""
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -153,8 +154,12 @@ class WatcherProgressTests(unittest.TestCase):
         # Ollama output is streamed, so AI progress moves in many measured steps, not one jump.
         ai = sorted({s['percent'] for s in processing if s['stage_key'] == 'ai' and s['measured']})
         self.assertGreaterEqual(len(ai), 5, ai)
-        jumps = [b - a for a, b in zip(percents, percents[1:])]
-        self.assertLessEqual(max(jumps), 8, f'largest single jump {max(jumps)}')
+        # Outside the streamed Ollama band every step is a fixed work unit: no large jumps. Inside it,
+        # step size depends on stream speed versus the 0.25 s write throttle, so it is checked above
+        # by the number of distinct measured values instead of by step size.
+        pairs = [(a, b) for a, b in zip(processing, processing[1:]) if 'ai' not in (a['stage_key'], b['stage_key'])]
+        jumps = [b['percent'] - a['percent'] for a, b in pairs]
+        self.assertLessEqual(max(jumps), 8, f'largest single non-AI jump {max(jumps)}')
         # Steps without internal measurement are reported as unmeasured, not as invented increments.
         unmeasured = {s['stage'] for s in processing if not s['measured']}
         self.assertIn('Compiling LaTeX with pdfLaTeX', unmeasured)
@@ -213,6 +218,7 @@ class WatcherProgressTests(unittest.TestCase):
             failed = self.scan()
         self.assertEqual(failed['status'], 'failed')
         self.assertEqual(failed['failed_stage'], 'overleaf')
+        self.assertEqual(failed['error_detail'], 'OverleafError: session expired')
         self.assertEqual(failed['attempt'], 1)
         self.assertLess(failed['percent'], 100)
         self.assertGreater(failed['next_retry'], time.time() + 60)
@@ -243,6 +249,61 @@ class WatcherProgressTests(unittest.TestCase):
         self.assertGreaterEqual(len(during), 3, 'heartbeat did not refresh during compilation')
         self.assertEqual(len({s['percent'] for s in during}), 1, 'heartbeat changed the percentage')
         self.assertGreater(during[-1]['heartbeat'], during[0]['heartbeat'])
+
+
+class ProductionFailureTests(unittest.TestCase):
+    """Regressions for failures seen in production on 17 Nov 2026."""
+
+    def test_state_write_retries_while_a_reader_holds_the_file(self):
+        from resume_bot import storage
+        real_replace = os.replace
+        calls = []
+
+        def busy_then_free(source, target):
+            calls.append(target)
+            if len(calls) < 3:
+                raise PermissionError(13, 'Access is denied')  # Windows sharing violation
+            real_replace(source, target)
+        with tempfile.TemporaryDirectory() as folder, patch('resume_bot.storage.os.replace', side_effect=busy_then_free):
+            target = Path(folder) / 'state.json'
+            storage.write_json(target, {'ok': True})
+            self.assertEqual(json.loads(target.read_text()), {'ok': True})
+        self.assertEqual(len(calls), 3)
+        self.assertEqual([p.name for p in Path(folder).iterdir()] if Path(folder).exists() else [], [])
+
+    def test_broken_stream_falls_back_to_one_unstreamed_request(self):
+        class BrokenStream(BaseHTTPRequestHandler):
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                if body['stream']:
+                    self.send_response(200)
+                    self.end_headers()
+                    self.wfile.write(b'{"response":"{\\"ed","done":false}\n{"error":"model runner stopped"}\n')
+                    return
+                data = json.dumps({'response': json.dumps({'edits': ['x']})}).encode()
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *args):
+                pass
+        server = ThreadingHTTPServer(('127.0.0.1', 0), BrokenStream)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            phases = []
+            result = Ollama('qwen2.5:7b', f'http://127.0.0.1:{server.server_port}', timeout=5).generate(
+                'prompt', on_progress=lambda m: phases.append(m['phase']))
+        finally:
+            server.shutdown()
+            server.server_close()
+        self.assertEqual(result, {'edits': ['x']})
+        self.assertIn('fallback', phases)
+
+    def test_refused_connection_does_not_retry(self):
+        with self.assertRaises(Exception) as caught:
+            Ollama('qwen2.5:7b', 'http://127.0.0.1:9', timeout=2).generate('p', on_progress=lambda m: None)
+        self.assertIn('unreachable', str(caught.exception))
 
 
 class DashboardLiveApiTests(unittest.TestCase):

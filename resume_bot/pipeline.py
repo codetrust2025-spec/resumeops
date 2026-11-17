@@ -104,6 +104,10 @@ def _ai_progress(t, label):
         rate = metrics['chunks'] / metrics['elapsed'] if metrics.get('elapsed') else 0
         detail = (f"{metrics['chars']} characters · {metrics['chunks']} tokens · "
                   f"{rate:.1f} tokens/s")
+        if metrics['phase'] == 'fallback':
+            t.unmeasured('Live Ollama stream failed; generating again without live token counts',
+                         metrics.get('reason', ''))
+            return
         if metrics['phase'] == 'waiting':
             t.unmeasured('Waiting for Ollama to load the model and read the prompt')
         elif metrics['phase'] == 'done':
@@ -394,7 +398,10 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
 
         def beat():
             while not stop.wait(HEARTBEAT_SECONDS):
-                save(beat=True)
+                try:
+                    save(beat=True)
+                except OSError:
+                    pass  # a missed heartbeat is visible as staleness; never abort the job
         beater = threading.Thread(target=beat, name='resume-heartbeat', daemon=True)
         tracker = Tracker(save)
         beater.start()
@@ -420,7 +427,10 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
                 json.JSONDecodeError: 'Candidate JSON is incomplete or invalid.',
             }.get(type(exc), f'Processing failed during {activity.get("stage_label") or activity.get("stage", "input preparation")}.')
             now = time.time()
+            detail = f'{type(exc).__name__}: {exc}'[:300] if isinstance(exc, (OllamaError, OverleafError, BuildError)) else type(exc).__name__
+            runtime = ai.runtime() if isinstance(exc, OllamaError) and hasattr(ai, 'runtime') else None
             record = {'sha256': digest, 'status': 'failed', 'blocked': blocked, 'error': error,
+                      'error_detail': detail, 'ollama_runtime': runtime,
                       'failures': failures + 1, 'attempt': failures + 1, **activity,
                       'failed_stage': activity.get('stage_key', ''),
                       'next_retry': now + _backoff(failures + 1)}
