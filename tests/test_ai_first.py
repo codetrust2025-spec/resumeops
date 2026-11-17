@@ -108,6 +108,23 @@ class AIIntakeContract(unittest.TestCase):
         self.assertEqual(reviewed['approved_claims'][1]['provenance'], 'unsupported_role_keyword')
         self.assertTrue(reviewed['approved_claims'][1]['candidate_confirmed'])
 
+    def test_quantified_suggestions_need_verbatim_source_evidence(self):
+        draft = suggest_sections(candidate(), FakeAI())
+        # The model's invented "90%" achievement must not appear in the review.
+        self.assertEqual(draft['suggestions']['key_achievements']['items'], [])
+        summary = next(c for c in claims_for_review(draft) if c['section'] == 'Summary')
+        for edited in ('Reduced latency by 60%', 'Managed a team of 12 engineers',
+                       'Mentored a team of five', 'Saved $10000'):
+            with self.subTest(edited=edited):
+                with self.assertRaisesRegex(IntakeError, 'quantified claims'):
+                    approved_resume(draft, {
+                        'attested': True, 'claims': {summary['id']: edited}})
+
+        # A genuinely quoted statement from the uploaded source may be reviewed.
+        sourced = suggest_sections(candidate(), FakeAI(), evidence='Reduced latency by 90%')
+        self.assertEqual(sourced['suggestions']['key_achievements']['items'],
+                         ['Reduced latency by 90%'])
+
     def test_invalid_intake_is_rejected(self):
         for patch in ({'email': 'not an email'}, {'years_of_experience': -1},
                       {'years_of_experience': '4'}, {'full_name': ''}):
