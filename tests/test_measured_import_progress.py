@@ -1,12 +1,14 @@
 """Completion percentage must describe real work milestones and emitted JSON fields."""
 import unittest
+import json
 from dashboard.durable_imports import measured_progress
 from resume_bot.ollama import _TopLevelJsonFields
 
 
 class MeasuredProgressTests(unittest.TestCase):
     def test_stream_counts_only_finished_top_level_json_fields(self):
-        text = r'{"name":"Smith, Jane","skills":["C++, Rust"],"job":{"a":1,"b":[1,2]},"extra":"quoted \\"comma\\""}'
+        text = json.dumps({'name': 'Smith, Jane', 'skills': ['C++, Rust'],
+                           'job': {'a': 1, 'b': [1, 2]}, 'extra': 'quoted "comma"'})
         meter = _TopLevelJsonFields()
         counts = [meter.feed(part) for part in text]
         self.assertEqual(counts[-1], 4)
