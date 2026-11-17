@@ -17,6 +17,20 @@ class Ollama:
         self.timeout = timeout
 
     def generate(self, prompt, schema=None, on_progress=None):
+        if on_progress is None:
+            return self._generate(prompt, schema, None)
+        try:
+            return self._generate(prompt, schema, on_progress)
+        except OllamaError as exc:
+            if 'unreachable' in str(exc) and 'refused' in str(exc).lower():
+                raise  # the service is down; a second request cannot help
+            # The streamed request failed part-way. Run it once without streaming (the request
+            # format used before live progress) and say so instead of inventing progress.
+            on_progress({'phase': 'fallback', 'chars': 0, 'chunks': 0, 'elapsed': 0.0,
+                         'reason': str(exc)[:200]})
+            return self._generate(prompt, schema, None)
+
+    def _generate(self, prompt, schema=None, on_progress=None):
         """Return the model's JSON object.
 
         With ``on_progress`` the request streams, and the callback receives measured metrics as

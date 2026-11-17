@@ -3,8 +3,22 @@ import json
 import os
 import sqlite3
 import tempfile
+import time
 from contextlib import contextmanager
 from pathlib import Path
+
+
+def _replace(source, target, attempts=40, delay=0.05):
+    """os.replace, retried briefly: on Windows it fails with PermissionError while another
+    process (for example the dashboard polling status) has the target open for reading."""
+    for attempt in range(attempts):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay)
 
 
 def write_json(path, content):
@@ -17,7 +31,7 @@ def write_json(path, content):
                 json.dump(content, stream, indent=2, ensure_ascii=False)
                 stream.flush()
                 os.fsync(stream.fileno())
-            os.replace(temporary, path)
+            _replace(temporary, path)
         finally:
             temporary.unlink(missing_ok=True)
 
