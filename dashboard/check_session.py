@@ -57,6 +57,8 @@ def main():
         page = context.new_page()
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
+        csp = []
+        context.on('console', lambda message: 'Content Security Policy' in message.text and csp.append(message.text))
         page.goto(url)
 
         # 1. Fill a candidate, then the session expires (Access 401) before Review.
@@ -167,8 +169,12 @@ def main():
 
         # 6. Expiry while the import is being polled: the import still completes.
         drafts.clear()
-        fresh.evaluate("sessionStorage.clear(); localStorage.removeItem('resumeops.activeJob')")
+        # A new tab has its own empty session storage (the previous one keeps its half-done draft).
+        fresh.close()
+        fresh = context.new_page()
         fresh.goto(url)
+        fresh.evaluate("localStorage.removeItem('resumeops.activeJob')")
+        fresh.reload()
         fresh.get_by_role('button', name='Create Resume').click()
         fresh.locator('#resume-upload').set_input_files({'name': 'resume.txt', 'mimeType': 'text/plain',
                                                          'buffer': b'Session Import Example resume again. ' * 10})
@@ -183,10 +189,46 @@ def main():
         assert drafts == ['.txt'], drafts
         results['import_polling_after_expiry'] = 'completed'
 
+        # 7. New tabs blocked (seen in production in the desktop app's browser): sign-in renews in
+        # the builder's own tab, which then returns and resumes the running import and the draft.
+        drafts.clear()
+        same = context.new_page()
+        same.add_init_script("window.open = () => null")
+        same.goto(url)
+        same.evaluate("localStorage.removeItem('resumeops.activeJob')")
+        same.reload()
+        same.get_by_role('button', name='Create Resume').click()
+        same.locator('#resume-upload').set_input_files({'name': 'blocked.txt', 'mimeType': 'text/plain',
+                                                        'buffer': b'Session Import Example blocked popup. ' * 10})
+        same.get_by_role('button', name='Import and prefill').click()
+        same.wait_for_timeout(400)
+        expired['mode'] = '401'
+        expect(same.locator('#auth-banner')).to_be_visible(timeout=10000)
+        same.get_by_role('button', name='Sign in again').click()      # navigates this tab
+        expect(same.get_by_role('heading', name='Choose a target role')).to_be_visible(timeout=20000)
+        assert same.url.rstrip('/') == url, same.url
+        assert same.get_by_label('Full name').input_value() == 'Session Import Example'
+        assert drafts == ['.txt'], drafts                                # extracted exactly once
+        assert same.evaluate("sessionStorage.getItem('resumeops.import')") is None
+        # The same path with typed (not imported) details.
+        same.get_by_role('button', name='Continue').click()
+        same.locator('[name=role]').select_option('fullstack-developer')
+        same.get_by_role('button', name='Continue').click()
+        same.get_by_label('Full name').fill('Blocked Popup Typed Example')
+        expired['mode'] = '401'
+        same.get_by_role('button', name='Continue').click()
+        expect(same.locator('#auth-banner')).to_be_visible(timeout=10000)
+        same.get_by_role('button', name='Sign in again').click()
+        expect(same.locator('#builder-status')).to_contain_text('Unsaved candidate details were restored', timeout=20000)
+        same.locator('#steps li[data-target="3"] button').click()
+        expect(same.get_by_label('Full name')).to_have_value('Blocked Popup Typed Example')
+        results['blocked_new_tab_same_tab_renewal'] = 'import resumed once; typed details restored'
+
         # Downloads open in their own tab, so an Access redirect can never replace the builder.
         script = Path(__file__).with_name('builder.js').read_text()
         assert "link.target = '_blank'" in script and "el('download-latex').target = '_blank'" in script
         assert not errors, errors
+        assert not csp, csp   # every script that recovery depends on actually runs
         results['expired_requests_answered_by_edge'] = hits['expired']
         browser.close()
     server.shutdown()

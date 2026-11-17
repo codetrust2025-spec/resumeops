@@ -65,7 +65,12 @@
       button.addEventListener('click', () => {
         // A separate tab keeps this page (and the unsaved candidate) intact.
         const tab = root.open('/auth/renewed', '_blank');
-        if (!tab) root.location.assign('/auth/renewed');
+        // New tabs blocked: renew in this tab. Unsaved details and a running import are kept in
+        // this tab's session storage and restored when it returns to the builder.
+        if (!tab) {
+          root.dispatchEvent(new Event('resumeops:before-renewal'));
+          root.location.assign('/auth/renewed');
+        }
         status.textContent = 'Waiting for sign-in in the other tab…';
       });
       const status = document.createElement('small');

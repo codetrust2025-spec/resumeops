@@ -261,14 +261,17 @@ class Workspace:
 
 RENEWED_PAGE = b'''<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Signed in \xc2\xb7 ResumeOps</title>
-<style>body{font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:90vh;color:#13213b}</style></head>
-<body><main><h1>Signed in</h1><p>ResumeOps is continuing in the other tab. You can close this one.</p></main>
-<script>
-try { new BroadcastChannel('resumeops-auth').postMessage('renewed'); } catch (e) {}
+<link rel="stylesheet" href="/builder.css"><script defer src="/auth-renewed.js"></script></head>
+<body><main class="width intro"><h1>Signed in</h1><p>Returning to ResumeOps\xe2\x80\xa6</p></main></body></html>'''
+# Kept out of the page itself: the dashboard's Content-Security-Policy forbids inline scripts.
+RENEWED_SCRIPT = b'''try { new BroadcastChannel('resumeops-auth').postMessage('renewed'); } catch (e) {}
 try { localStorage.setItem('resumeops.authRenewed', String(Date.now())); } catch (e) {}
-try { if (window.opener) window.opener.postMessage('resumeops-auth-renewed', location.origin); } catch (e) {}
-setTimeout(function () { window.close(); }, 600);
-</script></body></html>'''
+var opened = false;
+try { if (window.opener) { window.opener.postMessage('resumeops-auth-renewed', location.origin); opened = true; } } catch (e) {}
+// A separate sign-in tab closes itself. If the browser renewed in the builder's own tab (new tabs
+// blocked), go back to the builder: it restores the unsaved candidate and any running import.
+setTimeout(function () { if (opened) window.close(); location.replace('/'); }, 600);
+'''
 
 
 def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
@@ -365,6 +368,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return self.send_json({'ok': True, 'token': token, 'expires': expires, 'now': time.time()})
             if url.path == '/auth/renewed':
                 return self.send_content(RENEWED_PAGE, 'text/html; charset=utf-8')
+            if url.path == '/auth-renewed.js':
+                return self.send_content(RENEWED_SCRIPT, 'text/javascript; charset=utf-8')
             if url.path == '/api/import-progress':
                 if not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token):
                     return self.send_json({'error': 'Request not authorized.'}, 403)
