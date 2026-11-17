@@ -40,6 +40,9 @@ def release(name):
     files = REQUIRED
     if (folder / 'index.html').is_file() and '/builder.js' in (folder / 'index.html').read_text(encoding='utf-8'):
         files += ('builder.js', 'builder.css', 'operations.html')
+    if (folder / 'ai-builder.html').is_file():
+        files += ('ai-builder.html', 'ai-builder.js', 'ai-builder.css', 'recovery.js',
+                  'auth.js', 'auth-renewed.js', 'durable_imports.py')
     missing = [file for file in files
                if not (folder / file).is_file() or not (folder / file).stat().st_size]
     if missing:
@@ -53,23 +56,46 @@ def fetch(port, path, host=None):
         return response.headers.get_content_type(), response.read()
 
 def health(port, config):
-    for route, content_type, marker in (
-        ('/', 'text/html', b'id="candidate"'),
+    mime, homepage = fetch(port, '/')
+    ai_homepage = b'id="ai-form"' in homepage
+    if mime != 'text/html' or (not ai_homepage and b'id="candidate"' not in homepage):
+        raise RuntimeError('/: missing expected builder')
+    assets = [
         ('/dashboard.js', 'text/javascript', b'function'),
         ('/dashboard.css', 'text/css', b'{'),
-    ):
-        actual_type, body = fetch(port, route)
-        if actual_type != content_type or marker not in body:
-            raise RuntimeError(f'{route}: missing expected application content')
-    if b'/builder.js' in fetch(port, '/')[1]:
-        for route, mime, marker in (
+    ]
+    ai_builder = ai_homepage
+    if not ai_homepage:
+        # Phase 1: the classic builder stays at /, and a release that ships the AI builder
+        # must also serve it completely at /ai-builder. Older releases return 404 there.
+        try:
+            mime, page = fetch(port, '/ai-builder')
+        except HTTPError as error:
+            if error.code != 404:
+                raise
+            page = None
+        if page is not None:
+            if mime != 'text/html' or b'id="ai-form"' not in page:
+                raise RuntimeError('/ai-builder: missing expected builder')
+            ai_builder = True
+    if ai_builder:
+        assets.extend([
+            ('/ai-builder.js', 'text/javascript', b'function'),
+            ('/ai-builder.css', 'text/css', b'.ai-layout'),
+            ('/recovery.js', 'text/javascript', b'indexedDB'),
+            ('/auth-renewed.js', 'text/javascript', b'BroadcastChannel'),
+            ('/workflow', 'text/html', b'id="candidate"'),
+        ])
+    if ai_builder or b'/builder.js' in homepage:
+        assets.extend([
             ('/builder.js', 'text/javascript', b'function'),
             ('/builder.css', 'text/css', b'.masthead'),
             ('/operations', 'text/html', b'id="submit"'),
-        ):
-            actual, body = fetch(port, route)
-            if actual != mime or marker not in body:
-                raise RuntimeError(f'{route}: missing expected application content')
+        ])
+    for route, content_type, marker in assets:
+        actual_type, body = fetch(port, route)
+        if actual_type != content_type or marker not in body:
+            raise RuntimeError(f'{route}: missing expected application content')
     mime, body = fetch(port, '/api/status')
     status = json.loads(body)
     if (mime != 'application/json' or not isinstance(status.get('healthy'), bool)
@@ -92,6 +118,10 @@ def spawn(name, port, config, output):
     if config.get('code_root'):
         env['RESUMEOPS_CODE_ROOT'] = config['code_root']
     env['PATH'] = os.pathsep.join([*config['tool_paths'], env['PATH']])
+    # An environment variable, not a flag: releases that predate it ignore it, so rollback still works.
+    env.pop('RESUMEOPS_AI_FIRST', None)
+    if config.get('ai_first') is True:
+        env['RESUMEOPS_AI_FIRST'] = '1'
     return subprocess.Popen([
         sys.executable, '-u', str(folder / 'resume_dashboard.py'), '--root', str(project),
         '--port', str(port), '--model', config['model'], '--web-url', config['web_url'],

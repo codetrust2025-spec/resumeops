@@ -29,8 +29,10 @@ def normalize_request(payload):
     if set(payload) != {'profile', 'target'} or not isinstance(payload['target'], dict):
         raise ProfileError('Expected a candidate profile and target')
     target = payload['target']
-    if set(target) - {'role', 'keywords', 'template', 'experience_years'}:
+    if set(target) - {'role', 'keywords', 'template', 'experience_years', 'approved'}:
         raise ProfileError('Unknown target option')
+    if 'approved' in target and target['approved'] is not True:
+        raise ProfileError('Approval marker must be true when present')
     role = target.get('role', '')
     template = target.get('template', 'standard')
     keywords = target.get('keywords', [])
@@ -47,6 +49,9 @@ def normalize_request(payload):
     }
     if years is not None:
         normalized['experience_years'] = years
+    if target.get('approved') is True:
+        # Set only by the dashboard after the candidate approved every line; render verbatim.
+        normalized['approved'] = True
     return validate_profile(payload['profile']), normalized
 
 
@@ -133,6 +138,7 @@ def analyze(profile, target, keywords=None, today=None):
     keywords = role_keywords(target) if keywords is None else keywords
     evidence = [profile['headline'], profile['summary'], *profile['skills'], *profile['certifications']]
     evidence.extend(profile.get('projects', []))
+    evidence.extend(profile.get('achievements', []))
     for entry in profile['experience']:
         evidence.extend([entry['position'], *entry['bullets']])
     for entry in profile['education']:

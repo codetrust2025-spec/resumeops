@@ -82,6 +82,12 @@ def render(profile, template="standard", years=None):
     fresher = years is not None and years < 1
     for section in ((early_sections, experience_section) if fresher else (experience_section, early_sections)):
         section()
+    for field, title in (('achievements', 'ACHIEVEMENTS'), ('coding_platforms', 'CODING PLATFORMS')):
+        if profile.get(field):
+            out.append(r'\section*{' + title + '}\n')
+            out.append(r'\begin{itemize}' + '\n')
+            out.extend(r'\item ' + paragraph(item) + '\n' for item in profile[field])
+            out.append(r'\end{itemize}' + '\n')
     if profile['certifications']:
         out.append(r'\section*{CERTIFICATIONS}'+'\n')
         for c in profile['certifications']:

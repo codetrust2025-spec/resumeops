@@ -53,6 +53,7 @@ class Workspace:
         self.inbox = self.root / 'inbox'
         self.output = self.root / 'output'
         self.logs = self.root / 'logs'
+        self.approvals = self.root / 'approvals'
         self.inbox.mkdir(exist_ok=True)
         sys.path.insert(0, str(code_root.resolve() if code_root else self.root))
         from resume_bot.workflow import normalize_request
@@ -189,16 +190,32 @@ class Workspace:
         except (OSError, subprocess.SubprocessError) as exc:
             raise ValueError('Local document conversion failed. Try exporting the file as DOCX or text-based PDF.') from exc
 
-    def enqueue(self, data):
+    def enqueue(self, data, approval=None):
         profile, target = self.normalize(json.loads(data.decode('utf-8-sig')))
+        if target and target.get('approved') and approval is None:
+            raise ValueError('Only the AI review can mark a resume as candidate-approved')
+        if approval is not None:
+            if not target:
+                raise ValueError('An approved resume needs a target role')
+            target['approved'] = True
         request = {'profile': profile, 'target': target} if target else profile
         payload = json.dumps(request, ensure_ascii=False, indent=2).encode('utf-8')
         slug = re.sub(r'[^a-z0-9]+', '-', profile['full_name'].lower()).strip('-')[:45] or 'candidate'
         digest = hashlib.sha256(payload).hexdigest()
         target = self.inbox / f'{slug}-{digest}.json'
+        if approval is not None:
+            # The approval record is written before the job file is published.
+            self.record_approval(target.name, payload, approval)
         if target.exists():
             return {'name': target.name, 'created': False}
-        fd, temporary = tempfile.mkstemp(prefix='.dashboard-', suffix='.tmp', dir=self.inbox)
+        if not self.publish(target, payload):
+            return {'name': target.name, 'created': False}
+        return {'name': target.name, 'created': True}
+
+    def publish(self, target, payload):
+        """Atomically create target with payload; never overwrite. Returns False if it already existed."""
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix='.dashboard-', suffix='.tmp', dir=target.parent)
         try:
             with os.fdopen(fd, 'wb') as stream:
                 stream.write(payload)
@@ -208,10 +225,27 @@ class Workspace:
                 # A hard link publishes the finished file atomically without overwriting a job.
                 os.link(temporary, target)
             except FileExistsError:
-                return {'name': target.name, 'created': False}
+                return False
         finally:
             Path(temporary).unlink(missing_ok=True)
-        return {'name': target.name, 'created': True}
+        return True
+
+    def record_approval(self, job, payload, approval):
+        """Append-only, permanent record of what the candidate approved for one inbox job."""
+        content = {'schema': 'resumeops-approval-1', 'job': job,
+                   'resume_sha256': hashlib.sha256(payload).hexdigest(),
+                   'operation': approval['operation'], 'approved_by': approval['approved_by'],
+                   'attested': True, 'claims': approval['claims'], 'project_names': approval.get('project_names', [])}
+        identity = hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()[:32]
+        record = {**content, 'record_id': identity,
+                  'recorded_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+        target = self.approvals / Path(job).stem / f'{identity}.json'
+        self.publish(target, json.dumps(record, ensure_ascii=False, indent=2).encode('utf-8'))
+        return target
+
+    def approvals_for(self, job):
+        from resume_bot.claim_audit import records_for
+        return records_for(self.approvals, job)
 
     def revision_key(self, output):
         path = Path(output) if output else None
@@ -267,14 +301,30 @@ RENEWED_PAGE = b'''<!doctype html><html lang="en"><head><meta charset="utf-8">
 
 
 def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
-            web_origin=None, access_verifier=None):
+            web_origin=None, access_verifier=None, ai_first=False):
     host = urlsplit(origin).netloc
     phone_host = urlsplit(phone_origin).netloc if phone_origin else None
     web_host = urlsplit(web_origin).netloc if web_origin else None
 
     import_stages = {}
     import_lock = Lock()
-    durable = DurableImports(workspace.root, lambda *args: workspace.draft(*args))
+    def process_draft(extension, data, report):
+        if extension != '.ai':
+            return workspace.draft(extension, data, report)
+        from resume_bot.ai_first import suggest_sections
+        from resume_bot.ai_review import claims_for_review, role_intelligence
+        from resume_bot.ollama import Ollama
+        request = json.loads(data)
+        candidate = request['candidate']
+        evidence = request['source']
+        intelligence = role_intelligence(candidate['role'])
+        report('Drafting suggestions with Ollama')
+        model = Ollama(model=workspace.model, url='http://127.0.0.1:11434')
+        draft = suggest_sections(candidate, model, evidence=evidence, market_terms=intelligence['terms'])
+        draft.update(source=evidence, intelligence=intelligence)
+        return {**draft, 'claims': claims_for_review(draft)}
+
+    durable = DurableImports(workspace.root, process_draft)
 
     class DashboardHandler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -400,7 +450,11 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                         stream.seek(max(0, path.stat().st_size - 65536))
                         data = stream.read()
                     return self.send_content(data.decode('utf-8-sig', errors='replace').encode('utf-8'), 'text/plain; charset=utf-8')
-            assets = {'/': ('index.html', 'text/html'),
+            assets = {'/': ('ai-builder.html' if ai_first else 'index.html', 'text/html'),
+                      '/workflow': ('index.html', 'text/html'),
+                      '/ai-builder': ('ai-builder.html', 'text/html'),
+                      '/ai-builder.js': ('ai-builder.js', 'text/javascript'),
+                      '/ai-builder.css': ('ai-builder.css', 'text/css'),
                       '/operations': ('operations.html', 'text/html'),
                       '/builder.css': ('builder.css', 'text/css'),
                       '/builder.js': ('builder.js', 'text/javascript'),
@@ -416,7 +470,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 name, mime = assets[url.path]
                 path = Path(__file__).with_name(name)
                 data = path.read_bytes()
-                if url.path in ('/', '/operations'):
+                if url.path in ('/', '/operations', '/ai-builder', '/workflow'):
                     data = data.replace(b'__TOKEN__', token.encode('ascii'))
                 return self.send_content(data, mime + '; charset=utf-8')
             return self.send_json({'error': 'File unavailable.'}, 404)
@@ -435,7 +489,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
 
         def do_POST(self):
             request_origin = self.request_origin()
-            if (self.path not in ('/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry') or request_origin is None
+            if (self.path not in ('/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry', '/api/ai-draft', '/api/ai-review', '/api/ai-queue') or request_origin is None
                     or self.headers.get('Origin') != request_origin
                     or not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token)):
                 return self.reject_post('Request not authorized.')
@@ -497,6 +551,51 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                         with import_lock:
                             import_stages.pop(import_key, None)
                     return self.send_json(draft)
+                if self.path.startswith('/api/ai-'):
+                    from resume_bot.ai_first import validate_intake
+                    from resume_bot.ai_review import approved_resume, role_intelligence
+                    account = self.session_owner(request_origin)
+                    request = json.loads(data)
+                    if not account or not isinstance(request, dict):
+                        return self.send_json({'error': 'Expected an authenticated review request.'}, 400)
+                    operation = request.get('id')
+                    if not isinstance(operation, str) or not re.fullmatch(r'[0-9a-f]{32}', operation):
+                        raise ValueError('Invalid draft identifier')
+                    if self.path == '/api/ai-draft':
+                        candidate = validate_intake(request.get('candidate'))
+                        role_intelligence(candidate['role'])
+                        source = ''
+                        evidence_id = request.get('import_id')
+                        if evidence_id:
+                            if not isinstance(evidence_id, str) or not re.fullmatch(r'[0-9a-f]{32}', evidence_id):
+                                raise ValueError('Invalid source import identifier')
+                            source_draft = durable.get(account, evidence_id)
+                            if not source_draft or source_draft['status'] != 'complete' or 'profile' not in source_draft:
+                                raise ValueError('The source import expired or is unavailable. Import the file again.')
+                            source = source_draft['source']
+                        try:
+                            item = durable.enqueue(account, operation, '.ai',
+                                                   json.dumps({'candidate': candidate, 'source': source}).encode())
+                        except ImportConflict as exc:
+                            return self.send_json({'error': str(exc)}, 409)
+                        except ImportCapacity as exc:
+                            return self.send_json({'error': str(exc)}, 429)
+                        return self.send_json({'id': operation, **item}, 202)
+                    draft = durable.get(account, operation)
+                    if not draft or draft['status'] != 'complete' or 'suggestions' not in draft:
+                        return self.send_json({'error': 'AI draft is incomplete, expired, or unavailable.'}, 404)
+                    reviewed = approved_resume(draft, request.get('approval'))
+                    if self.path == '/api/ai-review':
+                        return self.send_json(reviewed)
+                    payload = {key: reviewed[key] for key in ('profile', 'target')}
+                    try:
+                        durable.freeze_review(account, operation, {'resume': payload, 'claims': reviewed['approved_claims']})
+                    except ImportConflict as exc:
+                        return self.send_json({'error': str(exc)}, 409)
+                    result = workspace.enqueue(json.dumps(payload).encode(), approval={
+                        'operation': operation, 'approved_by': account, 'claims': reviewed['approved_claims'],
+                        'project_names': reviewed['project_names']})
+                    return self.send_json(result, 201 if result['created'] else 200)
                 if self.path == '/api/retry':
                     from resume_bot.pipeline import request_retry
                     request = json.loads(data.decode('utf-8-sig'))
@@ -552,6 +651,9 @@ def main():
     parser.add_argument('--web-url', help='Dashboard HTTPS origin on Cloudflare')
     parser.add_argument('--access-team', help='Cloudflare Zero Trust team name')
     parser.add_argument('--access-audience', help='Cloudflare Access application AUD tag')
+    parser.add_argument('--ai-first', action='store_true',
+                        help='Serve the AI builder at / (the classic builder stays at /workflow); '
+                             'the supervisor sets RESUMEOPS_AI_FIRST=1 instead')
     args = parser.parse_args()
     web_url = args.web_url.rstrip('/') if args.web_url else None
     access_options = (web_url, args.access_team, args.access_audience)
@@ -579,7 +681,7 @@ def main():
     origin = f'http://127.0.0.1:{args.port}'
     request_handler = handler(
         Workspace(args.root, args.model, args.code_root), origin, secrets.token_hex(32), phone_url, args.phone_user,
-        web_origin=web_url, access_verifier=verifier,
+        web_origin=web_url, access_verifier=verifier, ai_first=args.ai_first or os.environ.get('RESUMEOPS_AI_FIRST') == '1',
     )
     request_handler.resume_imports()
     server = ThreadingHTTPServer(('127.0.0.1', args.port), request_handler)
