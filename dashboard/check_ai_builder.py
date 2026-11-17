@@ -114,6 +114,8 @@ def check(ai_first=False):
                     expect(page.locator('#ai-section-education')).not_to_have_attribute('open', '')
                     expect(page.locator('#ai-section-projects')).not_to_have_attribute('open', '')
                     expect(page.locator('#ai-section-coding_platforms')).not_to_have_attribute('open', '')
+                    expect(page.locator('#ai-basics [name=role]')).to_be_visible()
+                    expect(page.locator('#ai-basics [name=phone]')).to_be_hidden()
                     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                     # The import spinner is directly under the title, never a bottom sticky banner.
                     expect(page.locator('#ai-progress')).to_be_hidden()
@@ -144,6 +146,7 @@ def check(ai_first=False):
                     page.get_by_label('Full name').fill('Previous Candidate')
                     page.locator('#ai-contact > summary').click()
                     page.get_by_label('Phone').fill('555-0101')
+                    expect(page.locator('#ai-contact-summary')).to_contain_text('1 added')
                     page.wait_for_function("""async () =>
                       (await ResumeRecovery.read('ai-builder'))?.intake?.phone === '555-0101'""")
                     # Dismissing the confirmation must not destroy a saved draft.
@@ -213,13 +216,20 @@ def check(ai_first=False):
                     expect(unsupported.get_by_role('checkbox')).not_to_be_checked()
                     supported.locator('xpath=ancestor::details[1]').evaluate('(item) => item.open = true')
                     supported.get_by_role('checkbox').check()
+                    expect(supported.locator('xpath=ancestor::details[1]').locator('summary')).to_contain_text('1/')
                     page.get_by_label('I confirm the candidate details and selected statements are accurate.').check()
                     page.get_by_role('button', name='Preview and check ATS').click()
                     expect(page.get_by_text('ATS readiness:', exact=False)).to_be_visible()
                     expect(page.locator('#ai-review')).to_be_hidden()
+                    page.get_by_role('button', name='Back to review').click()
+                    expect(page.locator('#ai-review')).to_be_visible()
+                    page.get_by_role('button', name='Preview and check ATS').click()
+                    expect(page.locator('#ai-review')).to_be_hidden()
                     page.locator('#ai-preview-content details').filter(
                         has_text='BSc | Example University').locator('summary').click()
                     expect(page.get_by_text('BSc | Example University', exact=True)).to_be_visible()
+                    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+                    assert page.locator('#ai-preview-content details').count() >= 3
                     assert not list(workspace.inbox.glob('*.json'))
                     request = page.evaluate("""async () => {
                       const saved = await ResumeRecovery.read('ai-builder');
