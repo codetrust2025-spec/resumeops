@@ -26,12 +26,9 @@
   async function readDocument(file, extension) {
     const id = Array.from(crypto.getRandomValues(new Uint8Array(16)),
       byte => byte.toString(16).padStart(2, '0')).join('');
-    const url = '/api/import-progress?id=' + id;
     // Upload bytes are measured (0-25%). Reading and extraction start points are real boundaries;
     // Ollama extraction has no knowable length, so the bar holds at 35% and the measured output
     // and elapsed time are shown instead of an invented percentage.
-    const stages = {'Reading document': 30, 'Extracting candidate details with Ollama': 35,
-      'Draft ready for review': 95};
     // The upload response is immediate; expensive Ollama extraction happens on the RTX.
     // On session expiry the same file is sent again with the same import id after sign-in; if the
     // first upload already started, the server answers 409 and the import simply continues.
@@ -83,6 +80,22 @@
       }
       throw new Error(outcome.body?.error || 'Upload rejected (HTTP ' + outcome.status + '). Check the server logs.');
     }
+    remember({id, name: file.name, extension, started: Date.now()});
+    return poll(id);
+  }
+
+  const PENDING = 'resumeops.import';     // this tab only: survives a reload or same-tab sign-in
+  function remember(entry) {
+    try { sessionStorage.setItem(PENDING, JSON.stringify(entry)); } catch {}
+  }
+  function forget() {
+    try { sessionStorage.removeItem(PENDING); } catch {}
+  }
+
+  async function poll(id) {
+    const url = '/api/import-progress?id=' + id;
+    const stages = {'Reading document': 30, 'Extracting candidate details with Ollama': 35,
+      'Draft ready for review': 95};
     let budget = 10 * 60 * 1000;   // processing time only; time spent signing in again is added back
     const started = Date.now();
     let unknown = 0;
@@ -176,8 +189,10 @@
         data = await readDocument(file, extension);
       }
       await prefill(data || {});
+      forget();
       fileInput.value = '';
     } catch (error) {
+      forget();
       message('Import failed: ' + error.message + ' Existing form details were not queued.', true);
     } finally {
       busy = false;
@@ -185,4 +200,31 @@
       button.disabled = !fileInput.files.length;
     }
   });
+
+  // After a reload or a sign-in that replaced this tab, continue an import that was running.
+  // The server keeps unfinished imports for two hours, so nothing is uploaded or extracted twice.
+  async function resumePending() {
+    let pending = null;
+    try { pending = JSON.parse(sessionStorage.getItem(PENDING) || 'null'); } catch {}
+    if (!pending || !/^[0-9a-f]{32}$/.test(pending.id || '')) return;
+    for (let i = 0; i < 50 && fields.role.options.length < 2; i++) {
+      await new Promise(resolve => setTimeout(resolve, 100));   // wait for the role catalogue
+    }
+    busy = true;
+    button.disabled = true;
+    fileInput.disabled = true;
+    showStep(STEP.INPUT, false);
+    stage('Resuming the import of ' + (pending.name || 'your resume') + ' after sign-in', 25);
+    try {
+      await prefill(await poll(pending.id));
+    } catch (error) {
+      message('The earlier import could not be resumed (' + error.message + '). Upload the file again.', true);
+    } finally {
+      forget();
+      busy = false;
+      fileInput.disabled = false;
+      button.disabled = !fileInput.files.length;
+    }
+  }
+  resumePending();
 })();

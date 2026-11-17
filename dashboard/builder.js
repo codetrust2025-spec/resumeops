@@ -1038,7 +1038,10 @@ const DRAFT_KEY = 'resumeops.draft';   // sessionStorage: this tab only, cleared
 let draftTimer = 0;
 function saveDraft() {
   clearTimeout(draftTimer);
-  draftTimer = setTimeout(() => {
+  draftTimer = setTimeout(writeDraft, 400);
+}
+function writeDraft() {
+  {
     if (activeStep < STEP.INPUT || activeStep > STEP.GENERATE) return;
     const data = payload();
     const filled = Object.values(data.profile).some(value => Array.isArray(value) ? value.length : value) || data.target.role;
@@ -1047,8 +1050,10 @@ function saveDraft() {
       sessionStorage.setItem(DRAFT_KEY, JSON.stringify({data, source: el('import-source').value,
         step: activeStep, yearsTouched, saved: Date.now()}));
     } catch {}
-  }, 400);
+  }
 }
+window.addEventListener('resumeops:before-renewal', () => { clearTimeout(draftTimer); writeDraft(); });
+window.addEventListener('pagehide', () => { clearTimeout(draftTimer); writeDraft(); });
 function forgetDraft() {
   clearTimeout(draftTimer);
   try { sessionStorage.removeItem(DRAFT_KEY); } catch {}

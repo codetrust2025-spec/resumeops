@@ -50,8 +50,12 @@ class SessionApiTests(unittest.TestCase):
     def test_sign_in_return_page_notifies_the_waiting_tab(self):
         status, body = self.get('/auth/renewed')
         self.assertEqual(status, 200)
-        for marker in (b"BroadcastChannel('resumeops-auth')", b'resumeops.authRenewed', b'window.close()'):
-            self.assertIn(marker, body)
+        self.assertIn(b'<script defer src="/auth-renewed.js">', body)
+        self.assertNotIn(b'<script>', body)          # inline scripts are blocked by the page's CSP
+        status, script = self.get('/auth-renewed.js')
+        for marker in (b"BroadcastChannel('resumeops-auth')", b'resumeops.authRenewed', b'window.close()',
+                       b"location.replace('/')"):
+            self.assertIn(marker, script)
 
     def test_finished_import_can_be_fetched_again_if_the_reply_was_lost(self):
         original = self.workspace.draft

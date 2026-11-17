@@ -13,7 +13,7 @@
 <script defer src="/import.js"></script>
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<svg class="sprite" width="0" height="0" aria-hidden="true">
 <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
 <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
 <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></symbol>
@@ -167,7 +167,7 @@
 <p id="result-success" class="success" role="status" hidden>Resume completed successfully. The builder is cleared and ready for the next candidate.</p>
 <div class="result-grid">
 <button type="button" class="tile" data-tab="tab-preview"><svg class="icon" aria-hidden="true"><use href="#i-doc"/></svg><span><b>Resume Preview</b><small>View the final resume</small></span></button>
-<button type="button" class="tile" data-tab="tab-ats"><span class="ring" id="ats-ring" style="--score:0"><b id="ats-ring-value">–</b></span><span><b>ATS Score</b><small>ATS readiness score</small></span></button>
+<button type="button" class="tile" data-tab="tab-ats"><span class="ring" id="ats-ring"><b id="ats-ring-value">–</b></span><span><b>ATS Score</b><small>ATS readiness score</small></span></button>
 <a class="tile" id="tile-pdf"><svg class="icon pdf" aria-hidden="true"><use href="#i-pdf"/></svg><span><b>PDF Download</b><small>Verified local PDF</small></span></a>
 <button type="button" class="tile" data-tab="tab-latex"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg><span><b>LaTeX Code</b><small>View or copy the .tex</small></span></button>
 <a class="tile" id="tile-overleaf" target="_blank" rel="noopener noreferrer"><svg class="icon green" aria-hidden="true"><use href="#i-link"/></svg><span><b>Overleaf Link</b><small id="overleaf-note">Open in Overleaf</small></span></a>
