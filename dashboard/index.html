@@ -170,12 +170,14 @@
 <a class="tile" id="tile-pdf"><svg class="icon pdf" aria-hidden="true"><use href="#i-pdf"/></svg><span><b>PDF Download</b><small>Verified local PDF</small></span></a>
 <button type="button" class="tile" data-tab="tab-latex"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg><span><b>LaTeX Code</b><small>View or copy the .tex</small></span></button>
 <a class="tile" id="tile-overleaf" target="_blank" rel="noopener noreferrer"><svg class="icon green" aria-hidden="true"><use href="#i-link"/></svg><span><b>Overleaf Link</b><small id="overleaf-note">Open in Overleaf</small></span></a>
+<button type="button" class="tile" data-tab="tab-ai"><svg class="icon" aria-hidden="true"><use href="#i-pen"/></svg><span><b>AI Improvements</b><small id="ai-note">Role-tailored lines</small></span></button>
 <button type="button" class="tile" id="tile-history"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg><span><b>History</b><small>View past resumes</small></span></button>
 </div>
-<div role="tablist" aria-label="Resume result views" class="tabs"><button type="button" role="tab" id="tab-preview" aria-controls="result-preview" aria-selected="true">Resume Preview</button><button type="button" role="tab" id="tab-latex" aria-controls="result-latex" aria-selected="false" tabindex="-1">LaTeX Code</button><button type="button" role="tab" id="tab-ats" aria-controls="result-ats" aria-selected="false" tabindex="-1">ATS Analysis</button></div>
+<div role="tablist" aria-label="Resume result views" class="tabs"><button type="button" role="tab" id="tab-preview" aria-controls="result-preview" aria-selected="true">Resume Preview</button><button type="button" role="tab" id="tab-latex" aria-controls="result-latex" aria-selected="false" tabindex="-1">LaTeX Code</button><button type="button" role="tab" id="tab-ats" aria-controls="result-ats" aria-selected="false" tabindex="-1">ATS Analysis</button><button type="button" role="tab" id="tab-ai" aria-controls="result-ai" aria-selected="false" tabindex="-1">AI Improvements</button></div>
 <div role="tabpanel" id="result-preview" aria-labelledby="tab-preview"><div class="actions" id="pdf-actions"></div><iframe id="pdf-preview" title="PDF preview" hidden></iframe><details class="more" id="preview-text-box"><summary>Plain-text version</summary><div id="preview-text"></div></details></div>
 <div role="tabpanel" id="result-latex" aria-labelledby="tab-latex" hidden><div class="actions"><button type="button" class="secondary" id="copy-latex">Copy LaTeX</button><a id="download-latex" class="button secondary">Download LaTeX</a></div><p id="copy-status" role="status"></p><pre id="latex-source"></pre></div>
 <div role="tabpanel" id="result-ats" aria-labelledby="tab-ats" hidden><div id="ats-result"></div></div>
+<div role="tabpanel" id="result-ai" aria-labelledby="tab-ai" hidden><div id="ai-result"></div></div>
 <div class="actions end"><button type="button" class="primary" id="another"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>Create another resume</button></div>
 </section>
 

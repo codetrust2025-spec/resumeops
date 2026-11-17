@@ -5,8 +5,16 @@ $message = $null
 try {
     $health = Get-Content 'inbox\.resume-bot-health.json' -Raw | ConvertFrom-Json
     $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-    if (($now - [double]$health.last_scan) -gt 900) {
-        $message = 'Resume Builder watcher heartbeat is stale.'
+    $ollama = $true
+    try { Invoke-RestMethod -Uri 'http://127.0.0.1:11434/api/tags' -TimeoutSec 5 | Out-Null } catch { $ollama = $false }
+    if (($now - [double]$health.last_scan) -gt 300) {
+        $message = 'Resume Builder watcher heartbeat is stale (no scan for over 5 minutes).'
+    } elseif (-not $ollama) {
+        $message = 'Ollama is not answering on the RTX laptop; resume jobs will wait and retry.'
+    } elseif ($health.overleaf -and $health.overleaf.ok -eq $false) {
+        $message = 'Overleaf sign-in required: run Sign_In_Overleaf.bat on the RTX laptop, then retry the job.'
+    } elseif ($health.mongodb -and $health.mongodb.ok -eq $false) {
+        $message = 'MongoDB is unreachable; ATS records are queued locally and will be retried.'
     } elseif ($health.failures -gt 0) {
         $message = 'Resume Builder has candidate jobs awaiting recovery.'
     }

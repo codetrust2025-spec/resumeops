@@ -50,6 +50,74 @@ def normalize_request(payload):
     return validate_profile(payload['profile']), normalized
 
 
+MONTHS = {m: i for i, m in enumerate(('jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep',
+                                       'oct', 'nov', 'dec'))}
+
+
+def _month_index(value, end=False, today=None):
+    """Month number (year*12+month) of a resume date, or None if it is not clearly a date."""
+    import datetime
+    text = (value or '').strip().lower()
+    if not text:
+        return None
+    if re.search(r'present|current|now|till date|to date|ongoing', text):
+        today = today or datetime.date.today()
+        return today.year * 12 + today.month - 1
+    match = re.fullmatch(r'(\d{1,2})\s*[/.-]\s*(\d{4})', text)
+    if match and 1 <= int(match.group(1)) <= 12:
+        return int(match.group(2)) * 12 + int(match.group(1)) - 1
+    match = re.match(r'(\d{4})\s*[/.-]\s*(\d{1,2})\b', text)
+    if match and 1 <= int(match.group(2)) <= 12:
+        return int(match.group(1)) * 12 + int(match.group(2)) - 1
+    match = re.search(r'\b([a-z]{3})[a-z]*\.?,?\s+\'?(\d{4})\b', text)
+    if match and match.group(1) in MONTHS:
+        return int(match.group(2)) * 12 + MONTHS[match.group(1)]
+    match = re.fullmatch(r'(19|20)\d{2}', text)
+    if match:
+        return int(text) * 12 + (11 if end else 0)
+    return None
+
+
+def dated_months(profile, today=None):
+    """Months covered by dated experience entries (overlaps merged), or None if none are dated.
+    An entry without an end date counts as ongoing only if its end is written as Present etc."""
+    spans = []
+    for entry in profile.get('experience', []):
+        start = _month_index(entry.get('start'), today=today)
+        end = _month_index(entry.get('end'), end=True, today=today) if entry.get('end') else None
+        if start is None or end is None or end < start:
+            continue
+        spans.append((start, end + 1))
+    if not spans:
+        return None
+    spans.sort()
+    total, (low, high) = 0, spans[0]
+    for start, end in spans[1:]:
+        if start <= high:
+            high = max(high, end)
+        else:
+            total, low, high = total + high - low, start, end
+    return total + high - low
+
+
+def experience_evidence(profile, target, today=None):
+    """Compare the claimed experience level with the dated roles. ``used`` is the number the
+    generator may state: the claim when the dated roles support it, otherwise the dated years;
+    None when nothing is dated (the claim cannot be verified, so it is never stated)."""
+    claimed = (target or {}).get('experience_years')
+    months = dated_months(profile, today)
+    dated = months // 12 if months is not None else None
+    if dated is None:
+        used = None
+    elif claimed is None:
+        used = dated
+    else:
+        used = min(claimed, dated) if claimed > dated + 1 else claimed if claimed <= dated else dated
+    supported = not claimed or (dated is not None and claimed <= dated + 1)
+    return {'claimed': claimed, 'dated_months': months, 'dated_years': dated, 'used': used,
+            'supported': supported}
+
+
 def role_keywords(target):
     return list({term.casefold(): term for term in
                  [*ROLES[target['role']]['keywords'], *target['keywords']]}.values())
@@ -61,7 +129,7 @@ def matched_terms(terms, text):
         r'(?<!\w)' + re.escape(' '.join(term.split())) + r'(?!\w)', normalized, re.IGNORECASE)]
 
 
-def analyze(profile, target, keywords=None):
+def analyze(profile, target, keywords=None, today=None):
     keywords = role_keywords(target) if keywords is None else keywords
     evidence = [profile['headline'], profile['summary'], *profile['skills'], *profile['certifications']]
     evidence.extend(profile.get('projects', []))
@@ -78,11 +146,17 @@ def analyze(profile, target, keywords=None):
         (6, bool(profile['summary']), 'Add a concise summary of confirmed experience.'),
         (6, bool(profile['skills']), 'List relevant skills the candidate can substantiate.'),
     )
+    experience = experience_evidence(profile, target, today)
+    level = ('Dated roles support the selected experience level.' if experience['supported'] else
+             f"Selected {experience['claimed']} years, but dated roles show "
+             f"{experience['dated_years'] if experience['dated_years'] is not None else 'no'} years; "
+             'add the missing dated roles or lower the experience level.')
     evidence_checks = (
-        (8, any(entry['bullets'] for entry in profile['experience']), 'Describe verified work contributions.'),
-        (6, any(entry['start'] for entry in profile['experience']), 'Provide confirmed dates for employment.'),
-        (6, bool(profile['education'] or profile.get('projects') or profile['certifications']),
+        (6, any(entry['bullets'] for entry in profile['experience']), 'Describe verified work contributions.'),
+        (4, any(entry['start'] for entry in profile['experience']), 'Provide confirmed dates for employment.'),
+        (5, bool(profile['education'] or profile.get('projects') or profile['certifications']),
          'Include verified education, projects, or certifications when available.'),
+        (5, experience['supported'], level),
     )
     breakdown = [
         {'label': 'Role keyword alignment', 'points': round(coverage / 2), 'max': 50},
@@ -98,16 +172,29 @@ def analyze(profile, target, keywords=None):
         'score': coverage,
         'ats_readiness': sum(part['points'] for part in breakdown),
         'breakdown': breakdown, 'suggestions': suggestions,
-        'matched': matched, 'missing': missing,
+        'matched': matched, 'missing': missing, 'experience': experience,
         'method': 'ResumeOps rubric: 50 keyword, 30 structure, 20 evidence points. Employer ATS rankings can differ.',
     }
 
 
-def persist_analysis(report):
-    """Optional Mongo projection. Application artifacts stay in the private filesystem."""
-    uri = os.environ.get('RESUMEOPS_MONGODB_URI')
-    if not uri or not report.get('ats'):
-        return
+OUTBOX = '.resumeops-mongo-outbox.json'
+
+
+def _records(report):
+    """The documents a finished resume contributes to MongoDB (role catalogue + ATS summary)."""
+    ats = report['ats']
+    role = ats['role']
+    analysis = {'_id': report['source_sha256'], 'role': role, 'template': ats['template'],
+                'score': ats['score']}
+    if 'ats_readiness' in ats:
+        analysis['ats_readiness'] = ats['ats_readiness']
+    return [('role_keywords', {'_id': role, 'name': ROLES[role]['name'], 'keywords': ROLES[role]['keywords']}),
+            ('resume_analyses', analysis)]
+
+
+def _write_records(uri, records):
+    """Idempotent upserts by _id, each read back to prove it was stored. Existing documents with
+    other ids are never touched."""
     try:
         from pymongo import MongoClient
         from pymongo.errors import PyMongoError
@@ -116,15 +203,79 @@ def persist_analysis(report):
     try:
         with MongoClient(uri, timeoutMS=3500) as client:
             db = client[os.environ.get('RESUMEOPS_MONGODB_DATABASE', 'resumeops')]
-            ats = report['ats']
-            role = ats['role']
-            db.role_keywords.replace_one({'_id': role}, {
-                '_id': role, 'name': ROLES[role]['name'], 'keywords': ROLES[role]['keywords'],
-            }, upsert=True)
-            db.resume_analyses.replace_one({'_id': report['source_sha256']}, {
-                '_id': report['source_sha256'], 'role': role, 'template': ats['template'],
-                'score': ats['score'],
-                **({'ats_readiness': ats['ats_readiness']} if 'ats_readiness' in ats else {}),
-            }, upsert=True)
-    except (PyMongoError, ValueError):
-        raise DatabaseUnavailable('Configured MongoDB is unavailable; retry is automatic') from None
+            for collection, document in records:
+                db[collection].replace_one({'_id': document['_id']}, document, upsert=True)
+                if db[collection].find_one({'_id': document['_id']}) != document:
+                    raise DatabaseUnavailable('MongoDB did not return the saved document')
+    except PyMongoError:
+        raise DatabaseUnavailable('Configured MongoDB is unavailable; the save is queued and retried') from None
+
+
+def _ping(uri):
+    try:
+        from pymongo import MongoClient
+        from pymongo.errors import PyMongoError
+    except ImportError:
+        raise DatabaseUnavailable('Install the MongoDB support dependency') from None
+    try:
+        with MongoClient(uri, timeoutMS=3500) as client:
+            client.admin.command('ping')
+    except PyMongoError:
+        raise DatabaseUnavailable('Configured MongoDB is unavailable') from None
+
+
+def _outbox(folder):
+    path = Path(folder) / OUTBOX
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+        return path, data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return path, {}
+
+
+def persist_analysis(report, outbox=None):
+    """Save the ATS summary to MongoDB when RESUMEOPS_MONGODB_URI is set. Output files remain the
+    system of record: if MongoDB is unreachable and ``outbox`` is given, the documents are queued
+    there (keyed by _id, so retries are idempotent) and the resume still completes."""
+    uri = os.environ.get('RESUMEOPS_MONGODB_URI')
+    status = {'configured': bool(uri), 'saved': False, 'queued': False}
+    if not uri or not report.get('ats'):
+        return status
+    records = _records(report)
+    try:
+        _write_records(uri, records)
+        status['saved'] = True
+    except DatabaseUnavailable as exc:
+        if outbox is None:
+            raise
+        from .storage import write_json
+        path, pending = _outbox(outbox)
+        for collection, document in records:
+            pending[collection + ':' + str(document['_id'])] = [collection, document]
+        write_json(path, pending)
+        status.update(queued=True, error=str(exc))
+    return status
+
+
+def flush_outbox(folder):
+    """Retry queued MongoDB saves. Returns a health summary; never raises."""
+    import time
+    uri = os.environ.get('RESUMEOPS_MONGODB_URI')
+    path, pending = _outbox(folder)
+    status = {'configured': bool(uri), 'pending': len(pending), 'checked': time.time()}
+    if not uri:
+        return status
+    try:
+        if pending:
+            _write_records(uri, [tuple(item) for item in pending.values()])
+        else:
+            _ping(uri)
+            status['ok'] = True
+            return status
+    except DatabaseUnavailable as exc:
+        status.update(ok=False, error=str(exc))
+        return status
+    from .storage import write_json
+    write_json(path, {})
+    status.update(ok=True, pending=0, flushed=len(pending))
+    return status

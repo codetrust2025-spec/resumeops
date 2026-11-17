@@ -16,6 +16,15 @@ class OverleafError(RuntimeError):
     pass
 
 
+class OverleafAuthError(OverleafError):
+    """The saved browser session is not signed in to Overleaf (expired, or unreadable by this
+    Windows logon). Needs a person to sign in once; retrying alone cannot fix it."""
+
+
+def _signed_out(url):
+    return bool(re.search(r'overleaf\.com/(login|register|sign_?in)', url or '', re.I))
+
+
 def _editor_url(url):
     parsed = urlparse(url)
     return bool(EDITOR.fullmatch(url)) and parsed.netloc == 'www.overleaf.com'
@@ -107,8 +116,12 @@ def import_zip(zip_path, project_name, browser_profile, *, pdf_path,
                         if not _editor_url(saved_url):
                             raise OverleafError('Invalid saved Overleaf editor URL')
                         page.goto(saved_url, wait_until='domcontentloaded')
+                        if _signed_out(page.url):
+                            raise OverleafAuthError('Overleaf sign-in required')
                     else:
                         page.goto(ORIGIN + '/project', wait_until='domcontentloaded')
+                        if _signed_out(page.url):
+                            raise OverleafAuthError('Overleaf sign-in required')
                         if page.url.rstrip('/') != ORIGIN + '/project':
                             raise OverleafError('Overleaf dashboard unavailable; check the authorized session')
                         found = _find_project(page, project_name, timeout_ms)
@@ -139,6 +152,8 @@ def import_zip(zip_path, project_name, browser_profile, *, pdf_path,
                     return {'status': status, 'project_name': project_name, 'url': url}
                 finally:
                     context.close()
+        except OverleafError:
+            raise
         except PlaywrightError as exc:
             raise OverleafError('Overleaf browser step failed; check session, editor, or upload recovery') from exc
 

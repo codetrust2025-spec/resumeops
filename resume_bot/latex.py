@@ -14,7 +14,9 @@ def paragraph(s):
     return escape(s).replace('\n',' ')
 
 
-def render(profile, template="standard"):
+def render(profile, template="standard", years=None):
+    """``years`` is the verified experience level used for this build: under one year (a fresher)
+    puts education and projects before experience; otherwise experience comes first."""
     out=[r'''\documentclass[10pt,a4paper]{article}
 \usepackage[margin=1.53cm,top=1.35cm,bottom=1.4cm]{geometry}
 \usepackage[T1]{fontenc}
@@ -48,33 +50,38 @@ def render(profile, template="standard"):
         out.append(r'\section*{PROFESSIONAL SUMMARY}'+'\n'+paragraph(profile['summary'])+'\n')
     if profile['skills']:
         out.append(r'\section*{TECHNICAL SKILLS}'+'\n'+r'\textbf{Skills:} '+r' \textbullet{} '.join(paragraph(x) for x in profile['skills'])+'\n')
-    if profile['experience']:
-        out.append(r'\section*{PROFESSIONAL EXPERIENCE}'+'\n')
-        for x in profile['experience']:
-            dates=' -- '.join(p for p in (x['start'],x['end']) if p)
-            out.append(r'\textbf{'+paragraph(x['position'])+r'} \textbar{} '+paragraph(x['company'])+(r'\\' if dates or x['location'] else '')+'\n')
-            if dates or x['location']:
-                out.append(r'{\small\color{ink}'+paragraph(dates)+
-                           (r' \quad $\cdot$ \quad '+paragraph(x['location']) if x['location'] else '')+r'}\\[1pt]'+'\n')
-            if x['bullets']:
-                out.append(r'\begin{itemize}'+'\n')
-                for b in x['bullets']:
-                    out.append(r'\item '+paragraph(b)+'\n')
-                out.append(r'\end{itemize}'+'\n')
-            out.append(r'\vspace{2pt}'+'\n')
-    if profile.get('projects'):
-        out.append(r'\section*{PROJECTS}'+'\n'+r'\begin{itemize}'+'\n')
-        for project in profile['projects']:
-            out.append(r'\item '+paragraph(project)+'\n')
-        out.append(r'\end{itemize}'+'\n')
-    if profile['education']:
-        out.append(r'\section*{EDUCATION}'+'\n')
-        for x in profile['education']:
-            dates=' -- '.join(p for p in (x['start'],x['end']) if p)
-            out.append(r'\textbf{'+paragraph(x['degree'])+r'} \textbar{} '+paragraph(x['institution'])+(r'\\' if x['start'] or x['end'] or x['details'] else '')+'\n')
-            extra='  |  '.join(i for i in (dates,x['details']) if i)
-            if extra:
-                out.append(r'{\small '+paragraph(extra)+r'}\\[2pt]'+'\n')
+    def experience_section():
+        if profile['experience']:
+            out.append(r'\section*{PROFESSIONAL EXPERIENCE}'+'\n')
+            for x in profile['experience']:
+                dates=' -- '.join(p for p in (x['start'],x['end']) if p)
+                out.append(r'\textbf{'+paragraph(x['position'])+r'} \textbar{} '+paragraph(x['company'])+(r'\\' if dates or x['location'] else '')+'\n')
+                if dates or x['location']:
+                    out.append(r'{\small\color{ink}'+paragraph(dates)+
+                               (r' \quad $\cdot$ \quad '+paragraph(x['location']) if x['location'] else '')+r'}\\[1pt]'+'\n')
+                if x['bullets']:
+                    out.append(r'\begin{itemize}'+'\n')
+                    for b in x['bullets']:
+                        out.append(r'\item '+paragraph(b)+'\n')
+                    out.append(r'\end{itemize}'+'\n')
+                out.append(r'\vspace{2pt}'+'\n')
+    def early_sections():
+        if profile.get('projects'):
+            out.append(r'\section*{PROJECTS}'+'\n'+r'\begin{itemize}'+'\n')
+            for project in profile['projects']:
+                out.append(r'\item '+paragraph(project)+'\n')
+            out.append(r'\end{itemize}'+'\n')
+        if profile['education']:
+            out.append(r'\section*{EDUCATION}'+'\n')
+            for x in profile['education']:
+                dates=' -- '.join(p for p in (x['start'],x['end']) if p)
+                out.append(r'\textbf{'+paragraph(x['degree'])+r'} \textbar{} '+paragraph(x['institution'])+(r'\\' if x['start'] or x['end'] or x['details'] else '')+'\n')
+                extra='  |  '.join(i for i in (dates,x['details']) if i)
+                if extra:
+                    out.append(r'{\small '+paragraph(extra)+r'}\\[2pt]'+'\n')
+    fresher = years is not None and years < 1
+    for section in ((early_sections, experience_section) if fresher else (experience_section, early_sections)):
+        section()
     if profile['certifications']:
         out.append(r'\section*{CERTIFICATIONS}'+'\n')
         for c in profile['certifications']:

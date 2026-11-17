@@ -69,27 +69,62 @@ class WorkflowTests(unittest.TestCase):
 
     @unittest.skipUnless(all(shutil.which(program) for program in
                          ('pdflatex', 'pdfinfo', 'pdftotext')), 'TeX/PDF tools missing')
-    def test_database_block_retries_from_existing_verified_output(self):
+    def test_database_outage_queues_the_save_and_recovers_without_rebuilding(self):
+        """MongoDB is an analytics copy: an outage must not fail the resume. The documents are
+        queued in an outbox (idempotent by _id) and written, then read back, once it returns."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             inbox = root / 'inbox'
             inbox.mkdir()
             (inbox / 'job.json').write_text(json.dumps(targeted()), encoding='utf-8')
             opts = dict(polish_enabled=False, once=True)
-            with patch('resume_bot.pipeline.persist_analysis',
-                       side_effect=DatabaseUnavailable('Database is unavailable')):
+            store = {}
+
+            class FakeCollection:
+                def __init__(self, name):
+                    self.name = name
+
+                def replace_one(self, query, document, upsert):
+                    store[(self.name, query['_id'])] = dict(document)
+
+                def find_one(self, query):
+                    return store.get((self.name, query['_id']))
+
+            class FakeClient:
+                def __init__(self, uri, timeoutMS):
+                    if down['on']:
+                        from pymongo.errors import ServerSelectionTimeoutError
+                        raise ServerSelectionTimeoutError('down')
+                    self.admin = type('Admin', (), {'command': lambda self, name: {'ok': 1}})()
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *args):
+                    return False
+
+                def __getitem__(self, name):
+                    return type('DB', (), {'__getitem__': lambda self, c: FakeCollection(c)})()
+
+            down = {'on': True}
+            store[('resume_analyses', 'unrelated-existing-record')] = {'_id': 'unrelated-existing-record', 'score': 7}
+            with patch.dict('os.environ', {'RESUMEOPS_MONGODB_URI': 'mongodb://example.invalid'}), \
+                    patch('pymongo.MongoClient', FakeClient):
                 result = scan(inbox, root / 'output', **opts)['job.json']
-            self.assertTrue(result['blocked'])
-            # The MongoDB save is part of "Verify final outputs and save evidence" (93-99%):
-            # the job stops there and never reports 100%.
-            self.assertEqual(result['failed_stage'], 'verify')
-            self.assertTrue(93 <= result['percent'] <= 99, result['percent'])
-            output = next((root / 'output').glob('*/*/resume.pdf'))
-            previous = output.read_bytes()
-            with patch('resume_bot.pipeline.time.time', return_value=time.time() + 121), patch(
-                'resume_bot.pipeline.compile_latex', side_effect=AssertionError('Unexpected rebuild')
-            ):
-                result = scan(inbox, root / 'output', **opts)['job.json']
-            self.assertEqual(result['status'], 'ok')
-            self.assertEqual(result['percent'], 100)
-            self.assertEqual(output.read_bytes(), previous)
+                self.assertEqual((result['status'], result['percent']), ('ok', 100))
+                outbox = json.loads((root / 'output' / '.resumeops-mongo-outbox.json').read_text())
+                self.assertEqual(len(outbox), 2)
+                health = json.loads((inbox / '.resume-bot-health.json').read_text())
+                self.assertTrue(health['mongodb']['queued'])
+                output = next((root / 'output').glob('*/*/resume.pdf'))
+                previous = output.read_bytes()
+                down['on'] = False
+                with patch('resume_bot.pipeline.compile_latex', side_effect=AssertionError('Unexpected rebuild')):
+                    scan(inbox, root / 'output', **opts)
+                health = json.loads((inbox / '.resume-bot-health.json').read_text())
+                self.assertEqual((health['mongodb']['ok'], health['mongodb']['pending']), (True, 0))
+                self.assertEqual(json.loads((root / 'output' / '.resumeops-mongo-outbox.json').read_text()), {})
+                saved = [doc for (collection, _), doc in store.items() if collection == 'resume_analyses']
+                self.assertEqual(len(saved), 2)                       # the new analysis + the untouched record
+                self.assertEqual(store[('resume_analyses', 'unrelated-existing-record')]['score'], 7)
+                self.assertEqual(output.read_bytes(), previous)

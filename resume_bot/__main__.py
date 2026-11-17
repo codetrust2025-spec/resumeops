@@ -57,9 +57,28 @@ def main():
                        overleaf=a.overleaf,browser_profile=a.browser_profile,max_pages=a.max_pages)
         print(json.dumps(result,indent=2))
     else:
-        scan(a.inbox,a.output,ai=ai,polish_enabled=not a.no_polish,
-             overleaf=a.overleaf,browser_profile=a.browser_profile,
-             once=a.once,interval=a.interval,max_pages=a.max_pages)
+        watch(a, ai)
+
+
+def watch(a, ai, sleep=None):
+    """Run the watcher. If another watcher already holds the inbox lock (for example the boot task
+    and a logon task both started one), stand by and take over when it stops, instead of crashing."""
+    import sqlite3
+    import time
+    sleep = sleep or time.sleep
+    waiting = False
+    while True:
+        try:
+            return scan(a.inbox,a.output,ai=ai,polish_enabled=not a.no_polish,
+                        overleaf=a.overleaf,browser_profile=a.browser_profile,
+                        once=a.once,interval=a.interval,max_pages=a.max_pages)
+        except sqlite3.OperationalError as exc:
+            if 'locked' not in str(exc).lower() or a.once:
+                raise
+            if not waiting:
+                print('Another watcher is active for this inbox; standing by', flush=True)
+                waiting = True
+            sleep(30)
 
 
 if __name__=='__main__':

@@ -21,7 +21,7 @@ a{color:var(--primary);text-underline-offset:3px}p,small{color:var(--muted)}
 .masthead nav a[aria-current]{background:#1f4f9a;color:#fff}
 .worker-pill{font-size:.76rem;font-weight:700;padding:5px 10px;border-radius:999px;background:#ffffff1f;color:#d3def2;white-space:nowrap}
 .worker-pill::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:#9aa7bd;margin-right:6px;vertical-align:1px}
-.worker-pill[data-state=online]::before{background:#4ad07f}.worker-pill[data-state=offline]::before{background:#ff6b7d}
+.worker-pill[data-state=online]::before{background:#4ad07f}.worker-pill[data-state=warning]::before{background:#ffb648}.worker-pill[data-state=offline]::before{background:#ff6b7d}
 
 /* Intro and stepper */
 .intro{padding:26px 0 14px}.intro h1{font-size:clamp(1.6rem,3.4vw,2.3rem);line-height:1.1;margin:0 0 6px;letter-spacing:-.035em}.intro p{margin:0;max-width:760px}
@@ -187,7 +187,7 @@ button.primary:hover,.button.primary:hover{background:var(--primary-dark)}
 
 /* Results */
 .success{color:var(--ok);background:var(--ok-bg);border-radius:10px;padding:10px 14px;font-weight:650;margin:-6px 0 14px}
-.result-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:18px}
+.result-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}
 .tile{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:12px;padding:14px;border:1px solid var(--line);border-radius:14px;background:#fff;cursor:pointer;box-shadow:0 1px 2px #0f21400d;min-height:72px}
 .tile:hover{border-color:#a9c0e4;background:var(--soft)}.tile:focus-visible{outline:2px solid var(--primary)}
 .tile[aria-disabled=true]{opacity:.5;cursor:not-allowed}
@@ -264,3 +264,10 @@ input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true]{b
   .live-foot .actions{width:100%}.live-foot .actions button{flex:1}
   .result-head input{max-width:none;order:3;flex-basis:100%}
 }
+
+/* AI improvements: before/after for every accepted rewrite */
+.changes{padding-left:22px;display:grid;gap:10px}
+.changes li{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--soft)}
+.changes del,.changes ins{display:block;text-decoration:none;font-size:.88rem}
+.changes del{color:var(--muted)}.changes del::before{content:"Before: ";font-weight:650}
+.changes ins{color:var(--ink);margin-top:4px}.changes ins::before{content:"After: ";font-weight:650;color:var(--ok)}

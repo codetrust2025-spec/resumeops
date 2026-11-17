@@ -125,7 +125,8 @@ def check(screenshots):
                     assert upload_page.evaluate('location.pathname') == '/'
                     # Experience level is calculated from the dated roles instead of defaulting to 1 year.
                     expect(upload_page.locator('#experience-level')).to_contain_text('calculated from dated roles')
-                    assert int(upload_page.get_by_label('Years of experience').input_value()) >= 5
+                    # Feb 2018 - Jan 2021 is dated (36 months); the role without an end date is not counted.
+                    expect(upload_page.get_by_label('Years of experience')).to_have_value('3')
                     # Role selection stays required and Continue explains it.
                     upload_page.get_by_role('button',name='Continue').click()
                     expect(upload_page.locator('.validation-notice')).to_contain_text('Target role')
@@ -278,6 +279,12 @@ def check(screenshots):
                               'Matched keywords','Missing keywords','Improvement suggestions']:
                     expect(page.locator('#ats-result')).to_contain_text(label)
                 expect(page.locator('#ats-result')).to_contain_text('C++')
+                # Every accepted AI rewrite is listed; this echoing test model changes nothing.
+                page.get_by_role('tab', name='AI Improvements').click()
+                expect(page.locator('#ai-result')).to_contain_text('Ollama rewrote 0 of')
+                expect(page.locator('#ai-result')).to_contain_text('No line needed rewording.')
+                # 12 years was selected but the only role has no end date, so no years are stated.
+                expect(page.locator('#ai-result')).to_contain_text('No dated roles, so no years of experience are stated')
                 picture('new-ats.png')
                 page.get_by_role('button',name='Create another resume').click()
                 expect(page.get_by_role('heading',name='Start',exact=True)).to_be_visible()
@@ -331,6 +338,7 @@ def check(screenshots):
                 expect(mobile.get_by_label('Start date',exact=True)).to_have_attribute('aria-invalid','true')
                 mobile.get_by_label('Start date',exact=True).fill('Jan 2020')
                 expect(mobile.locator('.validation-notice')).to_be_hidden()
+                mobile.get_by_label('End date',exact=True).fill('Present')
                 # Dated roles set the experience level automatically when it was not chosen by hand.
                 assert int(mobile.locator('[name=years]').input_value()) >= 5
                 # The same reveal-and-explain behaviour works for a closed education card in another tab.
