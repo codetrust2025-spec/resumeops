@@ -5,17 +5,14 @@
   const button = document.getElementById('import-resume');
   const status = document.getElementById('resume-import-status');
   const progress = document.getElementById('resume-import-progress');
-  const evidence = document.getElementById('import-evidence');
-  const sourceField = document.getElementById('import-source');
   const allowed = new Set(['.pdf','.docx','.doc','.odt','.rtf','.txt','.md',
     '.png','.jpg','.jpeg','.tif','.tiff','.bmp','.webp','.json']);
-  const asText = value => typeof value === 'string' ? value : '';
-  const joinLines = value => Array.isArray(value) ? value.filter(item => typeof item === 'string').join('\n') : '';
   let busy = false;
 
   function message(value, isError = false) {
     status.textContent = value;
     status.classList.toggle('error', isError);
+    status.classList.remove('done');
   }
   function stage(value, percent) {
     progress.hidden = false;
@@ -123,77 +120,17 @@
     throw new Error('Extraction is taking unusually long. Check Ollama and RTX status before retrying.');
   }
 
-  function setEntries(kind, entries) {
-    const holder = document.getElementById(kind + '-entries');
-    holder.replaceChildren();
-    if (!Array.isArray(entries)) return;
-    for (const entry of entries.slice(0, 40)) {
-      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
-      if (!Object.values(entry).some(Boolean)) continue;
-      addEntry(kind, false);
-      const row = holder.lastElementChild;
-      for (const input of row.querySelectorAll('[data-field]')) {
-        const value = entry[input.dataset.field];
-        input.value = input.dataset.field === 'bullets' ? joinLines(value) : asText(value);
-        input.dispatchEvent(new Event('input', {bubbles:true}));
-      }
-    }
-  }
-
   async function prefill(data) {
     const profile = data.profile;
     if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
       throw new Error('The uploaded file does not contain candidate details.');
     }
-    const target = data.target && typeof data.target === 'object' && !Array.isArray(data.target)
-      ? data.target : {};
-    // Clear only the builder draft, never the inbox, output history or saved results.
-    for (const key of ['full_name','email','phone','location','current_company',
-      'headline','linkedin','github','portfolio','summary']) {
-      fields[key].value = asText(profile[key]);
-    }
-    for (const key of ['skills','certifications','projects']) {
-      fields[key].value = joinLines(profile[key]);
-    }
-    setEntries('experience', profile.experience);
-    setEntries('education', profile.education);
-    // A new upload must not inherit role keywords or experience from a previous person.
-    fields.role.value = '';
-    fields.template.selectedIndex = 0;
-    fields.keywords.value = '';
-    fields.years.value = '1';
-    document.getElementById('catalog-keywords').textContent = '';
-    if (typeof target.role === 'string' &&
-        [...fields.role.options].some(option => option.value === target.role)) {
-      fields.role.value = target.role;
-      await roleChanged();
-    }
-    if (typeof target.template === 'string' &&
-        [...fields.template.options].some(option => option.value === target.template)) {
-      fields.template.value = target.template;
-    }
-    if (Array.isArray(target.keywords)) fields.keywords.value = joinLines(target.keywords);
-    if (Number.isInteger(target.experience_years) &&
-        target.experience_years >= 0 && target.experience_years <= 25) {
-      fields.years.value = String(target.experience_years);
-    }
-    updateExperience();
-    showTemplate();
-    fields.verified.checked = false;
-    // Avoid showing the previous candidate's generated output after a new import.
-    watchedJob = '';
-    shownRevision = '';
-    ++selection;
-    document.getElementById('results').hidden = true;
-    document.getElementById('generation').hidden = true;
-    document.getElementById('pdf-preview').removeAttribute('src');
-    sourceField.value = asText(data.source);
-    evidence.hidden = !sourceField.value;
-    evidence.open = false;
-    feedback('');
-    showStep(0, false); // Choose/review a role first, then inspect prefilled details.
+    // Clears only the builder draft, never the inbox, output history or saved results.
     const count = Object.values(profile).filter(v => v && (!Array.isArray(v) || v.length)).length;
-    stage('Imported ' + count + ' candidate sections. Select a role, then Continue to review and correct the prefilled details.', 100);
+    stage('Imported ' + count + ' candidate sections. Review each step before generating.', 100);
+    status.classList.add('done');
+    await applyImport(data);
+    feedback('Imported ' + count + ' candidate sections from the resume. Choose the target role, then review each step.');
   }
 
   fileInput.addEventListener('change', () => {

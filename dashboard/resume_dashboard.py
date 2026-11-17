@@ -124,6 +124,7 @@ class Workspace:
         last_scan = (health or {}).get('last_scan')
         return {'jobs': jobs, 'revisions': revisions,
                 'lastScan': last_scan, 'healthy': bool(last_scan and time.time() - last_scan < 900),
+                'worker': {key: (health or {}).get(key) for key in ('pid', 'started', 'ollama')},
                 'alert': alert.is_file(), 'stateReadable': state is not None or not (
                     self.inbox / '.resume-bot-state.json').exists(),
                 'logs': [name for name in LOGS if (self.logs / name).is_file()

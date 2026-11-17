@@ -33,6 +33,15 @@ SHOTS = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else None
 
 
 class SlowOllama(BaseHTTPRequestHandler):
+    def do_GET(self):  # /api/ps: the model is fully in GPU memory
+        body = json.dumps({'models': [{'name': 'qwen2.5:7b', 'model': 'qwen2.5:7b', 'size': 4755397016,
+                                       'size_vram': 4755397016, 'context_length': 4096}]}).encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         source = json.loads(re.search(r'INPUT ARRAY:\s*(\[.*\])', body['prompt'], re.S).group(1))
@@ -87,21 +96,28 @@ class Watcher:
 
 
 def fill_candidate(page, name, email):
-    page.get_by_label('Target role').select_option('fullstack-developer')
+    if page.locator('#start-create').is_visible():
+        page.locator('#start-create').click()
+    page.locator('[name=source][value=manual]').check()
+    page.get_by_role('button', name='Continue').click()
+    page.locator('[name=role]').select_option('fullstack-developer')
     page.get_by_role('button', name='Continue').click()
     page.get_by_label('Full name').fill(name)
     page.get_by_label('Email').fill(email)
     page.get_by_role('button', name='Continue').click()
+    page.get_by_role('tab', name='Skills').click()
     page.get_by_label('Professional summary').fill('Builds Python and SQL reporting tools for operations teams.')
     page.get_by_label('Verified skills').fill('Python\nSQL')
+    page.get_by_role('tab', name=re.compile('^Experience')).click()
     page.get_by_role('button', name='Add experience').click()
     page.get_by_label('Employer').fill('Example Labs')
     page.get_by_label('Position', exact=True).fill('Software Engineer')
     page.get_by_label('Start date', exact=True).fill('January 2020')
     page.get_by_label('Verified work contributions').fill(
-        'Maintained Python reporting tools used by four teams\nAutomated weekly SQL data checks')
+        'Maintained Python reporting tools used by operations teams every week.')
     page.get_by_role('button', name='Continue').click()
     page.get_by_label('I confirm these candidate facts are accurate.').check()
+    page.get_by_role('button', name='Continue').click()
     page.get_by_role('button', name='Generate resume').click()
     expect(page.locator('#builder-status')).to_have_text('Resume queued.')
 
@@ -160,6 +176,11 @@ def main():
         page.reload()  # refresh mid-job: the active job must be restored, not restarted
         expect(page.locator('#generation')).to_be_visible()
         restored = watch_until(page, lambda s: s['percent'] > 0 and s['visible'])
+        # After the AI step the watcher's measured GPU placement is shown, with a live heartbeat.
+        watch_until(page, lambda s: s['percent'] >= 46, timeout=60, samples=samples)
+        expect(page.locator('#job-gpu')).to_contain_text('100% in GPU memory', timeout=10000)
+        expect(page.locator('#job-heartbeat')).to_have_text(re.compile(r'\d\d:\d\d ago'))
+        results['gpu_line'] = page.locator('#job-gpu').text_content()
         assert sorted(p.name for p in workspace.inbox.glob('*.json') if not p.name.startswith('.')) == inbox_before, \
             'refresh created work'
         results['restored_after_refresh'] = restored
@@ -179,13 +200,17 @@ def main():
         expect(page.locator('#pdf-actions')).to_contain_text('Open Overleaf project')
         expect(page.locator('#download-latex')).to_have_attribute('href', re.compile('main.tex'))
         expect(page.locator('#ats-result')).not_to_be_empty()
-        expect(page.get_by_role('heading', name='Choose a target role')).to_be_visible()
-        assert page.get_by_label('Target role').input_value() == ''
+        # Verified success: results stay on screen and the builder is cleared for the next candidate.
+        expect(page.get_by_role('heading', name='Resume results')).to_be_visible()
+        assert page.locator('[name=role]').input_value() == ''
         assert page.locator('[name=full_name]').input_value() == ''
         assert page.locator('#experience-entries fieldset').count() == 0
+        assert page.locator('[name=verified]').is_checked() is False
         assert page.evaluate("localStorage.getItem('resumeops.activeJob')") is None
-        page.locator('#history-toggle').evaluate('n => n.click()') if page.locator('#history-toggle').is_visible() else None
         expect(page.locator('#revision-list')).to_contain_text('Live Progress Example')
+        expect(page.locator('#overleaf-note')).to_have_text('Open in Overleaf')
+        expect(page.locator('#tile-overleaf')).to_have_attribute('href', re.compile('overleaf.com/project'))
+        page.get_by_role('button', name='Create another resume').click()
         if SHOTS:
             page.screenshot(path=str(SHOTS / 'desktop-completed-reset.png'), full_page=True)
         outputs_after_first = {p.relative_to(workspace.output).as_posix() for p in workspace.output.rglob('*') if p.is_file()}
@@ -198,6 +223,10 @@ def main():
         expect(page.locator('#job-retry')).to_be_visible()
         expect(page.locator('#job-detail')).to_contain_text('Overleaf is unavailable')
         expect(page.locator('#job-stages li[data-state=failed]')).to_have_text('Overleaf')
+        expect(page.locator('#job-pipeline li[data-state=failed]')).to_have_text('Overleaf')
+        expect(page.locator('#job-pipeline li[data-state=done]')).to_have_count(6)
+        expect(page.locator('#job-error-detail')).to_contain_text('OverleafError')
+        expect(page.locator('#job-heartbeat')).to_have_text('—')
         assert page.locator('[name=full_name]').input_value() == 'Retry Example', 'failure reset the form'
         results['failure_view'] = failed
         if SHOTS:
@@ -209,6 +238,7 @@ def main():
         results['retry_view'] = retry
         watch_until(page, lambda s: not s['visible'] and not page.locator('#result-success').is_hidden(), timeout=120)
         assert page.locator('[name=full_name]').input_value() == ''
+        page.get_by_role('button', name='Create another resume').click()
 
         # 3. Two candidates queued while the watcher is busy elsewhere (paused here): the second
         # waits behind the first, and the panel names the other job.
@@ -216,7 +246,8 @@ def main():
         page.wait_for_timeout(1500)
         fill_candidate(page, 'Queue First Example', 'first@example.com')
         page.get_by_role('button', name='Start next candidate').click()
-        expect(page.get_by_role('heading', name='Choose a target role')).to_be_visible()
+        expect(page.get_by_role('heading', name='Import or enter manually')).to_be_visible()
+        expect(page.locator('#job-mini')).to_be_visible()
         fill_candidate(page, 'Queue Second Example', 'second@example.com')
         waiting = watch_until(page, lambda s: s['title'].startswith('Waiting'), timeout=20)
         results['queued_view'] = waiting
@@ -224,7 +255,7 @@ def main():
         watcher.paused.clear()
         expect(page.locator('#job-others')).to_contain_text(re.compile(r'Queue First Example \(\d+%\)'), timeout=30000)
         watch_until(page, lambda s: not s['visible'] and not page.locator('#result-success').is_hidden(), timeout=180)
-        expect(page.locator('#result-name')).to_have_text('Queue Second Example')
+        expect(page.locator('#result-name')).to_contain_text('Queue Second Example')
         all_outputs = {p.relative_to(workspace.output).as_posix() for p in workspace.output.rglob('*') if p.is_file()}
         assert outputs_after_first <= all_outputs, 'earlier outputs were removed'
         state = json.loads((workspace.inbox / '.resume-bot-state.json').read_text())
@@ -244,7 +275,8 @@ def main():
         watch_until(mobile, lambda s: 'Ollama' in s['stage'] and s['percent'] > 21)
         box = mobile.locator('#generation').bounding_box()
         results['mobile_panel_height_px'] = round(box['height'])
-        assert box['height'] < 520, box
+        mobile.locator('#generation').scroll_into_view_if_needed()
+        assert box['height'] < 760, box   # the whole processing card fits one iPhone screen
         assert mobile.evaluate('document.documentElement.scrollWidth <= innerWidth')
         if SHOTS:
             mobile.screenshot(path=str(SHOTS / 'mobile-processing.png'))

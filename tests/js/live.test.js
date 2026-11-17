@@ -71,3 +71,28 @@ test('clock formats minutes and hours', () => {
   assert.equal(Live.clock(5), '00:05');
   assert.equal(Live.clock(3725), '1:02:05');
 });
+
+test('pipeline groups Job into Validate and counts finished steps out of eight', () => {
+  const view = Live.describe(base, 1042, {});
+  assert.deepEqual(view.pipeline.map(s => s.label),
+    ['Validate', 'Source', 'AI', 'Checks', 'LaTeX', 'Local PDF', 'Overleaf', 'Verify']);
+  assert.deepEqual(view.pipeline.slice(0, 4).map(s => s.state), ['done', 'done', 'current', 'todo']);
+  assert.equal(view.completedCount, 2);
+  assert.equal(view.heartbeat, '00:01 ago');
+  const early = Live.describe({...base, stage_key: 'job', completed_stages: ['validate']}, 1042, {});
+  assert.equal(early.pipeline[0].state, 'current');
+  const done = Live.describe({...base, status: 'ok', percent: 100, skipped_stages: ['overleaf']}, 1042, {});
+  assert.equal(done.completedCount, 8);
+  assert.equal(done.pipeline[6].state, 'skipped');
+});
+
+test('GPU placement and the technical failure detail are reported, never invented', () => {
+  assert.equal(Live.describe(base, 1042, {}).gpu, '');
+  const runtime = {model: 'qwen2.5:7b', size: 4755397016, size_vram: 4755397016, gpu_percent: 100};
+  assert.equal(Live.gpuText(runtime), 'qwen2.5:7b · 100% in GPU memory (4.4 GB of 4.4 GB)');
+  const failed = Live.describe({...base, status: 'failed', error: 'Local Ollama is unavailable.',
+    error_detail: 'OllamaError: stream closed', ollama_runtime: runtime, last: 1050}, 1060, {});
+  assert.equal(failed.errorDetail, 'Technical detail: OllamaError: stream closed');
+  assert.match(failed.gpu, /100% in GPU memory/);
+  assert.equal(failed.heartbeat, '—');
+});
