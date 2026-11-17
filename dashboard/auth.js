@@ -57,11 +57,11 @@
       button.addEventListener('click', async () => {
         const tab = root.open('/auth/renewed','_blank');
         if (tab) {
-          status.textContent = 'Waiting for sign-in in the other tab…';
+          status.textContent = 'Waiting for sign-in in the other tab...';
           return;
         }
         button.disabled = true;
-        status.textContent = 'Saving your work before signing in…';
+        status.textContent = 'Saving your work before signing in...';
         try {
           await checkpoint();
           root.location.assign('/auth/renewed?return=builder');
