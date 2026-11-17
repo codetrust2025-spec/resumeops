@@ -40,6 +40,16 @@ class StreamingOllama(BaseHTTPRequestHandler):
             time.sleep(self.delay)
         self.wfile.write((json.dumps({'response': '', 'done': True, 'eval_count': 99}) + '\n').encode())
 
+    def do_GET(self):
+        # /api/ps as reported by Ollama for a fully GPU-resident model.
+        data = json.dumps({'models': [{'name': 'qwen2.5:7b', 'model': 'qwen2.5:7b', 'size': 6000000000,
+                                       'size_vram': 6000000000, 'context_length': 4096}]}).encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def log_message(self, *args):
         pass
 
@@ -151,6 +161,49 @@ class WatcherProgressTests(unittest.TestCase):
         overleaf_units = [s['units'] for s in processing if s['stage_key'] == 'overleaf' and s.get('units')]
         self.assertEqual(overleaf_units[-1], {'done': 7, 'total': 7, 'unit': 'steps'})
         self.assertTrue(all('heartbeat' in s for s in processing))
+
+    def test_gpu_runtime_and_code_fingerprint_are_recorded(self):
+        with patch('resume_bot.pipeline.import_zip', side_effect=overleaf_ok):
+            result = self.scan()
+        report = json.loads((Path(result['output']) / 'result.json').read_text())
+        self.assertEqual(report['ollama_runtime']['gpu_percent'], 100)
+        ai_done = [s for s in self.snapshots if s.get('stage') == 'Ollama generation complete']
+        self.assertIn('100% of qwen2.5:7b in GPU memory', ai_done[-1]['detail'])
+        health = json.loads((self.inbox / '.resume-bot-health.json').read_text())
+        for name, blob in health['code'].items():
+            data = (ROOT / 'resume_bot' / name).read_bytes().replace(b'\r\n', b'\n')
+            import hashlib
+            self.assertEqual(blob, hashlib.sha1(b'blob %d\0' % len(data) + data).hexdigest(), name)
+        self.assertIn('pid', health)
+
+    def test_restart_request_returns_between_jobs_only(self):
+        (self.inbox / 'second.json').write_text(json.dumps({**SAMPLE, 'headline': 'Second'}), encoding='utf-8')
+        processed = []
+        real_process = pipeline.process
+
+        def process_then_request_restart(*args, **kwargs):
+            result = real_process(*args, **kwargs)
+            processed.append(args[0].name)
+            (self.inbox / pipeline.RESTART_FILE).write_text('deploy', encoding='utf-8')
+            return result
+        done = threading.Event()
+
+        def watch():
+            pipeline.scan(self.inbox, self.root / 'output', ai=self.ai, overleaf=True,
+                          browser_profile=self.root / 'browser', once=False, interval=3600)
+            done.set()
+        with patch('resume_bot.pipeline.import_zip', side_effect=overleaf_ok), \
+                patch('resume_bot.pipeline.process', side_effect=process_then_request_restart):
+            thread = threading.Thread(target=watch, daemon=True)
+            thread.start()
+            self.assertTrue(done.wait(60), 'watcher did not return after a restart request')
+        # The running job finished; the next one was left for the restarted watcher.
+        self.assertEqual(processed, ['job.json'])
+        state = json.loads((self.inbox / '.resume-bot-state.json').read_text())
+        self.assertEqual(state['job.json']['status'], 'ok')
+        self.assertNotIn('second.json', state)
+        self.assertFalse((self.inbox / pipeline.RESTART_FILE).exists())
+        self.assertTrue(json.loads((self.inbox / '.resume-bot-health.json').read_text())['restarting'])
 
     def test_failure_retry_now_and_attempt_counting(self):
         def broken(*args, **kwargs):

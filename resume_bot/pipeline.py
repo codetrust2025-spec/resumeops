@@ -217,7 +217,11 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
         t.enter('ai', 'Waiting for Ollama to load the model and read the prompt')
         profile, audit['polish'] = polish(profile, ai, on_progress=_ai_progress(
             t, 'Generating resume using Ollama'))
-        t.fraction(1.0, 'Ollama generation complete')
+        runtime = ai.runtime() if hasattr(ai, 'runtime') else None
+        audit['ollama_runtime'] = runtime
+        t.fraction(1.0, 'Ollama generation complete', (
+            f"{runtime['gpu_percent']}% of {runtime['model']} in GPU memory" if runtime else
+            'Ollama did not report GPU placement'))
     else:
         t.skip('ai', 'AI polishing is disabled; candidate text used as supplied')
     t.enter('checks', 'Checking generated content against the candidate input')
@@ -254,6 +258,8 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
                 'notes':['Source facts are not independently employer-verified; only traceable to candidate input.']}
         if ats is not None:
             report['ats'] = ats
+        if audit.get('ollama_runtime'):
+            report['ollama_runtime'] = audit['ollama_runtime']
         (working/'audit.json').write_text(json.dumps(audit,indent=2),encoding='utf8')
         (working/'result.json').write_text(json.dumps(report,indent=2),encoding='utf8')
         # Move only published outputs; TeX temporary build files are deliberately omitted.
@@ -294,17 +300,44 @@ def _verify_upload_source(folder, profile, template):
                 raise ValueError('Cached LaTeX differs from verified profile')
 
 
+def _code_fingerprint():
+    """Git blob ids (LF-normalised) of the code this process loaded, for deployment checks."""
+    out = {}
+    for path in sorted(Path(__file__).parent.glob('*.py')):
+        data = path.read_bytes().replace(b'\r\n', b'\n')
+        out[path.name] = hashlib.sha1(b'blob %d\0' % len(data) + data).hexdigest()
+    return out
+
+
+CODE = _code_fingerprint()
+PROCESS = {'pid': os.getpid(), 'started': time.time()}
+RESTART_FILE = '.resume-bot-restart'
+
+
+def restart_requested(inbox):
+    return (Path(inbox) / RESTART_FILE).is_file()
+
+
 def scan(inbox, output_root, *, ai=None, polish_enabled=True, overleaf=False,
          browser_profile=None, once=False, interval=30, max_pages=2):
+    """Watch the inbox. A ``.resume-bot-restart`` file makes the watcher return between jobs
+    (never during one) so its launcher restarts it with the code currently on disk."""
     inbox = Path(inbox).resolve()
     with workspace_lock(inbox, '.resume-bot-watch.sqlite3'):
         while True:
             known = _scan_once(inbox, output_root, ai=ai, polish_enabled=polish_enabled,
                                overleaf=overleaf, browser_profile=browser_profile,
                                max_pages=max_pages)
+            if restart_requested(inbox):
+                (inbox / RESTART_FILE).unlink(missing_ok=True)
+                _write_health(inbox, known, restarting=True)
+                print('Restart requested; watcher exiting between jobs', flush=True)
+                return known
             if once:
                 return known
-            time.sleep(max(10, interval))
+            deadline = time.time() + max(10, interval)
+            while time.time() < deadline and not restart_requested(inbox):
+                time.sleep(1)
 
 
 def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_profile, max_pages):
@@ -312,6 +345,8 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
     known = _read_json(state) if state.exists() else {}
     allowed = ('.json', '.pdf', '.docx', '.txt')
     for candidate in sorted(inbox.iterdir()):
+        if restart_requested(inbox):
+            break  # finish no further jobs; the watcher restarts between jobs
         if candidate.name.startswith('.') or not candidate.is_file() or candidate.suffix.lower() not in allowed:
             continue
         key = candidate.name
@@ -419,8 +454,11 @@ def request_retry(inbox, name):
     (folder / name).write_text(str(time.time()), encoding='utf-8')
 
 
-def _write_health(inbox, known):
+def _write_health(inbox, known, restarting=False):
     status = {'last_scan': time.time(),
               'failures': sum(entry['status'] == 'failed' and (inbox / key).exists()
-                              for key, entry in known.items())}
+                              for key, entry in known.items()),
+              'code': CODE, **PROCESS}
+    if restarting:
+        status['restarting'] = True
     write_json(inbox / '.resume-bot-health.json', status)

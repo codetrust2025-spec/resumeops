@@ -77,6 +77,22 @@ class Ollama:
             raise OllamaError('Model JSON must be an object')
         return result
 
+    def runtime(self):
+        """What Ollama reports for this model right now (/api/ps): bytes in VRAM vs total.
+        Returns None when the model is not loaded or Ollama cannot be reached."""
+        try:
+            with urlopen(self.url + '/api/ps', timeout=3) as resp:
+                models = json.load(resp).get('models', [])
+        except (URLError, TimeoutError, OSError, ValueError):
+            return None
+        for item in models:
+            if item.get('name') in (self.model, self.model + ':latest') or item.get('model') == self.model:
+                size, vram = int(item.get('size') or 0), int(item.get('size_vram') or 0)
+                return {'model': item.get('name'), 'size': size, 'size_vram': vram,
+                        'gpu_percent': round(100 * vram / size) if size else 0,
+                        'context_length': item.get('context_length')}
+        return None
+
 
 def generate(ai, prompt, schema=None, on_progress=None):
     """Call ``ai.generate`` with streaming metrics when the model client supports them."""
