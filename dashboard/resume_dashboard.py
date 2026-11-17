@@ -235,7 +235,7 @@ class Workspace:
         content = {'schema': 'resumeops-approval-1', 'job': job,
                    'resume_sha256': hashlib.sha256(payload).hexdigest(),
                    'operation': approval['operation'], 'approved_by': approval['approved_by'],
-                   'attested': True, 'claims': approval['claims']}
+                   'attested': True, 'claims': approval['claims'], 'project_names': approval.get('project_names', [])}
         identity = hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()[:32]
         record = {**content, 'record_id': identity,
                   'recorded_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
@@ -244,10 +244,8 @@ class Workspace:
         return target
 
     def approvals_for(self, job):
-        folder = self.approvals / Path(job).stem
-        if not re.fullmatch(r'[a-z0-9-]+-[0-9a-f]{64}\.json', job) or not folder.is_dir():
-            return []
-        return sorted((read_json(path) for path in folder.glob('*.json')), key=lambda item: item and item.get('recorded_at') or '')
+        from resume_bot.claim_audit import records_for
+        return records_for(self.approvals, job)
 
     def revision_key(self, output):
         path = Path(output) if output else None
@@ -595,7 +593,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                     except ImportConflict as exc:
                         return self.send_json({'error': str(exc)}, 409)
                     result = workspace.enqueue(json.dumps(payload).encode(), approval={
-                        'operation': operation, 'approved_by': account, 'claims': reviewed['approved_claims']})
+                        'operation': operation, 'approved_by': account, 'claims': reviewed['approved_claims'],
+                        'project_names': reviewed['project_names']})
                     return self.send_json(result, 201 if result['created'] else 200)
                 if self.path == '/api/retry':
                     from resume_bot.pipeline import request_retry

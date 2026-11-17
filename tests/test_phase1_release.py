@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / 'dashboard'))
 import dashboard_supervisor  # noqa: E402
 from durable_imports import RETENTION, DurableImports  # noqa: E402
 from resume_dashboard import Workspace, handler  # noqa: E402
-from resume_bot.claim_audit import claim_violations, unaccounted_pdf_words
+from resume_bot.claim_audit import claim_violations, matches_pdf_text
 from resume_bot.profile import ProfileError
 from resume_bot.workflow import normalize_request
 
@@ -32,7 +32,7 @@ CLAIMS = [
     {'id': '1', 'section': 'Skill', 'text': 'Python', 'provenance': 'verified_from_source', 'candidate_confirmed': True},
     {'id': '2', 'section': 'Skill', 'text': 'SQL', 'provenance': 'unsupported_role_keyword', 'candidate_confirmed': True},
     {'id': '3', 'section': 'Responsibility', 'text': 'Maintained billing APIs',
-     'provenance': 'candidate_confirmed', 'candidate_confirmed': True},
+     'provenance': 'candidate_confirmed', 'candidate_confirmed': True, 'index': 0},
 ]
 REQUEST = {'profile': PROFILE, 'target': {'role': 'backend-developer', 'template': 'standard', 'experience_years': 5}}
 
@@ -61,8 +61,9 @@ class ApprovedRequestTests(unittest.TestCase):
     def test_approved_resume_is_rendered_without_ai_rewording(self):
         from resume_bot.pipeline import process
         with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / 'job.json'
-            source.write_text(json.dumps({**REQUEST, 'target': {**REQUEST['target'], 'approved': True}}))
+            workspace = Workspace(Path(directory), code_root=ROOT)
+            queued = workspace.enqueue(json.dumps(REQUEST).encode(), approval=approval())
+            source = workspace.inbox / queued['name']
             with patch('resume_bot.pipeline.polish', side_effect=AssertionError('approved resume was reworded')):
                 result = process(source, Path(directory) / 'output', polish_enabled=True)
             self.assertEqual(result['ai_model'] if 'ai_model' in result else 'disabled', 'disabled')
@@ -71,12 +72,26 @@ class ApprovedRequestTests(unittest.TestCase):
             self.assertEqual(profile['experience'][0]['bullets'], PROFILE['experience'][0]['bullets'])
 
 
+    def test_watcher_rejects_approved_job_with_missing_attestation(self):
+        from resume_bot.compile import BuildError
+        from resume_bot.pipeline import process
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Workspace(Path(directory), code_root=ROOT)
+            result = workspace.enqueue(json.dumps(REQUEST).encode(), approval=approval())
+            record_path = next(workspace.approvals.rglob('*.json'))
+            record_path.unlink()
+            with self.assertRaisesRegex(BuildError, 'approval is missing'):
+                process(workspace.inbox / result['name'], workspace.output, polish_enabled=False)
+            self.assertFalse(list(workspace.output.rglob('resume.pdf')))
+
+
 class ApprovalRecordTests(unittest.TestCase):
     def test_record_is_written_with_the_job_and_survives_import_purge(self):
         with tempfile.TemporaryDirectory() as directory:
             workspace = Workspace(Path(directory), code_root=ROOT)
             durable = DurableImports(Path(directory), draft=lambda *args: {})
-            durable.enqueue('owner', 'b' * 32, '.ai', b'{}')
+            with patch.object(durable, 'start'):
+                durable.enqueue('owner', 'b' * 32, '.ai', b'{}')
             result = workspace.enqueue(json.dumps(REQUEST).encode(), approval=approval())
             self.assertTrue(result['created'])
             job = json.loads((workspace.inbox / result['name']).read_text())
@@ -86,7 +101,7 @@ class ApprovalRecordTests(unittest.TestCase):
             self.assertEqual(record['claims'], CLAIMS)
             self.assertTrue(record['attested'])
             with closing(durable.connection()) as db, db:
-                db.execute('UPDATE imports SET activity=?', (time.time() - RETENTION - 1,))
+                db.execute("UPDATE imports SET status='complete', activity=?", (time.time() - RETENTION - 1,))
                 durable.purge(db, time.time())
                 self.assertEqual(db.execute('SELECT COUNT(*) FROM imports').fetchone()[0], 0)
             self.assertEqual(workspace.approvals_for(result['name']), [record])
@@ -131,10 +146,12 @@ class ClaimAuditTests(unittest.TestCase):
         pdf = ('Phase One Synthetic\nphase1@example.com\nPROFESSIONAL SUMMARY\nEngineer focused on Python\n'
                'services.\nTECHNICAL SKILLS\nSkills: Python • SQL\nPROFESSIONAL EXPERIENCE\nEngineer | Example Co\n'
                'Jan 2020 – Present\n• Maintained billing APIs\nEDUCATION\nBSc | Example University\n2019')
-        self.assertEqual(unaccounted_pdf_words(pdf, PROFILE), [])
-        self.assertEqual(unaccounted_pdf_words(pdf + '\n• Led a team of 40 engineers', PROFILE),
-                         ['led', 'team', 'of', '40', 'engineers'])
-        self.assertEqual(unaccounted_pdf_words(pdf.replace('Python •', 'Pythonic •'), PROFILE), ['pythonic'])
+        profile = normalize_request(REQUEST)[0]
+        self.assertTrue(matches_pdf_text(pdf, profile, 5))
+        self.assertFalse(matches_pdf_text(pdf + '\nLed a team of 40 engineers', profile, 5))
+        self.assertFalse(matches_pdf_text(pdf.replace('Maintained billing APIs', 'Maintained APIs billing'), profile, 5))
+        self.assertFalse(matches_pdf_text(pdf.replace('Maintained billing APIs', ''), profile, 5))
+
 
 
 class AccessStub:

@@ -109,7 +109,7 @@ def approved_resume(draft, approval):
         if text != claim['text']:
             provenance = 'candidate_confirmed'
         audit.append({'id': key, 'section': section, 'text': text, 'provenance': provenance,
-                      'candidate_confirmed': True})
+                      'candidate_confirmed': True, 'index': claim['index']})
         if section == 'Summary':
             profile['summary'] = text
         elif section in ('Skill', 'Competency'):
@@ -136,4 +136,5 @@ def approved_resume(draft, approval):
     target = {'role': candidate['role'], 'template': 'standard',
               'experience_years': min(25, int(candidate['years_of_experience']))}
     profile, target = normalize_request({'profile': profile, 'target': target})
-    return {'profile': profile, 'target': target, 'ats': analyze(profile, target), 'approved_claims': audit}
+    return {'profile': profile, 'target': target, 'ats': analyze(profile, target), 'approved_claims': audit,
+            'project_names': [item['name'] for item in candidate['projects'][:30]]}

@@ -71,10 +71,12 @@ and only learns new checks when its process restarts. The release therefore ship
    builder, `/workflow` serves the classic builder. This passes the running supervisor's
    unchanged health check. The new supervisor additionally verifies `/ai-builder` and its
    assets whenever a release ships them.
-2. **Phase 2 (owner-run).** After an administrator restarts the supervisor task, set
-   `"ai_first": true` in `dashboard-config.json`. The supervisor then starts the dashboard
-   with `--ai-first`, serving the AI builder at `/` and the classic builder at `/workflow`.
-   Removing the key (or setting it to `false`) and restarting returns to Phase 1.
+2. **Phase 2 (owner-run).** After Phase 1 acceptance and an idle check, set
+   `"ai_first": true` in `dashboard-config.json` before the authorized administrator
+   restart of the supervisor task. The supervisor reads configuration at startup
+   and passes `--ai-first` only to releases that ship the AI builder. Removing the
+   key (or setting it to `false`) and restarting returns to Phase 1. Keep the
+   previous classic release for rollback.
 
 ## Approval records and claim audit
 
@@ -87,8 +89,9 @@ and only learns new checks when its process restarts. The release therefore ship
   provenance. Records are created with an atomic no-overwrite link; replays are deduplicated
   and a different approval adds a new record. They are not part of the 24-hour import store.
 - `resume_bot/claim_audit.py` checks that each summary, skill, responsibility, project detail,
-  certification and achievement traces to an approved claim, and that every word in the PDF
-  comes from the approved request or fixed template headings.
+  certification and achievement traces to an approved claim. The watcher rejects any
+  approved job without a matching record. It also requires the extracted PDF text to
+  match the approved fields in template order before local publication and Overleaf upload.
 
 ## Release gates
 

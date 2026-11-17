@@ -122,7 +122,7 @@ def spawn(name, port, config, output):
         sys.executable, '-u', str(folder / 'resume_dashboard.py'), '--root', str(project),
         '--port', str(port), '--model', config['model'], '--web-url', config['web_url'],
         '--access-team', config['team'], '--access-audience', config['audience'],
-        *(['--ai-first'] if config.get('ai_first') is True else []),
+        *(['--ai-first'] if config.get('ai_first') is True and (folder / 'ai-builder.html').is_file() else []),
     ], cwd=folder, stdout=output, stderr=subprocess.STDOUT, env=env)
 
 def stop(process):
