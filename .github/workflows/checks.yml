@@ -29,6 +29,7 @@ jobs:
           python dashboard/check_builder.py
           python dashboard/check_cloudflare_access.py
           python dashboard/check_live.py
+          python dashboard/check_session.py
           node --test tests/js/*.test.js
       - name: Build source-only staging archive
         run: git archive --format=zip -o "${RUNNER_TEMP}/resumeops-source.zip" HEAD

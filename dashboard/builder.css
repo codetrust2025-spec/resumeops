@@ -271,3 +271,9 @@ input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true]{b
 .changes del,.changes ins{display:block;text-decoration:none;font-size:.88rem}
 .changes del{color:var(--muted)}.changes del::before{content:"Before: ";font-weight:650}
 .changes ins{color:var(--ink);margin-top:4px}.changes ins::before{content:"After: ";font-weight:650;color:var(--ok)}
+
+/* Session expiry: work stays on the page; sign-in happens in another tab */
+.auth-banner{position:sticky;top:0;z-index:30;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;
+  padding:12px max(16px,calc((100% - 1180px)/2));background:#fff4e0;border-bottom:1px solid #f0c987;color:#5c3a00}
+.auth-banner p{margin:0;flex:1 1 320px;color:#5c3a00;font-weight:600}
+.auth-banner small{flex-basis:100%;color:#7a5200}.auth-banner small:empty{display:none}

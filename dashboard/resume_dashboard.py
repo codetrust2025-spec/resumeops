@@ -259,6 +259,18 @@ class Workspace:
         return path if contained(path, self.output) and path.is_file() else None
 
 
+RENEWED_PAGE = b'''<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Signed in \xc2\xb7 ResumeOps</title>
+<style>body{font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:90vh;color:#13213b}</style></head>
+<body><main><h1>Signed in</h1><p>ResumeOps is continuing in the other tab. You can close this one.</p></main>
+<script>
+try { new BroadcastChannel('resumeops-auth').postMessage('renewed'); } catch (e) {}
+try { localStorage.setItem('resumeops.authRenewed', String(Date.now())); } catch (e) {}
+try { if (window.opener) window.opener.postMessage('resumeops-auth-renewed', location.origin); } catch (e) {}
+setTimeout(function () { window.close(); }, 600);
+</script></body></html>'''
+
+
 def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             web_origin=None, access_verifier=None):
     host = urlsplit(origin).netloc
@@ -267,12 +279,14 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
 
     import_stages = {}
     import_lock = Lock()
-    import_ttl_seconds = 30 * 60
+    import_ttl_seconds = 2 * 60 * 60   # unfinished or undelivered imports survive a re-sign-in
+    delivered_grace_seconds = 120      # a delivered draft can be fetched again if the reply was lost
 
     def cleanup_imports():
         now = time.monotonic()
         for key, entry in list(import_stages.items()):
-            if isinstance(entry, dict) and now - entry['created'] > import_ttl_seconds:
+            if isinstance(entry, dict) and (now - entry['created'] > import_ttl_seconds or (
+                    entry.get('delivered') and now - entry['delivered'] > delivered_grace_seconds)):
                 del import_stages[key]
 
     def background_draft(import_id, extension, document):
@@ -339,6 +353,18 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return self.send_json({'error': 'Dashboard access denied for this address or session.'}, 403)
             url = urlsplit(self.path)
             query = parse_qs(url.query)
+            if url.path == '/api/session':
+                # The page asks for the current request token after a dashboard restart or a
+                # re-sign-in, so open work can continue without a reload. Reading it requires the
+                # same Access check as the page itself; browsers block cross-site reads.
+                expires = None
+                assertion = self.headers.get('Cf-Access-Jwt-Assertion')
+                if assertion and access_verifier is not None:
+                    claims = access_verifier.claims(assertion)
+                    expires = claims.get('exp') if claims else None
+                return self.send_json({'ok': True, 'token': token, 'expires': expires, 'now': time.time()})
+            if url.path == '/auth/renewed':
+                return self.send_content(RENEWED_PAGE, 'text/html; charset=utf-8')
             if url.path == '/api/import-progress':
                 if not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token):
                     return self.send_json({'error': 'Request not authorized.'}, 403)
@@ -349,9 +375,11 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                     if isinstance(entry, dict):
                         response = {key: value for key, value in entry.items() if key != 'created'}
                         response['now'] = time.time()
+                        response.pop('delivered', None)
                         if entry['status'] in ('complete', 'error'):
-                            # Deliver each draft once; don't retain personal data on the server.
-                            del import_stages[import_id]
+                            # Keep a delivered draft briefly in case the reply is lost (for example
+                            # a session expiring mid-request), then drop the personal data.
+                            entry.setdefault('delivered', time.monotonic())
                     else:
                         response = {'stage': entry, 'status': 'unknown' if entry is None else 'processing'}
                 return self.send_json(response)
@@ -392,6 +420,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                       '/builder.js': ('builder.js', 'text/javascript'),
                       '/live.js': ('live.js', 'text/javascript'),
                       '/import.js': ('import.js', 'text/javascript'),
+                      '/auth.js': ('auth.js', 'text/javascript'),
                       '/dashboard.css': ('dashboard.css', 'text/css'),
                       '/dashboard.js': ('dashboard.js', 'text/javascript'),
                       '/workflow.js': ('workflow.js', 'text/javascript')}

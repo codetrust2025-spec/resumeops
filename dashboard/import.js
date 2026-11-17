@@ -33,7 +33,9 @@
     const stages = {'Reading document': 30, 'Extracting candidate details with Ollama': 35,
       'Draft ready for review': 95};
     // The upload response is immediate; expensive Ollama extraction happens on the RTX.
-    const upload = new Promise((resolve, reject) => {
+    // On session expiry the same file is sent again with the same import id after sign-in; if the
+    // first upload already started, the server answers 409 and the import simply continues.
+    const sendOnce = () => new Promise(resolve => {
       const xhr = new XMLHttpRequest();
       xhr.upload.onprogress = event => {
         if (event.lengthComputable && event.total) {
@@ -41,53 +43,60 @@
         }
       };
       xhr.upload.onload = () => stage('Upload complete. Starting extraction', 25);
-      xhr.onerror = () => reject(new Error('Upload connection interrupted. Checking whether processing started.'));
-      xhr.onabort = () => reject(new Error('Resume upload was cancelled.'));
-      xhr.onload = () => {
-        const response = xhr.response;
-        if (xhr.status === 202 && response?.status === 'processing') {
-          resolve(response);
-        } else {
-          reject(new Error(response?.error || (
-            xhr.status === 403 ? 'Session expired. Sign in through Cloudflare Access and retry.' :
-            'Upload rejected (HTTP ' + xhr.status + '). Check the server logs.')));
-        }
-      };
+      xhr.onerror = () => resolve({network: true});
+      xhr.onabort = () => resolve({aborted: true});
+      xhr.onload = () => resolve({status: xhr.status, body: xhr.response});
       xhr.open('POST', '/api/draft');
       xhr.responseType = 'json';
       xhr.withCredentials = true;
-      xhr.setRequestHeader('X-Dashboard-Token', token);
-      xhr.setRequestHeader('X-Resume-Extension', extension);
-      xhr.setRequestHeader('X-Resume-Import-ID', id);
-      xhr.setRequestHeader('X-Resume-Async', '1');
+      const headers = ResumeAuth.headers({'X-Resume-Extension': extension, 'X-Resume-Import-ID': id,
+        'X-Resume-Async': '1'});
+      for (const [name, value] of Object.entries(headers)) xhr.setRequestHeader(name, value);
       xhr.send(file);
     });
-    try {
-      await upload;
-    } catch (error) {
-      // If the browser lost the 202 response, the server might still be working.
-      if (!error.message.includes('Upload connection interrupted')) throw error;
-      stage('Reconnecting to resume import', 25);
+    let tokenRefreshed = false;
+    for (;;) {
+      const outcome = await sendOnce();
+      if (outcome.aborted) throw new Error('Resume upload was cancelled.');
+      if (outcome.status === 202 && outcome.body?.status === 'processing') break;
+      if (outcome.status === 409) break;                 // this import id is already running
+      const accessDenied = outcome.status === 401 || outcome.status === 0 ||
+        (outcome.status === 403 && /access denied/i.test(outcome.body?.error || ''));
+      if (outcome.network || accessDenied) {
+        let signedOut = accessDenied;
+        if (outcome.network) {
+          try { signedOut = !(await ResumeAuth.session()); } catch { signedOut = false; }
+        }
+        if (signedOut) {
+          message('Sign-in expired during upload. The file is kept; it continues after you sign in again.', true);
+          await ResumeAuth.waitForSession();
+          stage('Signed in again. Resuming upload', 1);
+          continue;
+        }
+        // The browser lost the reply; the server may already be working on it.
+        stage('Reconnecting to resume import', 25);
+        break;
+      }
+      if (outcome.status === 403 && !tokenRefreshed && /not authorized/i.test(outcome.body?.error || '')) {
+        tokenRefreshed = true;
+        if (await ResumeAuth.session()) continue;
+      }
+      throw new Error(outcome.body?.error || 'Upload rejected (HTTP ' + outcome.status + '). Check the server logs.');
     }
+    let budget = 10 * 60 * 1000;   // processing time only; time spent signing in again is added back
     const started = Date.now();
     let unknown = 0;
     let failures = 0;
-    while (Date.now() - started < 10 * 60 * 1000) {
+    while (Date.now() - started < budget) {
       let result;
+      const before = Date.now();
       try {
-        const response = await fetch(url, {
-          headers: {'X-Dashboard-Token': token},
-          credentials: 'same-origin',
-          cache: 'no-store',
-        });
-        if (response.status === 403) {
-          throw new Error('Session expired. Sign in through Cloudflare Access and retry.');
-        }
+        const response = await ResumeAuth.call(url, {cache: 'no-store'});
+        if (Date.now() - before > 5000) budget += Date.now() - before;
         if (!response.ok) throw new Error('Status check failed (HTTP ' + response.status + ')');
         result = await response.json();
         failures = 0;
       } catch (error) {
-        if (error.message.includes('Session expired')) throw error;
         if (++failures >= 6) {
           throw new Error('Could not reconnect to import status. Verify your connection and retry.');
         }

@@ -120,8 +120,14 @@ class DashboardTest(unittest.TestCase):
                     self.assertEqual(ready['status'], 'complete')
                     self.assertEqual(ready['source'], expected_text)
                     self.assertEqual(ready['profile'], json.loads(source))
+                    # A reply lost in transit (e.g. a session expiring mid-request) can be fetched
+                    # again for two minutes; after that the personal data is dropped.
                     with request('/api/import-progress?id='+'b'*32,
                                  headers=headers) as response:
+                        self.assertEqual(json.load(response)['status'], 'complete')
+                    later = time.monotonic() + 121
+                    with patch('resume_dashboard.time.monotonic', return_value=later), \
+                            request('/api/import-progress?id='+'b'*32, headers=headers) as response:
                         self.assertEqual(json.load(response)['status'], 'unknown')
                 with patch.object(Workspace, 'draft', side_effect=ValueError(
                         'Scanned PDF has no readable text')):
