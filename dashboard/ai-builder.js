@@ -135,7 +135,8 @@ async function importFile() {
   next.work_experience = (profile.experience || []).map(item => Object.fromEntries(
     collections[0][2].map(([field]) => [field,item[field] || ''])));
   next.education = (profile.education || []).map(item => ({degree:item.degree,
-    university:item.institution, graduation_year:/\b\d{4}\b/.exec(item.end || '')?.[0] || ''}));
+    // A resume line such as "B.Tech, Example University, 2022" is often extracted as a start date only.
+    university:item.institution, graduation_year:/\b\d{4}\b/.exec(item.end || item.start || '')?.[0] || ''}));
   next.projects = (profile.projects || []).map(name => ({name}));
   fill(next);
   state.importId = job.id;

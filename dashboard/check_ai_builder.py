@@ -105,7 +105,9 @@ def check(ai_first=False):
                     assert not second.get_by_label('Full name').count()
                     second.close()
 
-                    fixture = {'profile': {'full_name': 'AI First Synthetic', 'email': 'ai-first@example.com'},
+                    fixture = {'profile': {'full_name': 'AI First Synthetic', 'email': 'ai-first@example.com',
+                                           'education': [{'degree': 'BSc', 'institution': 'Imported University',
+                                                          'start': '2022', 'end': ''}]},
                                'source': 'AI First Synthetic, ai-first@example.com\nSkills: Python'}
                     access['armed'] = False
                     with patch.object(workspace, 'draft', return_value=fixture):
@@ -115,6 +117,9 @@ def check(ai_first=False):
                         expect(page.get_by_role('status')).to_contain_text('Details imported')
                     expect(page.get_by_label('Full name')).to_have_value('AI First Synthetic')
                     expect(page.get_by_label('Phone')).to_have_value('')
+                    # A lone year extracted as the start date is the graduation year.
+                    expect(page.locator('#ai-education [name=graduation_year]')).to_have_value('2022')
+                    page.locator('#ai-education').get_by_role('button', name='Remove entry').click()
                     access['armed'] = True
                     page.get_by_label('Target role').fill('Full Stack Developer')
                     page.get_by_label('Total years of experience').fill('0')
