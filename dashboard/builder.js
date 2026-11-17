@@ -275,11 +275,60 @@ applyLayout();
 if (mobileLayout.matches) expandHistory(false);
 showStep(0,false);
 updateExperience();
-el('back').addEventListener('click', () => {feedback('');showStep(activeStep-1);});
+// Validation must reveal required inputs inside collapsed mobile experience/education entries.
+// A native reportValidity() call on a closed <details> input can silently fail on iOS Safari.
+const validationNotice = rows('p', '', 'validation-notice');
+validationNotice.setAttribute('role', 'alert');
+validationNotice.hidden = true;
+function clearValidation() {
+  validationNotice.hidden = true;
+  validationNotice.textContent = '';
+  form.querySelectorAll('[aria-invalid="true"]').forEach(input => input.removeAttribute('aria-invalid'));
+}
+function fieldDescription(input) {
+  const label = input.closest('label');
+  const name = label?.firstChild?.textContent?.trim() || input.name || 'required field';
+  const fieldset = input.closest('fieldset');
+  if (!fieldset) return name;
+  const kind = fieldset.closest('#experience-entries') ? 'Experience' :
+    fieldset.closest('#education-entries') ? 'Education' : '';
+  if (!kind) return name;
+  const entries = [...el(kind.toLowerCase() + '-entries').querySelectorAll('fieldset')];
+  const index = entries.indexOf(fieldset);
+  return kind + ' ' + (index + 1) + ' — ' + name;
+}
+function revealInvalidField(input) {
+  // Open every collapsed ancestor before focus/reportValidity; keep all form values unchanged.
+  for (let node = input.parentElement; node; node = node.parentElement) {
+    if (node.tagName === 'DETAILS') node.open = true;
+  }
+  const message = 'Please complete ' + fieldDescription(input) + ' before continuing.';
+  const heading = steps[activeStep].querySelector('h2');
+  heading.after(validationNotice);
+  validationNotice.textContent = message;
+  validationNotice.hidden = false;
+  input.setAttribute('aria-invalid', 'true');
+  feedback(message, true);
+  input.focus({preventScroll:true});
+  input.scrollIntoView({block:'center', behavior:'auto'});
+  input.reportValidity();
+}
+form.addEventListener('input', event => {
+  const input = event.target;
+  if (input.matches('input,textarea,select') && input.checkValidity()) {
+    input.removeAttribute('aria-invalid');
+    if (validationNotice.textContent.includes(fieldDescription(input))) {
+      validationNotice.hidden = true;
+      feedback('');
+    }
+  }
+});
+el('back').addEventListener('click', () => {clearValidation();feedback('');showStep(activeStep-1);});
 el('next').addEventListener('click',async () => {
+  clearValidation();
   feedback('');
   const invalid=[...steps[activeStep].querySelectorAll('input,select,textarea')].find(input => !input.checkValidity());
-  if (invalid) {invalid.reportValidity();return;}
+  if (invalid) {revealInvalidField(invalid);return;}
   if (activeStep!==2) {showStep(activeStep+1);return;}
   const button=el('next');
   button.disabled=true;

@@ -244,6 +244,31 @@ def check(screenshots):
                 mobile.get_by_label('Employer').fill('Example Mobile Studio')
                 mobile.get_by_label('Position',exact=True).fill('Engineer')
                 expect(mobile.locator('.resume-entry > summary')).to_contain_text('Example Mobile Studio')
+                # Reproduce the iPhone bug: a required start date in a closed work entry
+                # silently blocked Continue without any visible validation.
+                mobile.locator('#experience-entries .resume-entry > summary').click()
+                expect(mobile.locator('#experience-entries .resume-entry')).not_to_have_attribute('open', '')
+                mobile.get_by_role('button',name='Continue').click()
+                expect(mobile.locator('.validation-notice')).to_be_visible()
+                expect(mobile.locator('.validation-notice')).to_contain_text('Experience 1')
+                expect(mobile.locator('.validation-notice')).to_contain_text('Start date')
+                expect(mobile.locator('#experience-entries .resume-entry')).to_have_attribute('open', '')
+                expect(mobile.get_by_label('Start date',exact=True)).to_have_attribute('aria-invalid','true')
+                mobile.get_by_label('Start date',exact=True).fill('Jan 2020')
+                expect(mobile.locator('.validation-notice')).to_be_hidden()
+                # The same reveal-and-explain behavior must work for collapsed education.
+                mobile.get_by_role('button',name='Add education').click()
+                mobile.get_by_label('Institution').fill('Example University')
+                mobile.locator('#education-entries .resume-entry > summary').click()
+                mobile.get_by_role('button',name='Continue').click()
+                expect(mobile.locator('.validation-notice')).to_contain_text('Education 1')
+                expect(mobile.locator('.validation-notice')).to_contain_text('Degree')
+                expect(mobile.locator('#education-entries .resume-entry')).to_have_attribute('open','')
+                mobile.get_by_label('Degree',exact=True).fill('B.Tech')
+                expect(mobile.locator('.validation-notice')).to_be_hidden()
+                # After correcting the identified fields, Continue must advance to Review.
+                mobile.get_by_role('button',name='Continue').click()
+                expect(mobile.get_by_role('heading',name='Review and generate')).to_be_visible(timeout=15000)
                 assert mobile.evaluate('document.documentElement.scrollWidth <= innerWidth')
                 if screenshots:
                     mobile.screenshot(path=screenshots/'new-mobile.png',full_page=True)
