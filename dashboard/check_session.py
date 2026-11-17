@@ -169,8 +169,11 @@ def main():
 
         # 6. Expiry while the import is being polled: the import still completes.
         drafts.clear()
-        fresh.goto(url)   # leaving the page saves the half-done candidate (pagehide); start clean
-        fresh.evaluate("sessionStorage.clear(); localStorage.removeItem('resumeops.activeJob')")
+        # A new tab has its own empty session storage (the previous one keeps its half-done draft).
+        fresh.close()
+        fresh = context.new_page()
+        fresh.goto(url)
+        fresh.evaluate("localStorage.removeItem('resumeops.activeJob')")
         fresh.reload()
         fresh.get_by_role('button', name='Create Resume').click()
         fresh.locator('#resume-upload').set_input_files({'name': 'resume.txt', 'mimeType': 'text/plain',
@@ -190,11 +193,9 @@ def main():
         # the builder's own tab, which then returns and resumes the running import and the draft.
         drafts.clear()
         same = context.new_page()
-        same.goto(url)
-        same.evaluate("sessionStorage.clear(); localStorage.removeItem('resumeops.activeJob')")
         same.add_init_script("window.open = () => null")
-        same.reload()
-        same.evaluate("sessionStorage.clear()")
+        same.goto(url)
+        same.evaluate("localStorage.removeItem('resumeops.activeJob')")
         same.reload()
         same.get_by_role('button', name='Create Resume').click()
         same.locator('#resume-upload').set_input_files({'name': 'blocked.txt', 'mimeType': 'text/plain',
