@@ -114,7 +114,8 @@ def check(screenshots):
                         'education':[{'institution':'Sample College','degree':''}]},'source':data.decode('utf8')}
                 workspace.draft = synthetic_draft
                 try:
-                    upload_page = context.new_page()
+                    upload_context = browser.new_context()
+                    upload_page = upload_context.new_page()
                     upload_page.goto(url)
                     upload_page.get_by_role('button', name='Create Resume').click()
                     upload_page.locator('#resume-upload').set_input_files({
@@ -151,7 +152,7 @@ def check(screenshots):
                     upload_page.locator('#missing-fields button', has_text='Phone').click()
                     expect(upload_page.get_by_label('Phone')).to_be_focused()
                     assert not list(workspace.inbox.glob('taylor-document-example-*.json'))
-                    upload_page.close()
+                    upload_context.close()
                 finally:
                     workspace.draft = original_draft
 
@@ -375,6 +376,7 @@ def check(screenshots):
                 print('Builder browser acceptance passed: wizard, keywords, history, three views, clipboard, actual TeX/PDF, downloads, mobile, and operations.')
         finally:
             server.shutdown()
+            server.RequestHandlerClass.stop_imports()
             server.server_close()
 
 
