@@ -172,7 +172,7 @@ class WatcherProgressTests(unittest.TestCase):
             result = self.scan()
         report = json.loads((Path(result['output']) / 'result.json').read_text())
         self.assertEqual(report['ollama_runtime']['gpu_percent'], 100)
-        ai_done = [s for s in self.snapshots if s.get('stage') == 'Ollama generation complete']
+        ai_done = [s for s in self.snapshots if s.get('stage') == 'Ollama tailoring complete']
         self.assertIn('100% of qwen2.5:7b in GPU memory', ai_done[-1]['detail'])
         health = json.loads((self.inbox / '.resume-bot-health.json').read_text())
         for name, blob in health['code'].items():
@@ -369,7 +369,7 @@ class DashboardLiveApiTests(unittest.TestCase):
         (self.root / 'inbox/.resume-bot-health.json').write_text(json.dumps(
             {'last_scan': 4102444800, 'pid': 42, 'started': 1.0, 'ollama': runtime, 'code': {'x': 'y'}}))
         worker = self.status()['worker']
-        self.assertEqual(worker, {'pid': 42, 'started': 1.0, 'ollama': runtime})
+        self.assertEqual(worker, {'pid': 42, 'started': 1.0, 'ollama': runtime, 'overleaf': None, 'mongodb': None})
 
 
 if __name__ == '__main__':

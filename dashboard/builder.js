@@ -107,7 +107,8 @@ function experienceMonths() {
   for (const item of entryData('experience')) {
     const start = parseDate(item.start, false);
     if (!start) continue;
-    const end = item.end ? parseDate(item.end, true) : new Date();
+    // Same rule as the server: a role counts only with an end date or "Present".
+    const end = item.end ? parseDate(item.end, true) : null;
     if (!end || end < start) continue;
     spans.push([start.getFullYear() * 12 + start.getMonth(), end.getFullYear() * 12 + end.getMonth() + 1]);
   }
@@ -255,6 +256,7 @@ function addEntry(kind, focus = true) {
     if (key === 'company' && !holder.children.length) input.value = fields.current_company.value;
     if (key === 'bullets') input.placeholder = 'One contribution per line';
     if (key === 'start' || key === 'end') input.placeholder = 'e.g. Jan 2020' + (key === 'end' ? ' or Present' : '');
+    if (key === 'end' && kind === 'experience') input.title = 'Use a date or Present so this role counts toward years of experience';
     wrapper.append(input);
     grid.append(wrapper);
   }
@@ -605,6 +607,39 @@ for (const tile of document.querySelectorAll('.tile[data-tab]')) {
 }
 el('tile-history').addEventListener('click', () => showHistory());
 
+function showTailoring(tailoring, experience) {
+  const pane = el('ai-result');
+  if (!tailoring) {
+    el('ai-note').textContent = 'Not tailored';
+    pane.replaceChildren(rows('p', 'This revision was generated before AI tailoring was available, or AI tailoring was disabled.'));
+    return;
+  }
+  el('ai-note').textContent = tailoring.changed + ' line' + (tailoring.changed === 1 ? '' : 's') + ' improved';
+  const intro = rows('p', 'Ollama rewrote ' + tailoring.changed + ' of ' + (tailoring.accepted + tailoring.rejected) +
+    ' lines for the target role. Every accepted line was checked to contain only the candidate\'s own facts; ' +
+    tailoring.rejected + ' suggestion' + (tailoring.rejected === 1 ? ' was' : 's were') + ' rejected and kept as written.');
+  const list = document.createElement('ol');
+  list.className = 'changes';
+  for (const change of tailoring.changes || []) {
+    const item = document.createElement('li');
+    item.append(rows('del', change.before), rows('ins', change.after));
+    list.append(item);
+  }
+  const parts = [intro, list.children.length ? list : rows('p', 'No line needed rewording.')];
+  if ((tailoring.rejections || []).length) {
+    const rejected = document.createElement('ul');
+    for (const item of tailoring.rejections) rejected.append(rows('li', item.reason));
+    parts.push(rows('h3', 'Rejected suggestions'), rejected);
+  }
+  if (experience) {
+    parts.push(rows('h3', 'Experience level'), rows('p', experience.used === null ?
+      'No dated roles, so no years of experience are stated on the resume.' :
+      'Stated as ' + experience.used + ' years' + (experience.claimed !== null && experience.claimed !== experience.used ?
+        ' (selected ' + experience.claimed + ', limited to the dated roles)' : '') + '.'));
+  }
+  pane.replaceChildren(...parts);
+}
+
 async function showRevision(revision, navigate = true) {
   const ticket = ++selection;
   shownRevision = revision.key;
@@ -642,6 +677,7 @@ async function showRevision(revision, navigate = true) {
     else pdf.removeAttribute('src');
     el('preview-text-box').open = pdf.hidden;   // the text view is a fallback when no PDF exists
     showAts(detail.ats);
+    showTailoring(detail.tailoring, detail.experience);
     openTab('tab-preview');
     resultsReady = true;
     if (navigate) showStep(STEP.RESULTS, false);
@@ -780,9 +816,14 @@ function resetLive() {
 function renderWorker(snapshot) {
   worker = snapshot.worker || {};
   const pill = el('worker-pill');
-  pill.dataset.state = snapshot.healthy ? 'online' : 'offline';
-  pill.textContent = snapshot.healthy ? 'Watcher online' : 'Watcher offline';
-  pill.title = snapshot.lastScan ? 'Last watcher scan ' + loc(snapshot.lastScan) : 'The watcher has not reported yet';
+  const overleafDown = worker.overleaf && worker.overleaf.ok === false;
+  const mongoDown = worker.mongodb && worker.mongodb.ok === false;
+  pill.dataset.state = !snapshot.healthy ? 'offline' : overleafDown || mongoDown ? 'warning' : 'online';
+  pill.textContent = !snapshot.healthy ? 'Watcher offline' : overleafDown ? 'Overleaf sign-in needed' : 'Watcher online';
+  pill.title = [snapshot.lastScan ? 'Last watcher scan ' + loc(snapshot.lastScan) : 'The watcher has not reported yet',
+    overleafDown ? 'Overleaf session signed out: run Sign_In_Overleaf.bat on the RTX laptop' : '',
+    worker.mongodb ? (worker.mongodb.ok === false ? 'MongoDB unreachable; ' + (worker.mongodb.pending || 0) + ' saves queued' :
+      'MongoDB connected') : ''].filter(Boolean).join(' · ');
 }
 
 async function refresh() {

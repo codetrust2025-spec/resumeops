@@ -124,7 +124,7 @@ class Workspace:
         last_scan = (health or {}).get('last_scan')
         return {'jobs': jobs, 'revisions': revisions,
                 'lastScan': last_scan, 'healthy': bool(last_scan and time.time() - last_scan < 900),
-                'worker': {key: (health or {}).get(key) for key in ('pid', 'started', 'ollama')},
+                'worker': {key: (health or {}).get(key) for key in ('pid', 'started', 'ollama', 'overleaf', 'mongodb')},
                 'alert': alert.is_file(), 'stateReadable': state is not None or not (
                     self.inbox / '.resume-bot-state.json').exists(),
                 'logs': [name for name in LOGS if (self.logs / name).is_file()
@@ -230,7 +230,8 @@ class Workspace:
         if ats and 'ats_readiness' not in ats:
             target = {'role': ats['role'], 'template': ats['template']}
             ats = analyze(candidate, target, ats.get('matched', []) + ats.get('missing', []))
-        return {'profile': candidate, 'ats': ats}
+        return {'profile': candidate, 'ats': ats, 'tailoring': report.get('tailoring'),
+                'experience': report.get('experience')}
 
     def keywords(self, role):
         from resume_bot.workflow import ROLES

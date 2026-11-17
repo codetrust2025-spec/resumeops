@@ -11,13 +11,14 @@ from pathlib import Path
 from .ollama import Ollama, OllamaError
 from .ingest import ExtractionError, extract_profile, read_resume_text
 from .latex import render
-from .polish import polish, safe_edit
+from .polish import polish, safe_edit, verify_tailored
 from .compile import BuildError, compile_latex, verify_pdf, verify_remote_pdf
-from .overleaf import OVERLEAF_STEP_COUNT, OverleafError, import_zip
+from .overleaf import OVERLEAF_STEP_COUNT, OverleafAuthError, OverleafError, import_zip
 from .progress import LegacyTracker, Tracker
 from .storage import workspace_lock, write_json
 from .profile import ProfileError, validate_profile
-from .workflow import DatabaseUnavailable, analyze, normalize_request, persist_analysis, role_keywords
+from .workflow import (ROLES, DatabaseUnavailable, analyze, experience_evidence, normalize_request,
+                       flush_outbox, persist_analysis, role_keywords)
 
 
 def _ignore_progress(percent, stage, candidate_name=None):
@@ -41,21 +42,9 @@ def _source_digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def _verify_cached_profile(original, cached):
-    import copy
-    restored = copy.deepcopy(cached)
-    if not safe_edit(original['summary'], cached['summary']):
-        raise ValueError('Cached summary differs from verified input')
-    restored['summary'] = original['summary']
-    for before, after, entry in zip(original['experience'], cached['experience'],
-                                    restored['experience']):
-        if len(before['bullets']) != len(after['bullets']) or not all(
-            safe_edit(a, b) for a, b in zip(before['bullets'], after['bullets'])
-        ):
-            raise ValueError('Cached bullets differ from verified input')
-        entry['bullets'] = before['bullets']
-    if restored != original:
-        raise ValueError('Cached facts differ from verified input')
+def _verify_cached_profile(original, cached, years=None):
+    """Saved/tailored output may only rephrase the verified input (see polish.grounded)."""
+    verify_tailored(original, cached, years)
 
 
 def _sync_overleaf(folder, report, profile, browser_profile, max_pages, refresh, t):
@@ -76,8 +65,15 @@ def _sync_overleaf(folder, report, profile, browser_profile, max_pages, refresh,
             t.units_done(done, total, current)
             if done in (0, 4):  # browser launch and compile/download have no internal measure
                 t.unmeasured(current)
-        proof = import_zip(folder / 'overleaf-project.zip', report['project_name'], browser_profile,
-                           pdf_path=candidate, saved_url=saved.get('url'), on_step=step)
+        try:
+            proof = import_zip(folder / 'overleaf-project.zip', report['project_name'], browser_profile,
+                               pdf_path=candidate, saved_url=saved.get('url'), on_step=step)
+        except OverleafAuthError:
+            OVERLEAF.clear()
+            OVERLEAF.update(ok=False, reason='sign-in required', checked=time.time())
+            raise
+        OVERLEAF.clear()
+        OVERLEAF.update(ok=True, checked=time.time())
         t.units_done(OVERLEAF_STEP_COUNT, total, 'Verifying the Overleaf PDF against the local build')
         proof['pdf_checks'] = verify_remote_pdf(candidate, folder / 'resume.pdf', profile, max_pages)
         proof['pdf_sha256'] = _source_digest(candidate)
@@ -154,7 +150,7 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
     model_name = getattr(ai, 'model', '') if uses_ai else 'disabled'
     # Preserve v2 project names for the same source and configuration.
     config = json.dumps({'source_sha256': source_digest, 'model': model_name,
-                         'polish': polish_enabled, 'v': 'resume-bot-0.2.0'}, sort_keys=True)
+                         'polish': polish_enabled, 'v': 'resume-bot-0.3.0'}, sort_keys=True)
     digest = hashlib.sha256(config.encode('utf8')).hexdigest()[:12]
     if source.suffix == '.json':
         original, target = normalize_request(_read_json(source))
@@ -182,6 +178,8 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
     cached_result = (folder / 'result.json').exists()
     t.units_done(2, 2, 'Existing verified revision found' if cached_result else 'New revision; no earlier output')
     template = target['template'] if target else 'standard'
+    experience = experience_evidence(original, target) if target else None
+    years = experience['used'] if experience else None
     if source.suffix == '.json':
         t.enter('source', 'Loading the target role and template')
         t.units_done(1, 2, f"Target role {target['role']} with {target['template']} template" if target
@@ -197,12 +195,13 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
         t.enter('checks', 'Checking the saved revision against the candidate input')
         completed = _read_json(folder / 'result.json')
         cached = _read_json(folder / 'profile.json')
-        _verify_cached_profile(original, cached)
+        years = (completed.get('experience') or {}).get('used', years) if 'experience' in completed else None
+        _verify_cached_profile(original, cached, years)
         if completed['source_sha256'] != source_digest:
             raise ValueError('Cached source fingerprint mismatch')
         t.units_done(1, 1, 'Saved revision matches the candidate input')
         t.enter('latex', 'Checking saved LaTeX and Overleaf ZIP')
-        _verify_upload_source(folder, cached, template)
+        _verify_upload_source(folder, cached, template, years)
         t.units_done(1, 1, 'Saved LaTeX matches the verified profile')
         t.enter('pdf', 'Verifying the saved local PDF')
         verify_pdf(folder / 'resume.pdf', cached, max_pages)
@@ -219,27 +218,30 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
              'source_kind': source.suffix, 'ai_model': model_name}
     if polish_enabled:
         t.enter('ai', 'Waiting for Ollama to load the model and read the prompt')
-        profile, audit['polish'] = polish(profile, ai, on_progress=_ai_progress(
-            t, 'Generating resume using Ollama'))
+        profile, audit['polish'] = polish(
+            profile, ai, on_progress=_ai_progress(t, 'Tailoring resume with Ollama'),
+            role=ROLES[target['role']]['name'] if target else None, keywords=keywords, years=years)
         runtime = ai.runtime() if hasattr(ai, 'runtime') else None
         audit['ollama_runtime'] = runtime
         if runtime and hasattr(t, 'extra'):
             t.extra['ollama_runtime'] = runtime
-        t.fraction(1.0, 'Ollama generation complete', (
-            f"{runtime['gpu_percent']}% of {runtime['model']} in GPU memory" if runtime else
-            'Ollama did not report GPU placement'))
+        report_polish = audit['polish']
+        t.fraction(1.0, 'Ollama tailoring complete', (
+            f"{report_polish['changed']} lines improved, {report_polish['rejected']} kept as written · " +
+            (f"{runtime['gpu_percent']}% of {runtime['model']} in GPU memory" if runtime else
+             'Ollama did not report GPU placement')))
     else:
         t.skip('ai', 'AI polishing is disabled; candidate text used as supplied')
     t.enter('checks', 'Checking generated content against the candidate input')
-    _verify_cached_profile(original, profile)
-    t.units_done(1, 2, 'Generated content matches the candidate input')
+    _verify_cached_profile(original, profile, years)
+    t.units_done(1, 2, 'Every tailored line is grounded in the candidate input')
     ats = analyze(profile, target, keywords) if target else None
     t.units_done(2, 2, f"ATS keyword coverage {ats['score']}%" if ats else 'No target role; ATS check not applicable')
     folder.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(dir=folder.parent,prefix='resume-build-') as temp:
         working=Path(temp)
         t.enter('latex', 'Rendering LaTeX from the verified profile')
-        latex = render(profile, template)
+        latex = render(profile, template, years)
         (working/'main.tex').write_text(latex,encoding='utf8')
         t.units_done(1, 3, 'LaTeX rendered')
         (working/'profile.json').write_text(json.dumps(profile,indent=2,ensure_ascii=False),encoding='utf8')
@@ -264,6 +266,12 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
                 'notes':['Source facts are not independently employer-verified; only traceable to candidate input.']}
         if ats is not None:
             report['ats'] = ats
+        if experience is not None:
+            report['experience'] = experience
+        if audit.get('polish'):
+            report['tailoring'] = {key: audit['polish'][key] for key in
+                                   ('changed', 'accepted', 'rejected', 'changes', 'rejections', 'method')
+                                   if key in audit['polish']}
         if audit.get('ollama_runtime'):
             report['ollama_runtime'] = audit['ollama_runtime']
         (working/'audit.json').write_text(json.dumps(audit,indent=2),encoding='utf8')
@@ -272,7 +280,7 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
         folder.mkdir(parents=True,exist_ok=True)
         for item in ('main.tex','profile.json','resume.pdf','overleaf-project.zip','audit.json','result.json'):
             os.replace(working/item,folder/item)
-    _verify_upload_source(folder, profile, template)
+    _verify_upload_source(folder, profile, template, years)
     if overleaf:
         report = _sync_overleaf(folder, report, profile, browser_profile, max_pages, refresh_overleaf, t)
     else:
@@ -290,14 +298,18 @@ def _finish(report, folder, overleaf, t):
         raise BuildError('Overleaf verification evidence is missing')
     t.units_done(1, 2, f'{len(required)} output files present' + (' with Overleaf evidence' if overleaf else ''))
     t.unmeasured('Saving ATS evidence')
-    persist_analysis(report)
-    t.units_done(2, 2, 'Evidence saved')
+    database = persist_analysis(report, outbox=folder.parent.parent)
+    if database['configured']:
+        report['database'] = database
+        DATABASE.update(database, checked=time.time())
+    t.units_done(2, 2, 'Evidence saved' + (' (MongoDB unavailable; queued for retry)' if database['queued'] else
+                                          ' to MongoDB' if database['saved'] else ''))
     t.complete('Verified PDF ready to download')
     return report
 
 
-def _verify_upload_source(folder, profile, template):
-    expected = render(profile, template).encode('utf-8').replace(b'\r\n', b'\n')
+def _verify_upload_source(folder, profile, template, years=None):
+    expected = render(profile, template, years).encode('utf-8').replace(b'\r\n', b'\n')
     with zipfile.ZipFile(folder / 'overleaf-project.zip') as archive:
         if archive.namelist() != ['main.tex']:
             raise ValueError('Cached Overleaf ZIP contains unexpected files')
@@ -349,6 +361,10 @@ def scan(inbox, output_root, *, ai=None, polish_enabled=True, overleaf=False,
 def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_profile, max_pages):
     state = inbox / '.resume-bot-state.json'
     known = _read_json(state) if state.exists() else {}
+    database = flush_outbox(output_root)
+    if database['configured']:
+        DATABASE.clear()
+        DATABASE.update(database)
     allowed = ('.json', '.pdf', '.docx', '.txt')
     for candidate in sorted(inbox.iterdir()):
         if restart_requested(inbox):
@@ -422,6 +438,7 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
             blocked = isinstance(exc, (OllamaError, OverleafError, BuildError, DatabaseUnavailable,
                                        ProfileError, ExtractionError, json.JSONDecodeError))
             error = {
+                OverleafAuthError: 'Overleaf sign-in required. Run "Sign in to Overleaf" on the RTX laptop, then press Retry now.',
                 OllamaError: 'Local Ollama is unavailable or returned an unusable result.',
                 OverleafError: 'Overleaf is unavailable or requires an authorized browser session.',
                 BuildError: 'Local or Overleaf PDF verification failed. Check the build dependencies.',
@@ -454,6 +471,8 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
 
 RETRY_DIR = '.resume-bot-retry'
 LAST_RUNTIME = {}  # last Ollama /api/ps placement measured by this watcher process
+DATABASE = {}      # last MongoDB save / outbox status seen by this watcher process
+OVERLEAF = {}      # last Overleaf session result seen by this watcher process
 HEARTBEAT_SECONDS = 5
 
 
@@ -478,6 +497,10 @@ def _write_health(inbox, known, restarting=False):
               'code': CODE, **PROCESS}
     if LAST_RUNTIME:
         status['ollama'] = dict(LAST_RUNTIME)
+    if DATABASE:
+        status['mongodb'] = dict(DATABASE)
+    if OVERLEAF:
+        status['overleaf'] = dict(OVERLEAF)
     if restarting:
         status['restarting'] = True
     write_json(inbox / '.resume-bot-health.json', status)

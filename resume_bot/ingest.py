@@ -69,6 +69,10 @@ def _get(field, source, required=False):
     return value
 
 
+SCALARS = ('full_name', 'headline', 'email', 'phone', 'location', 'linkedin', 'github', 'portfolio',
+           'current_company', 'summary')
+
+
 def _review_schema():
     def obj(properties):
         return {'type': 'object', 'properties': properties, 'required': list(properties),
@@ -78,9 +82,8 @@ def _review_schema():
         return {'type': 'array', 'items': items}
 
     evidence = obj({key: {'type': 'string'} for key in ('value', 'evidence')})
-    fields = {key: evidence for key in
-              ('full_name', 'headline', 'email', 'phone', 'location', 'linkedin', 'github', 'summary')}
-    fields.update(skills=array(evidence), certifications=array(evidence))
+    fields = {key: evidence for key in SCALARS}
+    fields.update(skills=array(evidence), certifications=array(evidence), projects=array(evidence))
     fields['experience'] = array(obj({
         **dict.fromkeys(('company', 'position', 'start', 'end', 'location'), evidence),
         'bullets': array(evidence),
@@ -90,18 +93,121 @@ def _review_schema():
     return obj(fields)
 
 
+REPAIRABLE = ('full_name', 'email')  # recovered deterministically from the source when the model misses them
+SECTIONS = re.compile(r'^(professional\s+)?(summary|profile|objective|about me|(technical\s+|core\s+|key\s+)?skills|'
+                      r'(work\s+|professional\s+)?experience|employment( history)?|education|academic.*|'
+                      r'projects?|personal projects|certifications?|achievements|awards|languages|interests|'
+                      r'contact|references)\s*:?$', re.I)
+EMAIL = re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}')
+PHONE = re.compile(r'(?<![\w/])\+?\d[\d ().-]{7,}\d(?![\w/])')
+URL = re.compile(r'(?:https?://|www\.)[^\s|,;()<>]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|io|dev|me|net|org|in|app|site)/[^\s|,;()<>]*', re.I)
+PRESENT = re.compile(r'present|current|now|till date|to date|ongoing', re.I)
+
+
+def _lines(source):
+    return [line.strip() for line in source.splitlines() if line.strip()]
+
+
+def _looks_like_name(line):
+    words = line.split()
+    return (2 <= len(words) <= 5 and not SECTIONS.match(line) and not re.search(r'[\d@/:|,]', line)
+            and all(re.fullmatch(r"[A-Za-z][A-Za-z.'-]*", word) for word in words)
+            and sum(word[0].isupper() for word in words) >= len(words) - 1)
+
+
+def _section(source, names):
+    """Lines under a heading such as "Projects" until the next heading (verbatim, bullets stripped)."""
+    out, inside = [], False
+    for line in _lines(source):
+        header = SECTIONS.match(line.rstrip(':'))
+        if header:
+            inside = bool(re.fullmatch(names, line.rstrip(':').strip(), re.I))
+            continue
+        if inside:
+            item = re.sub(r'^[-*\u2022\u25cf\u25aa\u2013\u00b7]\s*', '', line).strip()
+            if item:
+                out.append(item)
+    return out
+
+
+def _split_list(value):
+    parts = [part.strip(' .') for part in re.split(r'\s*[,;|\u2022\u00b7]\s*|\s+/\s+', value)]
+    return [part for part in parts if part]
+
+
+def repair(out, source):
+    """Deterministic, verbatim-only fixes for common model slips. Every value set here is copied
+    from the source text (or moved between fields) and is never invented."""
+    lines = _lines(source)
+    head = lines[:6]
+    # Name: the model sometimes leaves it empty or puts it in the headline.
+    if out['full_name'] and out['headline'] and _norm(out['headline']) == _norm(out['full_name']):
+        out['headline'] = ''
+    if not out['full_name'] and out['headline'] and _looks_like_name(out['headline']) and \
+            any(_norm(out['headline']) == _norm(line) for line in head):
+        out['full_name'], out['headline'] = out['headline'], ''
+    if not out['full_name']:
+        out['full_name'] = next((line for line in head if _looks_like_name(line)), '')
+    if out['full_name'] and not out['headline']:
+        index = next((i for i, line in enumerate(lines) if _norm(line) == _norm(out['full_name'])), None)
+        following = lines[index + 1] if index is not None and index + 1 < len(lines) else ''
+        if following and len(following.split()) <= 8 and not SECTIONS.match(following) and \
+                not re.search(r'[@\d|]', following) and not URL.search(following):
+            out['headline'] = following
+    # Contact details found verbatim in the text.
+    if not out['email']:
+        match = EMAIL.search(source)
+        out['email'] = match.group(0) if match else ''
+    if not out['phone']:
+        match = PHONE.search(source)
+        out['phone'] = match.group(0).strip() if match else ''
+    urls = [url.rstrip('.') for url in URL.findall(source) if '@' not in url]
+    for key, host in (('linkedin', 'linkedin.com'), ('github', 'github.com')):
+        if not out[key]:
+            out[key] = next((url for url in urls if host in url.lower()), '')
+    if not out['portfolio']:  # only a link in the header block, never an employer's site
+        header_urls = [url.rstrip('.') for line in head for url in URL.findall(line) if '@' not in url]
+        out['portfolio'] = next((url for url in header_urls
+                                 if not re.search(r'linkedin\.com|github\.com', url, re.I)), '')
+    # Skills: one item per skill, no duplicates; fall back to a "Skills" section.
+    skills = [part for value in out['skills'] for part in _split_list(value)]
+    if not skills:
+        for line in _section(source, r'(technical\s+|core\s+|key\s+)?skills'):
+            skills += _split_list(re.sub(r'^[^:]{1,40}:\s*', '', line))
+    seen, unique = set(), []
+    for skill in skills:
+        if skill.casefold() not in seen and _norm(skill) in _norm(source):
+            seen.add(skill.casefold())
+            unique.append(skill)
+    out['skills'] = unique
+    if not out['projects']:
+        out['projects'] = _section(source, r'(personal\s+)?projects?')[:30]
+    # Current company: the employer of a role that the source says is ongoing.
+    if not out['current_company']:
+        out['current_company'] = next((entry['company'] for entry in out['experience']
+                                       if entry.get('company') and PRESENT.search(entry.get('end') or '')), '')
+    return out
+
+
 def extract_profile(source, ai, *, for_review=False, on_progress=None):
     """The model must quote source spans for every fact. All claims get substring validation."""
     prompt = '''Return ONLY a JSON object describing this candidate's actual resume, NOT an improved version.
 For every individual factual field use {"value":"EXACT verbatim substring from input","evidence":"EXACT surrounding substring that includes value"}.
 If missing, use {"value":"","evidence":""}. Do not infer or invent anything. Do not reorder words in a quote.
+Field guide:
+- full_name: the person's name, normally the first line of the resume. Never put the name in headline.
+- headline: the job title written under the name (for example "Software Engineer"), not the name.
+- current_company: the employer of a role whose end date is Present/Current, if any.
+- portfolio: a personal website URL that is not LinkedIn or GitHub.
+- skills: ONE skill per item. Split lists like "Python, SQL, Docker" into separate items.
+- projects: one item per project line from a Projects section.
 Schema:
 {"full_name":field,"headline":field,"email":field,"phone":field,"location":field,
- "linkedin":field,"github":field,"summary":field,
+ "linkedin":field,"github":field,"portfolio":field,"current_company":field,"summary":field,
  "skills":[field],
  "experience":[{"company":field,"position":field,"start":field,"end":field,"location":field,"bullets":[field]}],
  "education":[{"institution":field,"degree":field,"start":field,"end":field,"details":field}],
- "certifications":[field]}
+ "certifications":[field],"projects":[field]}
 For a multi-line bullet, quote its exact text including words; text must be in the source after whitespace normalization.
 DO NOT output empty experience/education entries. Preserve correct source spelling.
 INPUT:
@@ -125,9 +231,9 @@ INPUT:
     if not isinstance(data,dict):
         raise ExtractionError('AI returned invalid profile')
     out={}
-    for key in ('full_name','headline','email','phone','location','linkedin','github','summary'):
-        out[key]=read_field(data.get(key,{}),key in ('full_name','email'))
-    for key in ('skills','certifications'):
+    for key in SCALARS:
+        out[key]=read_field(data.get(key,{}),key in ('full_name','email') and key not in REPAIRABLE)
+    for key in ('skills','certifications','projects'):
         if not isinstance(data.get(key,[]),list):
             raise ExtractionError(f'Invalid {key}')
         out[key]=[value for v in data.get(key,[]) if (value := read_field(v, True))]
@@ -145,9 +251,14 @@ INPUT:
             raise ExtractionError('Invalid education')
         out['education'].append({k:read_field(item.get(k,{}),k in ('institution','degree'))
                                  for k in ('institution','degree','start','end','details')})
+    repair(out, source)
     if for_review:
-        out['skills'] = list(dict.fromkeys(out['skills']))
         return out
+    for key in ('portfolio', 'current_company'):
+        if not out[key]:
+            out.pop(key)
+    if not out['projects']:
+        out.pop('projects')
     try:
         return validate_profile(out)
     except ProfileError as exc:

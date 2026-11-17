@@ -36,3 +36,33 @@ jobs:
         with:
           name: resumeops-staging-source
           path: ${{ runner.temp }}/resumeops-source.zip
+
+  windows-scripts:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse every PowerShell script
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($file in Get-ChildItem -Recurse -Filter *.ps1) {
+            $tokens = $null; $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors) { $failed = $true; $errors | ForEach-Object { Write-Error "$($file.Name): $_" } }
+            else { Write-Host "OK $($file.Name)" }
+          }
+          if ($failed) { exit 1 }
+      - name: Launcher helpers behave with Ollama down
+        shell: powershell
+        run: |
+          $script = Get-Content start_windows.ps1 -Raw
+          $ast = [System.Management.Automation.Language.Parser]::ParseInput($script, [ref]$null, [ref]$null)
+          $functions = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)
+          foreach ($f in $functions) { Invoke-Expression $f.Extent.Text }
+          New-Item -ItemType Directory logs -Force | Out-Null
+          $log = Join-Path (Get-Location) 'logs\watcher.log'
+          if (Test-Ollama) { throw 'Unexpected Ollama on the CI runner' }
+          Start-OllamaIfNeeded
+          $text = Get-Content $log -Raw
+          if ($text -notmatch 'ollama.exe was not found') { throw "Unexpected launcher log: $text" }
+          Write-Host 'Launcher reports a missing Ollama and does not crash.'
