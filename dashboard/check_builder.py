@@ -314,6 +314,10 @@ def check(screenshots):
                 assert mobile.evaluate('document.documentElement.scrollWidth <= innerWidth')
                 expect(mobile.locator('#step-meta')).to_be_visible()
                 expect(mobile.locator('#steps')).to_be_hidden()
+                # Builder and History navigation are at least 44 x 44 CSS px on a phone (WCAG 2.5.5).
+                nav=mobile.locator('.masthead nav a').evaluate_all(
+                    'items => items.map(item => {const box = item.getBoundingClientRect(); return [item.textContent, box.width, box.height];})')
+                assert nav and all(width>=44 and height>=44 for _,width,height in nav), nav
                 mobile.get_by_role('link', name='History').click()
                 expect(mobile.locator('#history')).to_be_visible()
                 mobile.get_by_role('button', name='Back to builder').click()

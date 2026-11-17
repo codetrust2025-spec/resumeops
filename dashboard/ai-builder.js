@@ -117,6 +117,21 @@ async function poll(id) {
     await pause();
   }
 }
+// "B.Tech, Computer Science", "Bachelor of Technology in ECE", "M.Tech (Data Science)" and
+// "B.E. - IT" become separate Degree and Branch/Specialization fields. Text is only split, never added.
+function splitDegree(text, details) {
+  const value = text.trim();
+  const parts = /^(.+?)\s*(?:,|:|\s[-–]\s|\s+in\s+|\()\s*([^()]+?)\)?$/i.exec(value);
+  if (parts && parts[1].split(/\s+/).length <= 6 && !/^hon(?:s|ours)?\.?$/i.test(parts[2].trim())) {
+    return {degree:parts[1].trim(), specialization:parts[2].trim()};
+  }
+  // "B.Sc. Statistics", "MBA Finance": a known degree abbreviation followed by the branch.
+  const prefixed = /^((?:[BM]\.?\s?(?:Tech|E|Sc|S|Com|A|Arch|Pharm|Ed|Des)\.?|BCA|MCA|BBA|MBA|PGDM|Ph\.?\s?D\.?|Diploma))\s+([A-Z][A-Za-z&/.' ]{1,79})$/.exec(value);
+  if (prefixed) return {degree:prefixed[1], specialization:prefixed[2].trim()};
+  // Fall back to a details line that is only a branch name, never a CGPA or other text.
+  const branch = /^[A-Za-z&/.' ]{2,80}$/.test(details.trim()) && details.trim().split(/\s+/).length <= 7 ? details.trim() : '';
+  return {degree:value, specialization:branch};
+}
 async function importFile() {
   const job = state.import;
   status('Importing resume...');
@@ -134,7 +149,7 @@ async function importFile() {
   next.role = intake().role;
   next.work_experience = (profile.experience || []).map(item => Object.fromEntries(
     collections[0][2].map(([field]) => [field,item[field] || ''])));
-  next.education = (profile.education || []).map(item => ({degree:item.degree,
+  next.education = (profile.education || []).map(item => ({...splitDegree(item.degree || '',item.details || ''),
     // A resume line such as "B.Tech, Example University, 2022" is often extracted as a start date only.
     university:item.institution, graduation_year:/\b\d{4}\b/.exec(item.end || item.start || '')?.[0] || ''}));
   next.projects = (profile.projects || []).map(name => ({name}));
