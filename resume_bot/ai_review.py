@@ -2,7 +2,7 @@
 import re
 
 from .ai_first import IntakeError, validate_intake
-from .workflow import ROLES, analyze, normalize_request
+from .workflow import ROLES, analyze, matched_terms, normalize_request
 
 
 def role_intelligence(role):
@@ -12,26 +12,45 @@ def role_intelligence(role):
     if not catalog:
         raise IntakeError('Choose a supported target role')
     terms = role_keywords({'role': role, 'keywords': []})
-    pulse = {'java', 'javascript', 'python', 'react', 'angular', 'aws', 'node.js', 'css', 'kubernetes'}
     return {
         'label': catalog['name'],
         'terms': terms,
-        'sources': [
-            {'label': 'ResumeOps role catalog (curated keywords)', 'url': '', 'terms': terms},
-            {'label': 'Naukri Pulse (published April 2024, overlapping role keywords)',
-             'url': 'https://www.naukri.com/blog/stay-updated-with-top-it-skills-in-high-demand-from-recruiter-with-naukri-pulse/',
-             'terms': [term for term in terms if term.casefold() in pulse]},
-        ],
+        'sources': [{'label': 'ResumeOps role catalog (curated)', 'url': '', 'terms': terms}],
     }
+
 
 
 def claims_for_review(draft):
     suggestions = draft['suggestions']
     claims = []
+    source = draft.get('source', '')
+    candidate = draft['candidate']
+    intake_evidence = ' '.join(
+        value for category in ('work_experience', 'education', 'projects')
+        for entry in candidate[category] for value in entry.values()
+    )
+    source_lines = [' '.join(line.split()) for line in source.splitlines() if line.strip()]
 
     def add(section, text, index=None):
-        if text:
-            claims.append({'id': str(len(claims)), 'section': section, 'text': text, 'index': index})
+        if not text:
+            return
+        lines = source_lines
+        if section == 'Responsibility':
+            employer = candidate['work_experience'][index]['company']
+            lines = [line for offset, line in enumerate(source_lines)
+                     if matched_terms([employer], ' '.join(source_lines[max(0, offset-4):offset+1]))]
+        # Use literal evidence only. Paraphrases and claims with extra details still need confirmation.
+        if matched_terms([text], ' '.join(lines)):
+            provenance = 'verified_from_source'
+            reason = 'This wording was found in your supplied resume. Confirm it is accurate.'
+        elif section in ('Skill', 'Competency') and not matched_terms([text], source + ' ' + intake_evidence):
+            provenance = 'unsupported_role_keyword'
+            reason = 'Not found in your resume or details. Include only if you genuinely have this skill.'
+        else:
+            provenance = 'unverified_suggestion'
+            reason = 'No matching statement was found in the supplied resume. Confirm before including.'
+        claims.append({'id': str(len(claims)), 'section': section, 'text': text, 'index': index,
+                       'provenance': provenance, 'reason': reason})
 
     add('Summary', suggestions['professional_summary']['text'])
     for section, field in [('Skill', 'technical_skills'), ('Competency', 'core_competencies'),
@@ -73,6 +92,7 @@ def approved_resume(draft, approval):
     profile['achievements'] = []
     profile['coding_platforms'] = [' '.join(filter(None, item.values())) for item in candidate['coding_platforms']]
     source = draft.get('source', '')
+    audit = []
     for key, claim in claims.items():
         if key not in selection:
             continue
@@ -85,6 +105,11 @@ def approved_resume(draft, approval):
             if text.casefold() not in source.casefold():
                 raise IntakeError('Remove quantified claims that are absent from the source resume')
         section = claim['section']
+        provenance = claim['provenance']
+        if text != claim['text']:
+            provenance = 'candidate_confirmed'
+        audit.append({'id': key, 'section': section, 'text': text, 'provenance': provenance,
+                      'candidate_confirmed': True})
         if section == 'Summary':
             profile['summary'] = text
         elif section in ('Skill', 'Competency'):
@@ -111,4 +136,4 @@ def approved_resume(draft, approval):
     target = {'role': candidate['role'], 'template': 'standard',
               'experience_years': min(25, int(candidate['years_of_experience']))}
     profile, target = normalize_request({'profile': profile, 'target': target})
-    return {'profile': profile, 'target': target, 'ats': analyze(profile, target)}
+    return {'profile': profile, 'target': target, 'ats': analyze(profile, target), 'approved_claims': audit}

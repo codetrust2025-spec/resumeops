@@ -152,8 +152,12 @@ function renderReview(draft) {
     row.dataset.claim=claim.id;
     const sourceEntry = claim.section === 'Responsibility' ? draft.candidate.work_experience[claim.index]?.company :
       claim.section === 'Project detail' ? draft.candidate.projects[claim.index]?.name : '';
-    const provenance = claim.section === 'Earned certification' ?
-      'listed in imported resume; confirm earned' : 'unverified AI suggestion';
+    row.dataset.provenance=claim.provenance;
+    const provenance = {
+      verified_from_source:'verified from supplied source',
+      unsupported_role_keyword:'role keyword not found in supplied evidence',
+      unverified_suggestion:'unverified AI suggestion'
+    }[claim.provenance];
     const label = node('label',claim.section + (sourceEntry ? ' - ' + sourceEntry : '') + ' (' + provenance + ')');
     const check = node('input');
     check.type='checkbox';
@@ -162,7 +166,7 @@ function renderReview(draft) {
     const text = node('textarea');
     text.rows=2; text.value=state.edits?.[claim.id] ?? state.approval?.claims?.[claim.id] ?? claim.text;
     text.setAttribute('aria-label','Edit ' + claim.section.toLowerCase());
-    row.append(label,text);
+    row.append(label,node('p',claim.reason),text);
     ai('ai-claims').append(row);
   }
   ai('ai-attest').checked=state.approval?.attested === true;

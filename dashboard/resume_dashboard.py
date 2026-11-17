@@ -287,7 +287,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
         report('Drafting suggestions with Ollama')
         model = Ollama(model=workspace.model, url='http://127.0.0.1:11434')
         draft = suggest_sections(candidate, model, evidence=evidence, market_terms=intelligence['terms'])
-        return {**draft, 'source': evidence, 'intelligence': intelligence, 'claims': claims_for_review(draft)}
+        draft.update(source=evidence, intelligence=intelligence)
+        return {**draft, 'claims': claims_for_review(draft)}
 
     durable = DurableImports(workspace.root, process_draft)
 
@@ -554,7 +555,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                         return self.send_json(reviewed)
                     payload = {key: reviewed[key] for key in ('profile', 'target')}
                     try:
-                        durable.freeze_review(account, operation, payload)
+                        durable.freeze_review(account, operation, {'resume': payload, 'claims': reviewed['approved_claims']})
                     except ImportConflict as exc:
                         return self.send_json({'error': str(exc)}, 409)
                     result = workspace.enqueue(json.dumps(payload).encode())

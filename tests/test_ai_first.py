@@ -2,6 +2,7 @@
 import unittest
 
 from resume_bot.ai_first import INPUT_CATEGORIES, IntakeError, suggest_sections, validate_intake
+from resume_bot.ai_review import approved_resume, claims_for_review, role_intelligence
 
 
 class FakeAI:
@@ -82,6 +83,30 @@ class AIIntakeContract(unittest.TestCase):
         self.assertIn('AWS', result['suggestions']['technical_skills']['items'])
         self.assertFalse(result['market_terms_verified_as_candidate_skills'])
         self.assertFalse(result['ready_for_generation'])
+
+    def test_curated_terms_have_no_external_provider_attribution(self):
+        intelligence = role_intelligence('frontend-developer')
+        self.assertEqual(intelligence['sources'], [
+            {'label': 'ResumeOps role catalog (curated)', 'url': '', 'terms': intelligence['terms']},
+        ])
+
+    def test_provenance_requires_source_match_and_approval_excludes_unsupported_skill(self):
+        intake = {**candidate(), 'role': 'frontend-developer'}
+        draft = suggest_sections(intake, FakeAI(), market_terms=['AWS'])
+        draft['source'] = 'Skills: React\nOther Company\nArchitected a platform'
+        claims = {claim['text']: claim for claim in claims_for_review(draft)}
+        self.assertEqual(claims['React']['provenance'], 'verified_from_source')
+        self.assertEqual(claims['AWS']['provenance'], 'unsupported_role_keyword')
+        self.assertEqual(claims['Architected a platform']['provenance'], 'unverified_suggestion')
+        picked = {claims['React']['id']: 'React'}
+        reviewed = approved_resume(draft, {'attested': True, 'claims': picked})
+        self.assertEqual(reviewed['profile']['skills'], ['React'])
+        self.assertEqual(reviewed['approved_claims'][0]['provenance'], 'verified_from_source')
+        picked[claims['AWS']['id']] = 'AWS'
+        reviewed = approved_resume(draft, {'attested': True, 'claims': picked})
+        self.assertEqual(reviewed['profile']['skills'], ['React', 'AWS'])
+        self.assertEqual(reviewed['approved_claims'][1]['provenance'], 'unsupported_role_keyword')
+        self.assertTrue(reviewed['approved_claims'][1]['candidate_confirmed'])
 
     def test_invalid_intake_is_rejected(self):
         for patch in ({'email': 'not an email'}, {'years_of_experience': -1},

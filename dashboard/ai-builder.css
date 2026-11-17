@@ -15,3 +15,6 @@
 #ai-status{position:sticky;bottom:0;background:#edf3fa;padding:.75rem;border-radius:.65rem}
 #ai-status:empty{display:none}
 @media(max-width:540px){.ai-fields{grid-template-columns:1fr}.ai-upload input{max-width:100%}}
+
+.ai-claim[data-provenance=unsupported_role_keyword]{border-color:#ba791f;background:#fff8ec}
+.ai-claim[data-provenance=verified_from_source]{border-color:#31816c}

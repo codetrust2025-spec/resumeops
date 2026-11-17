@@ -58,8 +58,8 @@ Do not combine React + Angular, AWS + Azure, databases, or other incompatible st
   queue. Selected claims and the final normalized payload are enforced server-side.
 - Each immutable approval queues through the existing watcher. Replaying the same
   approval returns the same job; attempting to change an approved draft returns 409.
-- Role keywords use the curated catalog and show the overlapping terms from the
-  published Naukri Pulse article with its date and link. No live listing feed is used.
+- Role keywords are attributed to the curated ResumeOps catalog. External keyword
+  attribution requires terms from an authorized source with its URL and retrieval date.
 - The dashboard recovers approved work through the PR #17 Access flow.
 
 ## Release gates
