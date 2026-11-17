@@ -13,6 +13,12 @@
     ['checks', 'Checks'], ['latex', 'LaTeX'], ['pdf', 'Local PDF'], ['overleaf', 'Overleaf'],
     ['verify', 'Verify'],
   ];
+  // The eight stages shown in the pipeline stepper. 'job' (copying the candidate file) is part
+  // of Validate in the display; the watcher still measures it separately.
+  const PIPELINE = [
+    ['Validate', ['validate', 'job']], ['Source', ['source']], ['AI', ['ai']], ['Checks', ['checks']],
+    ['LaTeX', ['latex']], ['Local PDF', ['pdf']], ['Overleaf', ['overleaf']], ['Verify', ['verify']],
+  ];
   const HEARTBEAT_STALE = 20;  // seconds without a watcher heartbeat while processing
 
   function clock(seconds) {
@@ -50,14 +56,41 @@
     });
   }
 
+  /** Group the nine measured stages into the eight pipeline steps. */
+  function pipeline(job) {
+    const states = Object.fromEntries(stageStates(job).map(item => [item.key, item.state]));
+    return PIPELINE.map(([label, keys]) => {
+      const parts = keys.map(key => states[key]);
+      let state = 'todo';
+      if (parts.includes('failed')) state = 'failed';
+      else if (parts.includes('current')) state = 'current';
+      else if (parts.every(part => part === 'skipped')) state = 'skipped';
+      else if (parts.every(part => part === 'done' || part === 'skipped')) state = 'done';
+      else if (parts.some(part => part === 'done')) state = 'current';
+      return {label, keys, state};
+    });
+  }
+
+  /** Ollama/GPU placement as last reported by the watcher (job record or worker health). */
+  function gpuText(runtime) {
+    if (!runtime || !runtime.model) return '';
+    const gib = bytes => (bytes / 1073741824).toFixed(1) + ' GB';
+    return runtime.model + ' · ' + runtime.gpu_percent + '% in GPU memory (' + gib(runtime.size_vram) +
+      ' of ' + gib(runtime.size) + ')';
+  }
+
   /**
    * Describe a job for display.
    * state: waiting | running | processing (unmeasured) | stalled | retrying | failed | completed
    */
   function describe(job, now, memory = {}) {
     const percent = displayPercent(job, memory);
+    const steps = pipeline(job);
     const view = {percent, state: 'running', title: '', stage: '', elapsed: '', status: '',
-      detail: '', warnings: [], stages: stageStates(job), canRetry: false, complete: false};
+      detail: '', warnings: [], stages: stageStates(job), canRetry: false, complete: false,
+      pipeline: steps, completedCount: steps.filter(step => step.state === 'done' || step.state === 'skipped').length,
+      heartbeat: job.heartbeat ? clock(now - job.heartbeat) + ' ago' : (job.status === 'queued' ? 'not started' : '—'),
+      gpu: gpuText(job.ollama_runtime)};
     if (job.status === 'queued') {
       view.state = 'waiting';
       view.title = 'Waiting to start — ' + percent + '%';
@@ -66,6 +99,7 @@
       view.status = 'Waiting' + (job.queue_position ? ' · position ' + job.queue_position + ' in the queue' : '');
       return view;
     }
+    if (job.status !== 'processing') view.heartbeat = '—';
     view.elapsed = clock(now - (job.started || job.last));
     view.stage = job.stage_label ? job.stage_label + (job.stage && job.stage !== job.stage_label ? ' — ' + job.stage : '')
       : (job.stage || 'Processing');
@@ -88,6 +122,7 @@
       const waitFor = job.next_retry ? job.next_retry - now : 0;
       view.canRetry = true;
       view.detail = job.error || '';
+      if (job.error_detail && job.error_detail !== job.error) view.errorDetail = 'Technical detail: ' + job.error_detail;
       view.state = waitFor > 0 ? 'retrying' : 'failed';
       view.title = (waitFor > 0 ? 'Retry scheduled — ' : 'Failed — ') + percent + '%';
       view.status = 'Attempt ' + (job.attempt || job.failures || 1) + ' failed' +
@@ -122,5 +157,5 @@
     return view;
   }
 
-  return {STAGES, clock, describe, displayPercent, stageStates, attemptKey};
+  return {STAGES, PIPELINE, clock, describe, displayPercent, stageStates, attemptKey, pipeline, gpuText};
 }));

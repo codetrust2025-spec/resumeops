@@ -223,6 +223,8 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
             t, 'Generating resume using Ollama'))
         runtime = ai.runtime() if hasattr(ai, 'runtime') else None
         audit['ollama_runtime'] = runtime
+        if runtime and hasattr(t, 'extra'):
+            t.extra['ollama_runtime'] = runtime
         t.fraction(1.0, 'Ollama generation complete', (
             f"{runtime['gpu_percent']}% of {runtime['model']} in GPU memory" if runtime else
             'Ollama did not report GPU placement'))
@@ -382,6 +384,8 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
             with lock:
                 if snapshot is not None:
                     activity.update(snapshot)
+                    if snapshot.get('ollama_runtime'):
+                        LAST_RUNTIME.update(snapshot['ollama_runtime'], checked=time.time())
                     if snapshot.get('stage_key') == 'done':
                         return  # 100% is written only with the final status 'ok' record below
                 record = {'sha256': digest, 'status': 'processing', 'last_attempt': started_at,
@@ -429,6 +433,8 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
             now = time.time()
             detail = f'{type(exc).__name__}: {exc}'[:300] if isinstance(exc, (OllamaError, OverleafError, BuildError)) else type(exc).__name__
             runtime = ai.runtime() if isinstance(exc, OllamaError) and hasattr(ai, 'runtime') else None
+            if runtime:
+                LAST_RUNTIME.update(runtime, checked=time.time())
             record = {'sha256': digest, 'status': 'failed', 'blocked': blocked, 'error': error,
                       'error_detail': detail, 'ollama_runtime': runtime,
                       'failures': failures + 1, 'attempt': failures + 1, **activity,
@@ -447,6 +453,7 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
 
 
 RETRY_DIR = '.resume-bot-retry'
+LAST_RUNTIME = {}  # last Ollama /api/ps placement measured by this watcher process
 HEARTBEAT_SECONDS = 5
 
 
@@ -469,6 +476,8 @@ def _write_health(inbox, known, restarting=False):
               'failures': sum(entry['status'] == 'failed' and (inbox / key).exists()
                               for key, entry in known.items()),
               'code': CODE, **PROCESS}
+    if LAST_RUNTIME:
+        status['ollama'] = dict(LAST_RUNTIME)
     if restarting:
         status['restarting'] = True
     write_json(inbox / '.resume-bot-health.json', status)

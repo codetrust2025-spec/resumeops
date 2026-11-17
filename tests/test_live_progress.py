@@ -180,6 +180,11 @@ class WatcherProgressTests(unittest.TestCase):
             import hashlib
             self.assertEqual(blob, hashlib.sha1(b'blob %d\0' % len(data) + data).hexdigest(), name)
         self.assertIn('pid', health)
+        # The measured placement travels with the live record and the worker health for the dashboard.
+        later = [s for s in self.snapshots if s['status'] == 'processing' and ORDER.index(s['stage_key']) > ORDER.index('ai')]
+        self.assertTrue(later and all(s['ollama_runtime']['gpu_percent'] == 100 for s in later))
+        self.assertEqual(health['ollama']['size_vram'], health['ollama']['size'])
+        self.assertIn('checked', health['ollama'])
 
     def test_restart_request_returns_between_jobs_only(self):
         (self.inbox / 'second.json').write_text(json.dumps({**SAMPLE, 'headline': 'Second'}), encoding='utf-8')
@@ -360,6 +365,11 @@ class DashboardLiveApiTests(unittest.TestCase):
         self.assertTrue((self.root / 'inbox' / second).is_file())
         with urlopen(self.origin + '/live.js', timeout=5) as response:
             self.assertIn(b'ResumeLive', response.read())
+        runtime = {'model': 'qwen2.5:7b', 'size': 10, 'size_vram': 10, 'gpu_percent': 100, 'checked': 5.0}
+        (self.root / 'inbox/.resume-bot-health.json').write_text(json.dumps(
+            {'last_scan': 4102444800, 'pid': 42, 'started': 1.0, 'ollama': runtime, 'code': {'x': 'y'}}))
+        worker = self.status()['worker']
+        self.assertEqual(worker, {'pid': 42, 'started': 1.0, 'ollama': runtime})
 
 
 if __name__ == '__main__':

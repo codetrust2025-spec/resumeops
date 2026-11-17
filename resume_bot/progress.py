@@ -43,6 +43,7 @@ class Tracker:
         self.completed = []
         self.skipped = []
         self.candidate = None
+        self.extra = {}  # measured facts reported alongside progress (e.g. Ollama GPU placement)
 
     # -- stage control -------------------------------------------------------------------
     def enter(self, key, step, candidate=None):
@@ -123,7 +124,7 @@ class Tracker:
             'detail': self.detail, 'started': self.started, 'stage_started': self.stage_started,
             'activity': self.activity, 'expected_seconds': BANDS[self.stage][3] if self.stage in BANDS else 0,
             'completed_stages': list(self.completed), 'skipped_stages': list(self.skipped),
-            'updated': self.activity,
+            'updated': self.activity, **self.extra,
         }
 
     def _publish(self):
