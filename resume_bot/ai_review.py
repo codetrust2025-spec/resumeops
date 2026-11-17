@@ -1,7 +1,7 @@
 """Translate reviewed AI drafting suggestions into the existing watcher contract."""
 import re
 
-from .ai_first import IntakeError, validate_intake
+from .ai_first import IntakeError, unsubstantiated_quantification, validate_intake
 from .workflow import ROLES, analyze, matched_terms, normalize_request
 
 
@@ -120,10 +120,10 @@ def approved_resume(draft, approval):
         if not isinstance(text, str) or not text.strip() or len(text) > 2500:
             raise IntakeError('Review text must be nonempty and at most 2500 characters')
         text = text.strip()
-        # Quantified claims must occur verbatim in the imported candidate evidence.
-        if re.search(r'\d\s*%|\$\s*\d|\b\d[\d,.]*\s+(?:users|customers|hours|days|employees)\b', text, re.I):
-            if text.casefold() not in source.casefold():
-                raise IntakeError('Remove quantified claims that are absent from the source resume')
+        # Review edits cannot reintroduce invented numbers/headcounts. Candidate approval
+        # is not independent evidence of measured results or team size.
+        if unsubstantiated_quantification(text, source):
+            raise IntakeError('Remove quantified claims that are absent from the source resume')
         section = claim['section']
         if not legacy_review and section in ('Responsibility', 'Project detail'):
             normalized = ' '.join(re.findall(r'\w+', text.casefold()))
