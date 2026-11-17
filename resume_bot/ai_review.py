@@ -27,7 +27,13 @@ def role_intelligence(role, root=None):
                 family = ranked[0][1]
         keywords = ROLES[family]['keywords'] if family else []
         sources.append({'label': 'ResumeOps role catalog (curated)', 'url': '', 'terms': keywords})
-    return {'label': title, 'role': exact or 'custom', 'terms': keywords[:40], 'sources': sources}
+    terms = keywords[:40]
+    keyword_relevance = {
+        term: sum(row.get('relevance', 0) for row in sources if term in row['terms'])
+        for term in terms
+    }
+    return {'label': title, 'role': exact or 'custom', 'terms': terms, 'sources': sources,
+            'keyword_relevance': keyword_relevance}
 
 
 def claims_for_review(draft):
@@ -168,5 +174,13 @@ def approved_resume(draft, approval):
     if role == 'custom':
         target['role_title'] = research['label']
     profile, target = normalize_request({'profile': profile, 'target': target})
-    return {'profile': profile, 'target': target, 'ats': analyze(profile, target), 'approved_claims': audit,
+    ats = analyze(profile, target)
+    quality = {
+        'verified_claims': len(audit),
+        'keyword_matches': len(ats['matched']),
+        'role_keywords_available': bool(ats['matched'] or ats['missing']),
+        'experience_dates_support_level': ats['experience']['supported'],
+        'role_title': research['label'],
+    }
+    return {'profile': profile, 'target': target, 'ats': ats, 'quality': quality, 'approved_claims': audit,
             'project_names': [item['name'] for item in candidate['projects'][:30]]}

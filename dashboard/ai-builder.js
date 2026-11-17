@@ -214,7 +214,7 @@ function selected() {
   return {attested:ai('ai-attest').checked,claims};
 }
 async function preview() {
-  const {profile,ats} = await api('/api/ai-review',{id:state.draft.id,approval:state.approval});
+  const {profile,ats,quality} = await api('/api/ai-review',{id:state.draft.id,approval:state.approval});
   const view=ai('ai-preview-content');
   view.replaceChildren(node('h3',profile.full_name),
     node('p',[profile.email,profile.phone,profile.location,profile.linkedin,profile.github,profile.portfolio].filter(Boolean).join(' | ')));
@@ -239,6 +239,15 @@ async function preview() {
     node('p','Matched: ' + ats.matched.join(', ')),node('p','Missing: ' + ats.missing.join(', ')),
     ...ats.breakdown.map(part => node('p',part.label + ': ' + part.points + '/' + part.max)),
     ...ats.suggestions.map(tip => node('p',tip)));
+  if (quality) {
+    view.append(node('h4','Review checks'),
+      node('p','Target role: ' + quality.role_title),
+      node('p',quality.verified_claims + ' candidate-approved statements.'),
+      node('p',quality.role_keywords_available ? quality.keyword_matches + ' relevant keyword matches.' :
+        'No sourced or curated keyword list is available for this title.'),
+      node('p',quality.experience_dates_support_level ? 'Selected experience level passes the date check.' :
+        'Check the selected experience level against the supplied employment dates.'));
+  }
   ai('ai-result').hidden=false;
   status('Review the preview before generating.');
 }
