@@ -23,10 +23,9 @@ button,.button{display:inline-block;padding:9px 14px;border:1px solid var(--prim
 .text-link{padding:0;border:0;background:none;color:var(--primary);font-size:.9rem;font-weight:500;text-align:left;text-decoration:underline;text-underline-offset:3px}
 .text-link:hover{color:#16355e}
 
-/* Compact, accessible iPhone / small-screen Resume Builder. Desktop remains unchanged. */
+/* Compact, accessible iPhone / small-screen Resume Builder. Desktop markup and layout are unchanged:
+   builder.js adds the collapsible groups and entry wrappers only at max-width 760px. */
 #history-toggle{display:none}
-#history-content{margin-top:10px}
-#history-content #history-filter{max-width:260px;margin-bottom:10px}
 .optional-details>summary{display:none}
 .optional-details[open]>.fields{margin-top:0}
 .resume-entry{margin:10px 0;border:1px solid var(--line);border-radius:9px;overflow:hidden}
@@ -69,7 +68,8 @@ button,.button{display:inline-block;padding:9px 14px;border:1px solid var(--prim
   #history-toggle{display:inline-block;padding:7px 11px;font-size:.84rem}
   #history-content{display:none}
   #history-content.expanded{display:block}
-  #history-content #history-filter{width:100%;max-width:none}
+  .history:not(.history-open) #history-filter{display:none}
+  .history.history-open #history-filter{order:3;flex-basis:100%;max-width:none}
   .history article{gap:8px;padding:8px 0}
   .history article button{white-space:nowrap}
   .results{margin-top:12px}

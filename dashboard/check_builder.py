@@ -247,6 +247,34 @@ def check(screenshots):
                 assert mobile.evaluate('document.documentElement.scrollWidth <= innerWidth')
                 if screenshots:
                     mobile.screenshot(path=screenshots/'new-mobile.png',full_page=True)
+                # Desktop markup stays exactly as before; the compact layout is phone-only and
+                # survives rotation without losing typed values.
+                wide=browser.new_page(viewport={'width':1360,'height':960})
+                wide.goto(url)
+                expect(wide.get_by_role('heading',name='Create a resume')).to_be_visible()
+                assert wide.locator('.optional-details, .resume-entry').count()==0
+                expect(wide.locator('#history-toggle')).to_be_hidden()
+                expect(wide.get_by_label('Find a resume')).to_be_visible()
+                wide.get_by_label('Target role').select_option('fullstack-developer')
+                wide.get_by_role('button', name='Continue').click()
+                wide.get_by_label('Full name').fill('Rotation Example')
+                wide.get_by_label('Email').fill('rotation@example.com')
+                wide.get_by_label('LinkedIn').fill('https://linkedin.com/in/rotation-example')
+                wide.get_by_role('button', name='Continue').click()
+                wide.get_by_role('button',name='Add experience').click()
+                wide.get_by_label('Employer').fill('Rotation Studio')
+                assert wide.locator('.resume-entry').count()==0
+                desktop_markup=wide.locator('#candidate').evaluate('n => n.innerHTML')
+                wide.set_viewport_size({'width':390,'height':844})
+                expect(wide.locator('#more-personal')).to_have_count(1)
+                expect(wide.locator('.resume-entry > summary')).to_contain_text('Rotation Studio')
+                wide.set_viewport_size({'width':1360,'height':960})
+                expect(wide.locator('.optional-details, .resume-entry')).to_have_count(0)
+                assert wide.locator('[name=linkedin]').input_value()=='https://linkedin.com/in/rotation-example'
+                assert wide.get_by_label('Employer').input_value()=='Rotation Studio'
+                restored=wide.locator('#candidate').evaluate('n => n.innerHTML')
+                assert restored==desktop_markup, 'desktop markup changed after rotation'
+                wide.close()
                 # Operations remains compatible as an internal route, not a second UI in navigation.
                 ops_page = context.new_page()
                 ops_page.goto(url+'/operations')
