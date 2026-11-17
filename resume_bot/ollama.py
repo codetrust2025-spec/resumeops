@@ -30,7 +30,7 @@ class _TopLevelJsonFields:
             if self.quoted:
                 if self.escape:
                     self.escape = False
-                elif char == '\\\\':
+                elif char == '\\':
                     self.escape = True
                 elif char == '"':
                     self.quoted = False
