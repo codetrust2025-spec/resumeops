@@ -8,6 +8,7 @@ import re
 import secrets
 import shutil
 import subprocess
+import stat
 import sys
 import tempfile
 import time
@@ -42,6 +43,17 @@ def read_json(path):
         return None
 
 
+def linked(entry):
+    """Symlink or Windows junction/reparse point, judged from directory-listing data only."""
+    if entry.is_symlink() or getattr(entry, 'is_junction', lambda: False)():
+        return True
+    try:
+        attributes = getattr(entry.stat(follow_symlinks=False), 'st_file_attributes', 0)
+    except OSError:
+        return True
+    return bool(attributes & getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0))
+
+
 def contained(path, directory):
     return path.resolve().is_relative_to(directory.resolve())
 
@@ -56,6 +68,9 @@ class Workspace:
         self.approvals = self.root / 'approvals'
         self._result_cache = {}
         self._revision_lock = Lock()
+        # Resolved once here (it may be a link or on another drive); never per poll.
+        self._output_bases = list(dict.fromkeys(
+            os.path.normcase(os.path.abspath(str(base))) for base in (self.output, self.output.resolve())))
         self.inbox.mkdir(exist_ok=True)
         sys.path.insert(0, str(code_root.resolve() if code_root else self.root))
         from resume_bot.workflow import normalize_request
@@ -226,17 +241,26 @@ class Workspace:
 
     def revision_key(self, output):
         # Pure path arithmetic: the watcher records absolute output paths, so no file is opened here.
-        # Downloads still go through artifact(), which resolves and contains every path it serves.
+        # Downloads still go through artifact(), which resolves and contains every served path.
         if not output:
             return ''
-        path = os.path.normcase(os.path.abspath(output))
-        base = os.path.normcase(os.path.abspath(self.output))
-        try:
-            relative = os.path.relpath(path, base)
-        except ValueError:
-            return ''
-        parts = Path(relative).parts
-        return '/'.join(parts) if len(parts) == 2 and '..' not in parts else ''
+        text = str(output)
+        if text.startswith('\\\\?\\UNC\\'):
+            text = '\\\\' + text[8:]
+        elif text.startswith('\\\\?\\'):
+            text = text[4:]
+        original = os.path.abspath(text)
+        path = os.path.normcase(original)
+        for base in self._output_bases:
+            try:
+                relative = os.path.relpath(path, base)
+            except ValueError:
+                continue
+            parts = Path(relative).parts
+            if len(parts) == 2 and '..' not in parts:
+                # Keep the on-disk case of the two folder names; listing keys use it.
+                return '/'.join(Path(original).parts[-2:])
+        return ''
 
     def _revisions(self):
         """List verified revisions with one directory listing per folder and cached result.json.
@@ -249,7 +273,7 @@ class Workspace:
             try:
                 with os.scandir(folder) as entries:
                     return [entry for entry in entries if entry.is_dir(follow_symlinks=False)
-                            and not entry.is_symlink() and not getattr(entry, 'is_junction', lambda: False)()]
+                            and not linked(entry)]
             except OSError:
                 return []
 
@@ -258,7 +282,7 @@ class Workspace:
                 try:
                     with os.scandir(revision.path) as entries:
                         files = {entry.name: entry for entry in entries
-                                 if entry.is_file(follow_symlinks=False) and not entry.is_symlink()}
+                                 if entry.is_file(follow_symlinks=False) and not linked(entry)}
                 except OSError:
                     continue
                 entry = files.get('result.json')
@@ -272,7 +296,9 @@ class Workspace:
                 cached = self._result_cache.get(entry.path)
                 if cached is None or cached[0] != stamp:
                     cached = (stamp, read_json(Path(entry.path)))
-                    self._result_cache[entry.path] = cached
+                    if isinstance(cached[1], dict):
+                        # A failed read (scanner or watcher lock) is retried on the next poll.
+                        self._result_cache[entry.path] = cached
                 seen.add(entry.path)
                 result = cached[1]
                 if not isinstance(result, dict):

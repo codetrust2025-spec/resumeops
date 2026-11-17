@@ -84,6 +84,91 @@ class StatusScanTests(unittest.TestCase):
         self.assertEqual(self.workspace.revision_key(''), '')
 
 
+class StatusScanReviewTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+
+    def test_failed_result_read_is_retried_on_the_next_poll(self):
+        workspace = Workspace(self.root, code_root=ROOT)
+        workspace.output.mkdir()
+        make_revision(workspace.output, 'cand', 'abc123def456')
+        real = resume_dashboard.read_json
+        with patch.object(resume_dashboard, 'read_json',
+                          side_effect=lambda path: None if path.name == 'result.json' else real(path)):
+            self.assertEqual(workspace.status()['revisions'], [])
+        self.assertEqual([item['key'] for item in workspace.status()['revisions']], ['cand/abc123def456'])
+
+    @unittest.skipUnless(hasattr(os, 'symlink'), 'symlinks unavailable')
+    def test_revision_key_when_output_is_a_link(self):
+        storage = self.root / 'storage'
+        storage.mkdir()
+        data = self.root / 'data'
+        data.mkdir()
+        os.symlink(storage, data / 'output')
+        workspace = Workspace(data, code_root=ROOT)
+        real_output = storage / 'cand' / 'abc123def456'
+        self.assertEqual(workspace.revision_key(str(real_output)), 'cand/abc123def456')
+        self.assertEqual(workspace.revision_key(str(data / 'output' / 'cand' / 'abc123def456')), 'cand/abc123def456')
+        self.assertEqual(workspace.revision_key(str(storage / 'cand')), '')
+
+    def test_revision_key_windows_path_forms(self):
+        import ntpath
+        from pathlib import PureWindowsPath
+        workspace = Workspace(self.root, code_root=ROOT)
+        workspace._output_bases = [ntpath.normcase(r'C:\Users\codet\AI_Resume_Builder_v2_Windows\output'),
+                                   ntpath.normcase(r'D:\store\output')]
+        cases = {
+            r'C:\Users\codet\AI_Resume_Builder_v2_Windows\output\cand\abc': 'cand/abc',
+            r'c:\users\CODET\AI_Resume_Builder_v2_Windows\OUTPUT\cand\abc': 'cand/abc',
+            r'\\?\C:\Users\codet\AI_Resume_Builder_v2_Windows\output\cand\abc': 'cand/abc',
+            r'D:\store\output\cand\abc': 'cand/abc',
+            r'E:\elsewhere\cand\abc': '',
+            r'C:\Users\codet\AI_Resume_Builder_v2_Windows\output\cand': '',
+            r'C:\Users\codet\AI_Resume_Builder_v2_Windows\output\..\x\y': '',
+            r'C:\Users\codet\AI_Resume_Builder_v2_Windows\output\Cand\ABC': 'Cand/ABC',
+            r'\\?\UNC\server\share\output\cand\abc': '',
+        }
+        with patch.object(resume_dashboard.os, 'path', ntpath), patch.object(resume_dashboard, 'Path', PureWindowsPath):
+            for raw, expected in cases.items():
+                with self.subTest(raw=raw):
+                    self.assertEqual(workspace.revision_key(raw), expected)
+
+    def test_reparse_points_are_skipped_without_opening_them(self):
+        class Info:
+            st_file_attributes = 0x400  # FILE_ATTRIBUTE_REPARSE_POINT
+
+        class Entry:
+            def is_symlink(self):
+                return False
+
+            def is_junction(self):
+                return False
+
+            def stat(self, follow_symlinks=True):
+                return Info()
+
+        with patch.object(resume_dashboard.stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400, create=True):
+            self.assertTrue(resume_dashboard.linked(Entry()))
+            Info.st_file_attributes = 0x10
+            self.assertFalse(resume_dashboard.linked(Entry()))
+
+    def test_status_with_finished_jobs_opens_no_handles(self):
+        workspace = Workspace(self.root, code_root=ROOT)
+        workspace.output.mkdir()
+        state = {}
+        for index in range(10):
+            folder = make_revision(workspace.output, f'cand-{index}', f'{index:012x}')
+            name = f'cand-{index}-{index:064x}.json'
+            (workspace.inbox / name).write_text('{}')
+            state[name] = {'status': 'ok', 'last_attempt': 4102444800, 'output': str(folder)}
+        (workspace.inbox / '.resume-bot-state.json').write_text(json.dumps(state))
+        with patch.object(Path, 'resolve', side_effect=AssertionError('status must not resolve paths')):
+            jobs = workspace.status()['jobs']
+        self.assertEqual(sorted(job['revision'] for job in jobs), sorted(f'cand-{i}/{i:012x}' for i in range(10)))
+
+
 class SupervisorToleranceTests(unittest.TestCase):
     def test_single_slow_probe_does_not_restart_the_dashboard(self):
         import dashboard_supervisor as supervisor
