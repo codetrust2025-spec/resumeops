@@ -331,9 +331,14 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 identity = 'loopback'
             return hashlib.sha256((request_origin + '\0' + identity).encode('utf-8')).hexdigest()
 
+        def account_matches(self, request_origin):
+            expected = self.headers.get('X-Resume-Owner')
+            return expected is None or secrets.compare_digest(expected.encode('utf-8'),
+                                                               (self.session_owner(request_origin) or '').encode('utf-8'))
+
         def do_GET(self):
             request_origin = self.request_origin()
-            if request_origin is None:
+            if request_origin is None or not self.account_matches(request_origin):
                 return self.send_json({'error': 'Dashboard access denied for this address or session.'}, 403)
             url = urlsplit(self.path)
             query = parse_qs(url.query)
@@ -423,6 +428,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                     or self.headers.get('Origin') != request_origin
                     or not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token)):
                 return self.send_json({'error': 'Request not authorized.'}, 403)
+            if not self.account_matches(request_origin):
+                return self.send_json({'error': 'Dashboard access denied for this session.'}, 403)
             drafting = self.path == '/api/draft'
             from resume_bot.ollama import OllamaError
             extension = self.headers.get('X-Resume-Extension', '').lower()

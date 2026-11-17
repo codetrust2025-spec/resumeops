@@ -15,7 +15,8 @@
     listeners.forEach(listener => listener(value));
   }
   function headers(extra) {
-    return {...extra, 'X-Requested-With':'XMLHttpRequest','X-Dashboard-Token':token};
+    return {...extra, 'X-Requested-With':'XMLHttpRequest','X-Dashboard-Token':token,
+      ...(owner ? {'X-Resume-Owner':owner} : {})};
   }
   async function expired(response) {
     if (response.type === 'opaqueredirect' || response.redirected || response.status === 401) return true;
@@ -26,7 +27,7 @@
     return response.ok && response.headers.get('Content-Type')?.includes('text/html');
   }
   async function session() {
-    const response = await fetch('/api/session', {headers:headers(), redirect:'manual', credentials:'same-origin',
+    const response = await fetch('/api/session', {headers:{'X-Requested-With':'XMLHttpRequest'}, redirect:'manual', credentials:'same-origin',
       cache:'no-store', signal:AbortSignal.timeout(12000)});
     if (await expired(response)) return null;
     if (!response.ok) throw new Error('Could not check the ResumeOps session.');
