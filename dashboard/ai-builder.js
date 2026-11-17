@@ -14,6 +14,17 @@ const collections = [
   ['coding_platforms','Coding platforms',[['platform','Platform'],['url','Platform URL','url']]]
 ];
 const state = {};
+const panels = ['ai-intake','ai-review','ai-result'];
+async function claimEditor() {
+  return new Promise((resolve,reject) => {
+    navigator.locks.request('resumeops-ai-editor:' + ResumeAuth.owner, {ifAvailable:true}, lock => {
+      resolve(Boolean(lock));
+      if (lock) return new Promise(release => {
+        window.addEventListener('pagehide',release,{once:true});
+      });
+    }).catch(reject);
+  });
+}
 let active = false;
 const pause = () => new Promise(resolve => setTimeout(resolve, 1200));
 const newId = () => crypto.randomUUID().replaceAll('-','');
@@ -87,8 +98,12 @@ function handle(action) {
     event?.preventDefault();
     if (active) return;
     active = true;
+    for (const panel of panels) ai(panel).inert = true;
     try { await action(); } catch(error) {status(error.message);}
-    finally {active = false;}
+    finally {
+      for (const panel of panels) ai(panel).inert = false;
+      active = false;
+    }
   };
 }
 async function poll(id) {
@@ -114,8 +129,8 @@ async function importFile() {
     await save();
   }
   const {profile} = await poll(job.id);
-  const next = intake();
-  for (const [key] of basic) if (profile[key]) next[key] = profile[key];
+  const next = Object.fromEntries(basic.map(([key]) => [key,profile[key] || '']));
+  next.role = intake().role;
   next.work_experience = (profile.experience || []).map(item => Object.fromEntries(
     collections[0][2].map(([field]) => [field,item[field] || ''])));
   next.education = (profile.education || []).map(item => ({degree:item.degree,
@@ -186,10 +201,24 @@ function selected() {
 async function preview() {
   const {profile,ats} = await api('/api/ai-review',{id:state.draft.id,approval:state.approval});
   const view=ai('ai-preview-content');
-  view.replaceChildren(node('h3',profile.full_name),node('p',profile.summary),node('p',profile.skills.join(', ')));
-  for (const item of profile.experience) view.append(node('h4',item.position + ' - ' + item.company),
-    ...item.bullets.map(text => node('p',text)));
-  for (const text of profile.projects || []) view.append(node('p',text));
+  view.replaceChildren(node('h3',profile.full_name),
+    node('p',[profile.email,profile.phone,profile.location,profile.linkedin,profile.github,profile.portfolio].filter(Boolean).join(' | ')));
+  if (profile.current_company) view.append(node('p','Current company: ' + profile.current_company));
+  function section(title, entries) {
+    if (entries.length) view.append(node('h4',title),...entries);
+  }
+  section('Professional summary',profile.summary ? [node('p',profile.summary)] : []);
+  section('Skills and competencies',profile.skills.map(text => node('p',text)));
+  section('Work experience',profile.experience.flatMap(item => [
+    node('h5',item.position + ' - ' + item.company),
+    node('p',[item.start,item.end,item.location].filter(Boolean).join(' | ')),
+    ...item.bullets.map(text => node('p',text))]));
+  section('Education',profile.education.map(item => node('p',
+    [item.degree,item.institution,item.end,item.details].filter(Boolean).join(' | '))));
+  for (const [key,title] of [['projects','Projects'],['achievements','Achievements'],
+    ['certifications','Certifications'],['coding_platforms','Coding platforms']]) {
+    section(title,(profile[key] || []).map(text => node('p',text)));
+  }
   view.append(node('p','ATS readiness: ' + ats.ats_readiness + '/100'),
     node('p','Matched: ' + ats.matched.join(', ')),node('p','Missing: ' + ats.missing.join(', ')),
     ...ats.breakdown.map(part => node('p',part.label + ': ' + part.points + '/' + part.max)),
@@ -198,12 +227,18 @@ async function preview() {
   status('Review the preview before generating.');
 }
 async function queue() {
-  const result = await api('/api/ai-queue',{id:state.draft.id,approval:state.approval});
+  const result = await api('/api/ai-queue',state.queuing);
   await ResumeRecovery.put('job',{name:result.name,queued:Date.now()});
   await ResumeRecovery.remove('ai-builder');
   location.assign('/workflow');
 }
 async function init() {
+  await ResumeAuth.ready();
+  if (!await claimEditor()) {
+    ai('ai-intake').hidden = true;
+    status('The AI builder is open in another tab. Close it and reload to continue here.');
+    return;
+  }
   ResumeAuth.onBeforeRenewal(save);
   for (const field of basic) ai('ai-basics').append(control(field));
   for (const [key,title,fields] of collections) {
@@ -217,6 +252,7 @@ async function init() {
   roles.replaceChildren(new Option('Choose role',''),...catalog.roles.map(role => new Option(role.name,role.id)));
   Object.assign(state,await ResumeRecovery.read('ai-builder'));
   if (state.intake) fill(state.intake);
+  if (state.queuing === true) state.queuing={id:state.draft.id,approval:state.approval};
   ai('ai-form').addEventListener('input',() => save().catch(error => status(error.message)));
   ai('ai-form').addEventListener('submit',handle(async () => {
     state.draft={id:newId(),candidate:intake(),import_id:state.importId};
@@ -243,7 +279,9 @@ async function init() {
     state.approval=selected(); await save(); await preview();
   }));
   ai('ai-generate').addEventListener('click',handle(async () => {
-    state.queuing=true; await save(); await queue();
+    state.queuing={id:state.draft.id,approval:structuredClone(state.approval)};
+    await save();
+    await queue();
   }));
   ai('ai-back').addEventListener('click',() => {
     delete state.draft; delete state.approval; delete state.edits;

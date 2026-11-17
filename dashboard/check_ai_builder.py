@@ -31,7 +31,8 @@ def check():
             try:
                 with patch('resume_bot.ollama.Ollama.generate', return_value=DRAFT), sync_playwright() as pw:
                     browser = pw.chromium.launch()
-                    page = browser.new_page(viewport={'width': 390, 'height': 844}, is_mobile=True)
+                    context = browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True)
+                    page = context.new_page()
                     access = {'armed': True, 'expired': False, 'renewed': False}
 
                     def route_access(route):
@@ -47,6 +48,25 @@ def check():
                     page.context.route(origin + '/**', route_access)
                     page.add_init_script('window.open = () => null')
                     page.goto(origin + '/')
+                    page.get_by_label('Full name').fill('Previous Candidate')
+                    page.get_by_label('Phone').fill('555-0101')
+                    second = page.context.new_page()
+                    second.goto(origin + '/')
+                    expect(second.get_by_role('status')).to_contain_text('open in another tab')
+                    assert not second.get_by_label('Full name').count()
+                    second.close()
+
+                    fixture = {'profile': {'full_name': 'AI First Synthetic', 'email': 'ai-first@example.com'},
+                               'source': 'AI First Synthetic, ai-first@example.com'}
+                    access['armed'] = False
+                    with patch.object(workspace, 'draft', return_value=fixture):
+                        page.locator('#ai-file').set_input_files({'name': 'synthetic.txt', 'mimeType': 'text/plain',
+                                                                  'buffer': b'Synthetic resume'})
+                        page.get_by_role('button', name='Import details').click()
+                        expect(page.get_by_role('status')).to_contain_text('Details imported')
+                    expect(page.get_by_label('Full name')).to_have_value('AI First Synthetic')
+                    expect(page.get_by_label('Phone')).to_have_value('')
+                    access['armed'] = True
                     page.get_by_label('Target role').select_option('fullstack-developer')
                     page.get_by_label('Total years of experience').fill('0')
                     page.get_by_label('Full name').fill('AI First Synthetic')
@@ -66,6 +86,7 @@ def check():
                     page.get_by_label('I confirm the candidate details and selected statements are accurate.').check()
                     page.get_by_role('button', name='Preview and check ATS').click()
                     expect(page.get_by_text('ATS readiness:', exact=False)).to_be_visible()
+                    expect(page.get_by_text('BSc | Example University', exact=True)).to_be_visible()
                     assert not list(workspace.inbox.glob('*.json'))
                     request = page.evaluate("""async () => {
                       const saved = await ResumeRecovery.read('ai-builder');
