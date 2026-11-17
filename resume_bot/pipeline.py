@@ -19,7 +19,7 @@ from .progress import LegacyTracker, Tracker
 from .storage import workspace_lock, write_json
 from .profile import ProfileError, validate_profile
 from .workflow import (ROLES, DatabaseUnavailable, analyze, experience_evidence, normalize_request,
-                       flush_outbox, persist_analysis, role_keywords)
+                       flush_outbox, persist_analysis, role_keywords, role_name)
 
 
 def _ignore_progress(percent, stage, candidate_name=None):
@@ -233,7 +233,7 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
         t.enter('ai', 'Waiting for Ollama to load the model and read the prompt')
         profile, audit['polish'] = polish(
             profile, ai, on_progress=_ai_progress(t, 'Tailoring resume with Ollama'),
-            role=ROLES[target['role']]['name'] if target else None, keywords=keywords, years=years)
+            role=role_name(target) if target else None, keywords=keywords, years=years)
         runtime = ai.runtime() if hasattr(ai, 'runtime') else None
         audit['ollama_runtime'] = runtime
         if runtime and hasattr(t, 'extra'):

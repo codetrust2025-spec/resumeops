@@ -108,3 +108,39 @@ and only learns new checks when its process restarts. The release therefore ship
 4. Backup existing candidates/history; verify idle imports; use supervisor rollback.
 5. Test at least three synthetic profiles: fresher, 2–3 years, 8+ years, plus real imported documents through Cloudflare Access.
 6. Verify only confirmed claims are in PDFs and that final generated content is tailored, useful and not fabricated. Report remaining Naukri-source and real-iPhone gaps honestly.
+## Optional public job-market sources
+
+The AI builder accepts job titles directly and suggests the classic catalog roles.
+It sends no candidate data to public job boards. An operator may place a private
+`market-sources.json` at the project data root:
+
+```json
+{
+  "greenhouse_boards": ["your-employer-board-token"],
+  "authorized_postings": [
+    {
+      "title": "Warehouse Planning Manager",
+      "description": "Experience with inventory forecasting and workforce planning.",
+      "url": "https://example.com/jobs/warehouse-planning-manager",
+      "retrieved_at": "2026-11-18T08:00:00+05:30"
+    }
+  ]
+}
+```
+
+Set each retrieval timestamp to its actual value. The system excludes entries over
+30 days old, selects similar titles, extracts role terms and requirement excerpts,
+and attaches source URLs, retrieval dates and title relevance to the review.
+Absent a relevant source, it uses the matching curated catalog family where
+available. For unrelated titles it leaves the keyword list empty.
+
+The Greenhouse Job Board API is read-only here. The locally supplied entries allow
+authorized exports or lawfully obtained descriptions, including Naukri when the
+operator has permission. ResumeOps does not automate requests to Naukri. The
+approval record retains the research used for review. Employer wording guides
+drafting but never supplies candidate claims.
+
+The candidate form still requests the same fourteen categories. Approved
+competencies appear in a dedicated PDF section. Work and project claims cannot
+repeat the same wording, and recognized technologies require resume evidence or
+a confirmed skill in addition to approval of the individual bullet.

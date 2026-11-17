@@ -35,7 +35,7 @@ def validate_profile(data):
     if not isinstance(data, dict):
         raise ProfileError('Profile must be a JSON object')
     accepted = {'full_name', 'headline', 'email', 'phone', 'location', 'linkedin', 'github',
-                'summary', 'skills', 'experience', 'education', 'certifications', 'projects', 'portfolio', 'current_company', 'achievements', 'coding_platforms'}
+                'summary', 'skills', 'experience', 'education', 'certifications', 'projects', 'portfolio', 'current_company', 'achievements', 'coding_platforms', 'competencies'}
     extra = set(data) - accepted
     if extra:
         raise ProfileError('Unknown fields: ' + ', '.join(sorted(extra)))
@@ -85,7 +85,7 @@ def validate_profile(data):
             raise ProfileError('Projects: expected up to 30 entries')
         if projects:
             out['projects'] = [_string(item, 'projects[]', True) for item in projects]
-    for field in ('achievements', 'coding_platforms'):
+    for field in ('achievements', 'coding_platforms', 'competencies'):
         if field in data:
             items = data[field]
             if not isinstance(items, list) or len(items) > 40:

@@ -43,9 +43,10 @@ function button(text, action) {
 }
 function control([key, label, type], value = '') {
   const wrapper = node('label',label);
-  const input = node(key === 'role' ? 'select' : 'input');
+  const input = node('input');
   input.name = key;
-  if (key !== 'role') input.type = type || 'text';
+  input.type = type || 'text';
+  if (key === 'role') { input.setAttribute('list','ai-roles'); input.maxLength=100; }
   input.value = value;
   if (key === 'years_of_experience') {
     input.min='0'; input.max='60'; input.step='0.5';
@@ -178,10 +179,20 @@ function renderReview(draft) {
   ai('ai-sources').replaceChildren(node('h3','Role research'));
   for (const source of draft.intelligence.sources) {
     const label = node(source.url ? 'a' : 'span',source.label);
-    if (source.url) label.href=source.url;
+    if (source.url) { label.href=source.url; label.rel='noopener noreferrer'; label.target='_blank'; }
     const line = node('p');
     line.append(label,document.createTextNode(source.terms.length ? ': ' + source.terms.join(', ') : ''));
+    if (source.provider) line.append(document.createTextNode(
+      ' (' + source.provider + ', retrieved ' + source.retrieved_at.slice(0,10) + ', title relevance ' + source.relevance + '%)'));
     ai('ai-sources').append(line);
+    if (source.responsibilities?.length) {
+      const details=node('details');
+      details.append(node('summary','Requirements and responsibilities'));
+      const list=node('ul');
+      for (const item of source.responsibilities) list.append(node('li',item));
+      details.append(list);
+      ai('ai-sources').append(details);
+    }
   }
 }
 async function draftContent() {
@@ -203,7 +214,7 @@ function selected() {
   return {attested:ai('ai-attest').checked,claims};
 }
 async function preview() {
-  const {profile,ats} = await api('/api/ai-review',{id:state.draft.id,approval:state.approval});
+  const {profile,ats,quality} = await api('/api/ai-review',{id:state.draft.id,approval:state.approval});
   const view=ai('ai-preview-content');
   view.replaceChildren(node('h3',profile.full_name),
     node('p',[profile.email,profile.phone,profile.location,profile.linkedin,profile.github,profile.portfolio].filter(Boolean).join(' | ')));
@@ -212,7 +223,8 @@ async function preview() {
     if (entries.length) view.append(node('h4',title),...entries);
   }
   section('Professional summary',profile.summary ? [node('p',profile.summary)] : []);
-  section('Skills and competencies',profile.skills.map(text => node('p',text)));
+  section('Technical skills',profile.skills.map(text => node('p',text)));
+  section('Core competencies',(profile.competencies || []).map(text => node('p',text)));
   section('Work experience',profile.experience.flatMap(item => [
     node('h5',item.position + ' - ' + item.company),
     node('p',[item.start,item.end,item.location].filter(Boolean).join(' | ')),
@@ -227,6 +239,15 @@ async function preview() {
     node('p','Matched: ' + ats.matched.join(', ')),node('p','Missing: ' + ats.missing.join(', ')),
     ...ats.breakdown.map(part => node('p',part.label + ': ' + part.points + '/' + part.max)),
     ...ats.suggestions.map(tip => node('p',tip)));
+  if (quality) {
+    view.append(node('h4','Review checks'),
+      node('p','Target role: ' + quality.role_title),
+      node('p',quality.verified_claims + ' candidate-approved statements.'),
+      node('p',quality.role_keywords_available ? quality.keyword_matches + ' relevant keyword matches.' :
+        'No sourced or curated keyword list is available for this title.'),
+      node('p',quality.experience_dates_support_level ? 'Selected experience level passes the date check.' :
+        'Check the selected experience level against the supplied employment dates.'));
+  }
   ai('ai-result').hidden=false;
   status('Review the preview before generating.');
 }
@@ -251,9 +272,11 @@ async function init() {
     section.append(node('h3',title),list,button('Add '+title.toLowerCase(),() => addEntry(key,fields)));
     ai('ai-lists').append(section);
   }
-  const roles = ai('ai-basics').querySelector('select');
+  const roles = node('datalist');
+  roles.id='ai-roles';
+  ai('ai-basics').append(roles);
   const catalog = await api('/api/catalog');
-  roles.replaceChildren(new Option('Choose role',''),...catalog.roles.map(role => new Option(role.name,role.id)));
+  roles.replaceChildren(...catalog.roles.map(role => new Option(role.name,role.name)));
   Object.assign(state,await ResumeRecovery.read('ai-builder'));
   if (state.intake) fill(state.intake);
   if (state.queuing === true) state.queuing={id:state.draft.id,approval:state.approval};

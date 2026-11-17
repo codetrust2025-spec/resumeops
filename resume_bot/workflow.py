@@ -29,14 +29,18 @@ def normalize_request(payload):
     if set(payload) != {'profile', 'target'} or not isinstance(payload['target'], dict):
         raise ProfileError('Expected a candidate profile and target')
     target = payload['target']
-    if set(target) - {'role', 'keywords', 'template', 'experience_years', 'approved'}:
+    if set(target) - {'role', 'keywords', 'template', 'experience_years', 'approved', 'role_title'}:
         raise ProfileError('Unknown target option')
     if 'approved' in target and target['approved'] is not True:
         raise ProfileError('Approval marker must be true when present')
     role = target.get('role', '')
     template = target.get('template', 'standard')
     keywords = target.get('keywords', [])
-    if not isinstance(role, str) or role not in ROLES:
+    title = target.get('role_title')
+    if role == 'custom':
+        if not isinstance(title, str) or not valid_role_title(title):
+            raise ProfileError('Enter a valid target job title')
+    elif not isinstance(role, str) or role not in ROLES or title is not None:
         raise ProfileError('Select a target role')
     if not isinstance(template, str) or template not in TEMPLATES:
         raise ProfileError('Select a supported resume template')
@@ -47,6 +51,8 @@ def normalize_request(payload):
     normalized = {
         'role': role, 'template': template, 'keywords': keywords
     }
+    if role == 'custom':
+        normalized['role_title'] = ' '.join(title.split())
     if years is not None:
         normalized['experience_years'] = years
     if target.get('approved') is True:
@@ -123,9 +129,18 @@ def experience_evidence(profile, target, today=None):
             'supported': supported}
 
 
+def valid_role_title(value):
+    return len(value.strip()) <= 100 and any(char.isalpha() for char in value) and not any(
+        ord(char) < 32 or ord(char) == 127 for char in value)
+
+
+def role_name(target):
+    return ROLES[target['role']]['name'] if target['role'] in ROLES else target['role_title']
+
+
 def role_keywords(target):
     return list({term.casefold(): term for term in
-                 [*ROLES[target['role']]['keywords'], *target['keywords']]}.values())
+                 [*ROLES.get(target['role'], {}).get('keywords', []), *target.get('keywords', [])]}.values())
 
 
 def matched_terms(terms, text):
@@ -137,6 +152,7 @@ def matched_terms(terms, text):
 def analyze(profile, target, keywords=None, today=None):
     keywords = role_keywords(target) if keywords is None else keywords
     evidence = [profile['headline'], profile['summary'], *profile['skills'], *profile['certifications']]
+    evidence.extend(profile.get('competencies', []))
     evidence.extend(profile.get('projects', []))
     evidence.extend(profile.get('achievements', []))
     for entry in profile['experience']:
@@ -174,6 +190,7 @@ def analyze(profile, target, keywords=None, today=None):
         suggestions.append('Review missing terms and add only those supported by the candidate’s experience.')
     return {
         'role': target['role'],
+        **({'role_title': target['role_title']} if 'role_title' in target else {}),
         'template': target['template'],
         'score': coverage,
         'ats_readiness': sum(part['points'] for part in breakdown),
@@ -194,6 +211,9 @@ def _records(report):
                 'score': ats['score']}
     if 'ats_readiness' in ats:
         analysis['ats_readiness'] = ats['ats_readiness']
+    if role not in ROLES:
+        analysis['role_title'] = ats.get('role_title', '')
+        return [('resume_analyses', analysis)]
     return [('role_keywords', {'_id': role, 'name': ROLES[role]['name'], 'keywords': ROLES[role]['keywords']}),
             ('resume_analyses', analysis)]
 
