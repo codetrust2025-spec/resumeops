@@ -16,7 +16,7 @@ from resume_dashboard import Workspace, handler
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from resume_bot.ingest import read_resume_text
-from resume_bot.claim_audit import claim_violations, unaccounted_pdf_words
+from resume_bot.claim_audit import claim_violations, matches_pdf_text
 from resume_bot.pipeline import scan
 
 DRAFT = {
@@ -31,7 +31,7 @@ DRAFT = {
 
 def verify_completed(page, workspace, candidate, *, education_first, builder):
     job = next(path for path in workspace.inbox.glob('*.json')
-               if json.loads(path.read_text(encoding='utf-8'))['profile']['full_name'] == candidate)
+               if json.loads(path.read_text(encoding='utf-8')).get('profile', {}).get('full_name') == candidate)
     request = json.loads(job.read_text(encoding='utf-8'))
     assert request['target']['approved'] is True
     # Production runs the watcher with AI polishing on; approved resumes must still bypass it.
@@ -47,7 +47,8 @@ def verify_completed(page, workspace, candidate, *, education_first, builder):
     pdf.value.save_as(downloaded)
     text = read_resume_text(downloaded)
     assert candidate in text and 'Python' in text, text
-    assert not unaccounted_pdf_words(text, request['profile']), (unaccounted_pdf_words(text, request['profile']), text)
+    years = 0 if education_first else request['target']['experience_years']
+    assert matches_pdf_text(text, request['profile'], years), text
     for excluded in ('Unconfirmed Vendor Tool', 'Increased revenue', 'Unbuilt portfolio idea',
                      'Unearned certification', 'Testing', DRAFT['professional_summary']):
         assert excluded not in text, (excluded, text)

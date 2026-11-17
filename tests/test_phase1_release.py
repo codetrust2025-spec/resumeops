@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / 'dashboard'))
 import dashboard_supervisor  # noqa: E402
 from durable_imports import RETENTION, DurableImports  # noqa: E402
 from resume_dashboard import Workspace, handler  # noqa: E402
-from resume_bot.claim_audit import claim_violations, unaccounted_pdf_words
+from resume_bot.claim_audit import claim_violations, matches_pdf_text
 from resume_bot.profile import ProfileError
 from resume_bot.workflow import normalize_request
 
@@ -32,7 +32,7 @@ CLAIMS = [
     {'id': '1', 'section': 'Skill', 'text': 'Python', 'provenance': 'verified_from_source', 'candidate_confirmed': True},
     {'id': '2', 'section': 'Skill', 'text': 'SQL', 'provenance': 'unsupported_role_keyword', 'candidate_confirmed': True},
     {'id': '3', 'section': 'Responsibility', 'text': 'Maintained billing APIs',
-     'provenance': 'candidate_confirmed', 'candidate_confirmed': True},
+     'provenance': 'candidate_confirmed', 'candidate_confirmed': True, 'index': 0},
 ]
 REQUEST = {'profile': PROFILE, 'target': {'role': 'backend-developer', 'template': 'standard', 'experience_years': 5}}
 
@@ -61,15 +61,29 @@ class ApprovedRequestTests(unittest.TestCase):
     def test_approved_resume_is_rendered_without_ai_rewording(self):
         from resume_bot.pipeline import process
         with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / 'job.json'
-            source.write_text(json.dumps({**REQUEST, 'target': {**REQUEST['target'], 'approved': True}}))
+            workspace = Workspace(Path(directory), code_root=ROOT)
+            queued = workspace.enqueue(json.dumps(REQUEST).encode(), approval=approval())
+            source = workspace.inbox / queued['name']
             with patch('resume_bot.pipeline.polish', side_effect=AssertionError('approved resume was reworded')):
                 result = process(source, Path(directory) / 'output', polish_enabled=True)
             self.assertEqual(result['model'], 'disabled')
-            self.assertEqual(result['pdf_checks']['approved_claim_audit'], 'passed')
+            self.assertIs(result['pdf_checks']['approved_claims_match'], True)
             profile = json.loads((Path(result['output']) / 'profile.json').read_text())
             self.assertEqual(profile['summary'], PROFILE['summary'])
             self.assertEqual(profile['experience'][0]['bullets'], PROFILE['experience'][0]['bullets'])
+
+
+    def test_watcher_rejects_approved_job_with_missing_attestation(self):
+        from resume_bot.compile import BuildError
+        from resume_bot.pipeline import process
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Workspace(Path(directory), code_root=ROOT)
+            result = workspace.enqueue(json.dumps(REQUEST).encode(), approval=approval())
+            record_path = next(workspace.approvals.rglob('*.json'))
+            record_path.unlink()
+            with self.assertRaisesRegex(BuildError, 'approval is missing'):
+                process(workspace.inbox / result['name'], workspace.output, polish_enabled=False)
+            self.assertFalse(list(workspace.output.rglob('resume.pdf')))
 
 
 class ApprovalRecordTests(unittest.TestCase):
@@ -133,10 +147,12 @@ class ClaimAuditTests(unittest.TestCase):
         pdf = ('Phase One Synthetic\nphase1@example.com\nPROFESSIONAL SUMMARY\nEngineer focused on Python\n'
                'services.\nTECHNICAL SKILLS\nSkills: Python • SQL\nPROFESSIONAL EXPERIENCE\nEngineer | Example Co\n'
                'Jan 2020 – Present\n• Maintained billing APIs\nEDUCATION\nBSc | Example University\n2019')
-        self.assertEqual(unaccounted_pdf_words(pdf, PROFILE), [])
-        self.assertEqual(unaccounted_pdf_words(pdf + '\n• Led a team of 40 engineers', PROFILE),
-                         ['led', 'team', 'of', '40', 'engineers'])
-        self.assertEqual(unaccounted_pdf_words(pdf.replace('Python •', 'Pythonic •'), PROFILE), ['pythonic'])
+        profile = normalize_request(REQUEST)[0]
+        self.assertTrue(matches_pdf_text(pdf, profile, 5))
+        self.assertFalse(matches_pdf_text(pdf + '\nLed a team of 40 engineers', profile, 5))
+        self.assertFalse(matches_pdf_text(pdf.replace('Maintained billing APIs', 'Maintained APIs billing'), profile, 5))
+        self.assertFalse(matches_pdf_text(pdf.replace('Maintained billing APIs', ''), profile, 5))
+
 
 
 class AccessStub:
@@ -209,6 +225,17 @@ class ShippedPageTests(unittest.TestCase):
 
 
 class WatcherClaimAuditTests(unittest.TestCase):
+    def test_tex_ligature_sequences_in_approved_text_still_match_the_real_pdf(self):
+        from resume_bot.pipeline import process
+        summary = "Led the ``Zero downtime'' migration in 2019--2020 --- and later 'C++' work."
+        profile = {**PROFILE, 'summary': summary}
+        claims = [{**CLAIMS[0], 'text': summary}, *CLAIMS[1:]]
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Workspace(Path(directory), code_root=ROOT)
+            queued = workspace.enqueue(json.dumps({**REQUEST, 'profile': profile}).encode(), approval=approval(claims))
+            result = process(workspace.inbox / queued['name'], workspace.output, polish_enabled=True)
+            self.assertIs(result['pdf_checks']['approved_claims_match'], True)
+
     def test_watcher_fails_an_approved_job_whose_pdf_has_unapproved_text(self):
         from resume_bot import pipeline
         real = pipeline.render
@@ -217,18 +244,19 @@ class WatcherClaimAuditTests(unittest.TestCase):
             return real(profile, template, years).replace('\\end{document}', 'Led a team of 40 engineers\n\\end{document}')
 
         with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / 'job.json'
-            source.write_text(json.dumps({**REQUEST, 'target': {**REQUEST['target'], 'approved': True}}))
+            workspace = Workspace(Path(directory), code_root=ROOT)
+            queued = workspace.enqueue(json.dumps(REQUEST).encode(), approval=approval())
             with patch('resume_bot.pipeline.render', side_effect=injected):
-                with self.assertRaisesRegex(Exception, 'unapproved text: led team of 40 engineers'):
-                    pipeline.process(source, Path(directory) / 'output', polish_enabled=True)
+                with self.assertRaisesRegex(Exception, 'differs from the candidate-approved resume'):
+                    pipeline.process(workspace.inbox / queued['name'], workspace.output, polish_enabled=True)
+            self.assertFalse(list(workspace.output.rglob('resume.pdf')))
             plain = Path(directory) / 'plain.json'
             plain.write_text(json.dumps(REQUEST))
             with patch('resume_bot.pipeline.render', side_effect=injected), \
                     patch('resume_bot.pipeline.polish', side_effect=lambda profile, *a, **k: (profile, {'changed': 0, 'rejected': 0})):
                 # Non-approved jobs keep their existing checks; the claim audit is only for approved resumes.
                 result = pipeline.process(plain, Path(directory) / 'output', polish_enabled=False)
-            self.assertNotIn('approved_claim_audit', result['pdf_checks'])
+            self.assertNotIn('approved_claims_match', result['pdf_checks'])
 
 if __name__ == '__main__':
     unittest.main()

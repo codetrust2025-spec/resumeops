@@ -12,6 +12,7 @@ from .ollama import Ollama, OllamaError
 from .ingest import ExtractionError, extract_profile, read_resume_text
 from .latex import render
 from .polish import polish, safe_edit, verify_tailored
+from .claim_audit import claim_violations, matches_pdf_text, records_for
 from .compile import BuildError, compile_latex, verify_pdf, verify_remote_pdf
 from .overleaf import OVERLEAF_STEP_COUNT, OverleafAuthError, OverleafError, import_zip
 from .progress import LegacyTracker, Tracker
@@ -145,11 +146,17 @@ def process(source, output_root, *, ai=None, polish_enabled=True, overleaf=False
 def _process(source, original_source, output_root, *, ai, polish_enabled, overleaf,
              browser_profile, max_pages, refresh_overleaf, t):
     source_digest = _source_digest(source)
-    if source.suffix == '.json' and polish_enabled:
-        # Candidate-approved resumes are rendered exactly as approved; AI may not reword them.
-        request_target = normalize_request(_read_json(source))[1]
-        if request_target and request_target.get('approved'):
-            polish_enabled = False
+    original, target = normalize_request(_read_json(source)) if source.suffix == '.json' else (None, None)
+    approval = None
+    if target and target.get('approved'):
+        records = records_for(original_source.parent.parent / 'approvals', original_source.name)
+        approval = next((record for record in records
+                         if record.get('schema') == 'resumeops-approval-1'
+                         and record.get('job') == original_source.name and record.get('resume_sha256') == source_digest
+                         and not claim_violations(original, record)), None)
+        if not approval:
+            raise BuildError('Candidate approval is missing or does not match this job.')
+        polish_enabled = False
     uses_ai = polish_enabled or source.suffix != '.json'
     ai = (ai or Ollama()) if uses_ai else None
     model_name = getattr(ai, 'model', '') if uses_ai else 'disabled'
@@ -158,7 +165,6 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
                          'polish': polish_enabled, 'v': 'resume-bot-0.3.0'}, sort_keys=True)
     digest = hashlib.sha256(config.encode('utf8')).hexdigest()[:12]
     if source.suffix == '.json':
-        original, target = normalize_request(_read_json(source))
         t.units_done(2, 2, 'Candidate information validated')
         t.candidate = original['full_name']
     else:
@@ -210,8 +216,8 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
         t.units_done(1, 1, 'Saved LaTeX matches the verified profile')
         t.enter('pdf', 'Verifying the saved local PDF')
         verify_pdf(folder / 'resume.pdf', cached, max_pages)
-        if target and target.get('approved'):
-            _audit_approved_pdf(folder / 'resume.pdf', cached)
+        if approval and not matches_pdf_text(read_resume_text(folder / 'resume.pdf'), original, years):
+            raise BuildError('Saved PDF text differs from the candidate-approved resume.')
         t.units_done(1, 1, 'Saved local PDF verified')
         if overleaf:
             completed = _sync_overleaf(folder, completed, cached, browser_profile, max_pages,
@@ -262,9 +268,11 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
         built=compile_latex(working)
         t.units_done(1, 2, 'Local PDF compiled; checking pages and text')
         audit['pdf_checks']=verify_pdf(built,profile,max_pages=max_pages)
-        if target and target.get('approved'):
-            _audit_approved_pdf(built, profile)
-            audit['pdf_checks']['approved_claim_audit'] = 'passed'
+        if approval:
+            if not matches_pdf_text(read_resume_text(built), original, years):
+                raise BuildError('Generated PDF text differs from the candidate-approved resume.')
+            audit['pdf_checks']['approved_claims_match'] = True
+            audit['approval_record'] = approval['record_id']
         shutil.copyfile(built,working/'resume.pdf')
         pages = audit['pdf_checks'].get('pages')
         t.units_done(2, 2, f'Local PDF verified ({pages} page{"s" if pages != 1 else ""})')
@@ -298,14 +306,6 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
     else:
         t.skip('overleaf', 'Overleaf publishing is disabled')
     return _finish(report, folder, overleaf, t)
-
-
-def _audit_approved_pdf(pdf, profile):
-    """Fail the job if the PDF of a candidate-approved resume contains any unapproved wording."""
-    from .claim_audit import unaccounted_pdf_words
-    leftovers = unaccounted_pdf_words(read_resume_text(pdf), profile)
-    if leftovers:
-        raise BuildError('Approved resume PDF contains unapproved text: ' + ' '.join(leftovers[:12]))
 
 
 def _finish(report, folder, overleaf, t):
