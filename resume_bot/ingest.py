@@ -180,8 +180,21 @@ def repair(out, source):
             seen.add(skill.casefold())
             unique.append(skill)
     out['skills'] = unique
-    if not out['projects']:
-        out['projects'] = _section(source, r'(personal\s+)?projects?')[:30]
+    # The model may return only one of several verbatim project titles. Complete
+    # the list from the actual Projects section, without inventing project details.
+    # Description/bullet sentences and technical-stack labels are not project titles.
+    existing = {_norm(item) for item in out['projects']}
+    for item in _section(source, r'(personal\s+)?projects?'):
+        if len(out['projects']) >= 30:
+            break
+        title = _norm(item)
+        if (not 2 <= len(item.split()) <= 16 or len(item) > 130
+                or re.match(r'^(?:tech(?:nologies)?|stack|tools|role|description|features|impact|responsibilities)\s*:', item, re.I)
+                or re.match(r'^(?:built|developed|implemented|created|designed|used|integrated|deployed|achieved|reduced|improved|maintained|worked)\b', item, re.I)):
+            continue
+        if not any(title in known or known in title for known in existing if known):
+            out['projects'].append(item)
+            existing.add(title)
     # Current company: the employer of a role that the source says is ongoing.
     if not out['current_company']:
         out['current_company'] = next((entry['company'] for entry in out['experience']

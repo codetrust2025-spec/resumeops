@@ -34,6 +34,18 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(stats['template'], 'compact')
         self.assertIsNone(normalize_request(job['profile'])[1])
 
+    def test_fresher_ats_tips_ask_for_graduation_not_employment(self):
+        profile, target = normalize_request(targeted())
+        target['experience_years'] = 0
+        profile['education'] = []
+        suggestions = analyze(profile, target)['suggestions']
+        self.assertIn('Provide a confirmed graduation year.', suggestions)
+        self.assertNotIn('Provide confirmed dates for employment.', suggestions)
+        profile['education'] = [{'degree': 'BTech', 'institution': 'Example University',
+                                 'start': '', 'end': '2024', 'details': ''}]
+        self.assertNotIn('Provide a confirmed graduation year.',
+                         analyze(profile, target)['suggestions'])
+
     def test_ats_rubric_distinguishes_coverage_from_section_and_evidence_points(self):
         job = targeted()
         profile, target = normalize_request(job)

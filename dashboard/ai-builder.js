@@ -281,6 +281,17 @@ async function init() {
   Object.assign(state,await ResumeRecovery.read('ai-builder'));
   if (state.intake) fill(state.intake);
   if (state.queuing === true) state.queuing={id:state.draft.id,approval:state.approval};
+  ai('ai-reset').addEventListener('click',handle(async () => {
+    if (!window.confirm('Clear the AI builder draft saved in this browser? Completed resumes and History will remain.')) return;
+    await ResumeRecovery.remove('ai-builder');
+    for (const key of Object.keys(state)) delete state[key];
+    fill({});
+    ai('ai-file').value = '';
+    ai('ai-intake').hidden = false;
+    ai('ai-review').hidden = true;
+    ai('ai-result').hidden = true;
+    status('Saved draft cleared in this browser. Completed resumes remain in History.');
+  }));
   ai('ai-form').addEventListener('input',() => save().catch(error => status(error.message)));
   ai('ai-form').addEventListener('submit',handle(async () => {
     state.draft={id:newId(),candidate:intake(),import_id:state.importId};

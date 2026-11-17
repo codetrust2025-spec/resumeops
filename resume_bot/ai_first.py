@@ -86,11 +86,39 @@ def _text_items(value, maximum=20):
             if isinstance(item, str) and item.strip()]
 
 
+# A suggested number is never evidence of measured impact or team size. Only
+# source-verbatim quantified statements may be presented for approval.
+QUANTIFIED_CLAIM = re.compile(
+    r'(?:[$€£₹]\s*\d[\d,.]*'
+    r'|\b\d+(?:[.,]\d+)?\s*%'
+    r'|\b\d+(?:[.,]\d+)?\s*(?:%|percent|x|times|users?|customers?|clients?|'
+    r'employees?|engineers?|developers?|members?|people|hours?|days?|weeks?|'
+    r'requests?|transactions?|tickets?|bugs?|features?|projects?|services?|'
+    r'endpoints?|milliseconds?|ms)\b'
+    r'|\bteams?\s+of\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|'
+    r'eleven|twelve|thirteen|fourteen|fifteen|twenty)\b'
+    r'|\b(?:doubled|tripled|halved)\b)', re.I
+)
+
+
+def unsubstantiated_quantification(text, evidence):
+    """Fail closed for metrics and headcounts absent verbatim from the source."""
+    if not QUANTIFIED_CLAIM.search(text):
+        return False
+    normalized = lambda value: ' '.join(value.split()).casefold()
+    return normalized(text) not in normalized(evidence or '')
+
+
+def _safe_items(value, evidence, maximum=20):
+    return [item for item in _text_items(value, maximum)
+            if not unsubstantiated_quantification(item, evidence)]
+
+
 def _normalized_name(value):
     return re.sub(r'\s+', ' ', value).strip().casefold() if isinstance(value, str) else ''
 
 
-def _draft_entries(value, key, limit=40, *, names=None, name_key=None):
+def _draft_entries(value, key, limit=40, *, names=None, name_key=None, evidence=''):
     """All AI-generated responsibilities are suggestions, never proof of work.
 
     Local models often number entries from 1 although the prompt asks for zero-based indexes,
@@ -114,7 +142,7 @@ def _draft_entries(value, key, limit=40, *, names=None, name_key=None):
     numeric = [index for index, by_name, _ in resolved if not by_name]
     one_based = bool(names) and bool(numeric) and min(numeric) >= 1 and max(numeric) == len(names)
     return [{key: index if by_name or not one_based else index - 1,
-             'suggestions': _text_items(entry.get('bullets'), 10),
+             'suggestions': _safe_items(entry.get('bullets'), evidence, 10),
              'status': 'requires_candidate_confirmation'}
             for index, by_name, entry in resolved]
 
@@ -191,23 +219,28 @@ def suggest_sections(candidate, ai, *, evidence=None, market_terms=None, require
     raw = generate(ai, instructions)
     if not isinstance(raw, dict):
         raise IntakeError('Ollama returned an invalid suggestion document')
+    raw_summary = _string(raw.get('professional_summary', ''), 'summary', 2500)
+    if unsubstantiated_quantification(raw_summary, evidence):
+        raw_summary = ''
     suggestions = {
         'professional_summary': {
-            'text': _string(raw.get('professional_summary', ''), 'summary', 2500),
+            'text': raw_summary,
             'status': 'requires_candidate_confirmation',
         },
-        'technical_skills': {'items': _text_items(raw.get('technical_skills')),
+        'technical_skills': {'items': _safe_items(raw.get('technical_skills'), evidence),
                              'status': 'requires_candidate_confirmation'},
-        'core_competencies': {'items': _text_items(raw.get('core_competencies')),
+        'core_competencies': {'items': _safe_items(raw.get('core_competencies'), evidence),
                               'status': 'requires_candidate_confirmation'},
         'experience_responsibilities': _draft_entries(
             raw.get('experience_responsibilities'), 'experience_index',
-            names=[item['company'] for item in candidate['work_experience']], name_key='company'),
+            names=[item['company'] for item in candidate['work_experience']], name_key='company',
+            evidence=evidence),
         'project_writeups': _draft_entries(
             raw.get('project_writeups'), 'project_index',
-            names=[item['name'] for item in candidate['projects']], name_key='project_name'),
+            names=[item['name'] for item in candidate['projects']], name_key='project_name',
+            evidence=evidence),
         'project_ideas': [],
-        'key_achievements': {'items': _text_items(raw.get('key_achievements')),
+        'key_achievements': {'items': _safe_items(raw.get('key_achievements'), evidence),
                              'status': 'requires_evidence_and_confirmation'},
         'certification_recommendations': {
             'items': _text_items(raw.get('certification_recommendations')),
