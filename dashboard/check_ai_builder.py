@@ -32,6 +32,20 @@ def check():
                 with patch('resume_bot.ollama.Ollama.generate', return_value=DRAFT), sync_playwright() as pw:
                     browser = pw.chromium.launch()
                     page = browser.new_page(viewport={'width': 390, 'height': 844}, is_mobile=True)
+                    access = {'armed': True, 'expired': False, 'renewed': False}
+
+                    def route_access(route):
+                        url = route.request.url
+                        if '/auth/renewed?' in url:
+                            access.update(expired=False, renewed=True)
+                        elif access['armed'] and '/api/import-progress?' in url:
+                            access.update(armed=False, expired=True)
+                        if access['expired'] and '/api/' in url:
+                            return route.fulfill(status=401, body='')
+                        return route.continue_()
+
+                    page.context.route(origin + '/**', route_access)
+                    page.add_init_script('window.open = () => null')
                     page.goto(origin + '/')
                     page.get_by_label('Target role').select_option('fullstack-developer')
                     page.get_by_label('Total years of experience').fill('0')
@@ -43,7 +57,10 @@ def check():
                     assert not page.get_by_role('textbox', name='skills').count()
                     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                     page.get_by_role('button', name='Draft resume with Ollama').click()
-                    expect(page.get_by_role('heading', name='Review AI suggestions')).to_be_visible(timeout=10000)
+                    expect(page.locator('#auth-banner')).to_be_visible(timeout=10000)
+                    page.get_by_role('button', name='Sign in again').click()
+                    expect(page.get_by_role('heading', name='Review AI suggestions')).to_be_visible(timeout=15000)
+                    assert access['renewed']
                     assert not list(workspace.inbox.glob('*.json'))
                     page.get_by_label('Skill (unverified AI suggestion)', exact=True).first.check()
                     page.get_by_label('I confirm the candidate details and selected statements are accurate.').check()
@@ -77,7 +94,7 @@ def check():
             finally:
                 server.shutdown()
                 server.RequestHandlerClass.stop_imports()
-    print('AI-first mobile browser, approved-only ATS preview, immutable queue, and duplicate replay passed.')
+    print('AI-first mobile browser, same-tab Access recovery, approved-only ATS, immutable queue, and replay passed.')
 
 
 if __name__ == '__main__':

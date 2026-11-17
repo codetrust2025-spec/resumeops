@@ -137,7 +137,9 @@ function renderReview(draft) {
     row.dataset.claim=claim.id;
     const sourceEntry = claim.section === 'Responsibility' ? draft.candidate.work_experience[claim.index]?.company :
       claim.section === 'Project detail' ? draft.candidate.projects[claim.index]?.name : '';
-    const label = node('label',claim.section + (sourceEntry ? ' - ' + sourceEntry : '') + ' (unverified AI suggestion)');
+    const provenance = claim.section === 'Earned certification' ?
+      'listed in imported resume; confirm earned' : 'unverified AI suggestion';
+    const label = node('label',claim.section + (sourceEntry ? ' - ' + sourceEntry : '') + ' (' + provenance + ')');
     const check = node('input');
     check.type='checkbox';
     check.checked=Object.hasOwn(state.approval?.claims || {},claim.id);
