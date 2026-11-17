@@ -112,12 +112,25 @@ def check(ai_first=False):
                     expect(page.locator('#ai-progress')).to_be_hidden()
                     page.evaluate("""() => updateProgress({
                       status:'processing', stage:'Extracting candidate details with Ollama',
+                      progress:{percent:47,steps_completed:2,steps_total:5,
+                                fields_emitted:4,fields_total:15},
                       metrics:{chars:1280,tokens:27,elapsed:9.3}}, 'Importing resume')""")
                     expect(page.locator('#ai-progress')).to_be_visible()
                     expect(page.get_by_role('status')).to_contain_text('Extracting candidate details')
                     expect(page.locator('#ai-progress-metrics')).to_contain_text('1,280 characters generated')
                     expect(page.locator('#ai-progress-metrics')).to_contain_text('27 stream chunks')
-                    expect(page.locator('#ai-progress-value')).to_have_text('')
+                    expect(page.locator('#ai-progress-value')).to_have_text('47%')
+                    expect(page.get_by_role('progressbar')).to_have_attribute('aria-valuenow','47')
+                    expect(page.locator('#ai-progress-steps')).to_contain_text('4/15 AI fields emitted')
+                    page.evaluate("""() => updateProgress({
+                      status:'processing', stage:'Extracting candidate details with Ollama',
+                      progress:{percent:74,steps_completed:2,steps_total:5,
+                                fields_emitted:13,fields_total:15},
+                      metrics:{chars:3380,tokens:120,elapsed:31}}, 'Importing resume')""")
+                    expect(page.locator('#ai-progress-value')).to_have_text('74%')
+                    expect(page.get_by_role('progressbar')).to_have_attribute('aria-valuenow','74')
+                    assert float(page.locator('.ai-ring-fill').evaluate(
+                        "(el) => el.style.strokeDashoffset")) < 175.93 * .5
                     assert page.locator('#ai-progress').evaluate(
                         "(item) => getComputedStyle(item).position !== 'sticky' && "
                         "item.getBoundingClientRect().top < innerHeight")
@@ -153,6 +166,7 @@ def check(ai_first=False):
                         page.get_by_role('button', name='Import details').click()
                         expect(page.get_by_role('status')).to_contain_text('Details imported')
                         expect(page.locator('#ai-progress-value')).to_have_text('100%')
+                        expect(page.get_by_role('progressbar')).to_have_attribute('aria-valuenow','100')
                     expect(page.get_by_label('Full name')).to_have_value('AI First Synthetic')
                     expect(page.get_by_label('Phone')).to_have_value('')
                     # A lone year extracted as the start date is the graduation year.
