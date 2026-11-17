@@ -80,7 +80,7 @@ def main():
         expired['mode'] = '401'
         page.get_by_role('button', name='Continue').click()
         expect(page.locator('#auth-banner')).to_be_visible()
-        expect(page.locator('#auth-banner')).to_contain_text('Everything on this page is kept')
+        expect(page.locator('#auth-banner')).to_contain_text('ResumeOps keeps your work')
         assert page.get_by_label('Employer').input_value() == 'Example Labs'
         # Signing in happens in another tab; this page continues by itself.
         with context.expect_page() as popup:
@@ -102,7 +102,7 @@ def main():
         expect(page.locator('#builder-status')).to_have_text('Resume queued.', timeout=15000)
         jobs = list(workspace.inbox.glob('session-expiry-example-*.json'))
         assert len(jobs) == 1, jobs
-        assert page.evaluate("sessionStorage.getItem('resumeops.draft')") is None, 'draft kept after queue'
+        assert page.evaluate("ResumeRecovery.read('draft')") is None, 'draft kept after queue'
         results['one_job_after_redirect_renewal'] = jobs[0].name
 
         # 3. Dashboard restarted (new request token) while the page stays open: no reload needed.
@@ -146,11 +146,10 @@ def main():
         results['draft_restored_after_reload'] = True
 
         # 5. Session expires during a resume upload: the same file continues after sign-in, once.
-        fresh = context.new_page()
+        imports = browser.new_context()
+        imports.route(url + '/**', edge)
+        fresh = imports.new_page()
         fresh.goto(url)
-        # A new tab resumes tracking the job queued above; start this check from a clean builder.
-        fresh.evaluate("sessionStorage.clear(); localStorage.removeItem('resumeops.activeJob')")
-        fresh.reload()
         fresh.get_by_role('button', name='Create Resume').click()
         fresh.locator('#resume-upload').set_input_files({'name': 'resume.txt', 'mimeType': 'text/plain',
                                                          'buffer': b'Session Import Example resume text. ' * 10})
@@ -158,7 +157,7 @@ def main():
         fresh.get_by_role('button', name='Import and prefill').click()
         expect(fresh.locator('#auth-banner')).to_be_visible(timeout=10000)
         assert drafts == [], 'upload processed while signed out'
-        with context.expect_page():
+        with imports.expect_page():
             fresh.get_by_role('button', name='Sign in again').click()
         expect(fresh.get_by_role('heading', name='Choose a target role')).to_be_visible(timeout=20000)
         assert fresh.get_by_label('Full name').input_value() == 'Session Import Example'
@@ -167,18 +166,22 @@ def main():
 
         # 6. Expiry while the import is being polled: the import still completes.
         drafts.clear()
-        fresh.evaluate("sessionStorage.clear(); localStorage.removeItem('resumeops.activeJob')")
+        imports.close()
+        imports = browser.new_context()
+        imports.route(url + '/**', edge)
+        fresh = imports.new_page()
         fresh.goto(url)
         fresh.get_by_role('button', name='Create Resume').click()
         fresh.locator('#resume-upload').set_input_files({'name': 'resume.txt', 'mimeType': 'text/plain',
                                                          'buffer': b'Session Import Example resume again. ' * 10})
         fresh.get_by_role('button', name='Import and prefill').click()
-        fresh.wait_for_timeout(300)
+        fresh.wait_for_function("ResumeRecovery.read('import').then(work => work && !work.file)")
         expired['mode'] = 'redirect'
         expect(fresh.locator('#auth-banner')).to_be_visible(timeout=10000)
-        fresh.wait_for_timeout(2500)   # extraction finishes on the server meanwhile
-        with context.expect_page():
-            fresh.get_by_role('button', name='Sign in again').click()
+        fresh.close()
+        fresh = imports.new_page()
+        fresh.goto(url + '/auth/renewed')
+        fresh.goto(url)
         expect(fresh.get_by_role('heading', name='Choose a target role')).to_be_visible(timeout=20000)
         assert drafts == ['.txt'], drafts
         results['import_polling_after_expiry'] = 'completed'
@@ -190,6 +193,7 @@ def main():
         results['expired_requests_answered_by_edge'] = hits['expired']
         browser.close()
     server.shutdown()
+    server.RequestHandlerClass.stop_imports()
     server.server_close()
     print(json.dumps(results, indent=1))
     print('Session acceptance passed: 401 and redirect expiry, token rotation, draft restore, '

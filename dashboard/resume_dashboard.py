@@ -13,7 +13,8 @@ import tempfile
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Lock, Thread
+from threading import Lock
+from durable_imports import DurableImports, ImportCapacity, ImportConflict
 from urllib.parse import parse_qs, urlsplit
 from zipfile import BadZipFile, ZipFile
 
@@ -263,12 +264,7 @@ RENEWED_PAGE = b'''<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Signed in \xc2\xb7 ResumeOps</title>
 <style>body{font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:90vh;color:#13213b}</style></head>
 <body><main><h1>Signed in</h1><p>ResumeOps is continuing in the other tab. You can close this one.</p></main>
-<script>
-try { new BroadcastChannel('resumeops-auth').postMessage('renewed'); } catch (e) {}
-try { localStorage.setItem('resumeops.authRenewed', String(Date.now())); } catch (e) {}
-try { if (window.opener) window.opener.postMessage('resumeops-auth-renewed', location.origin); } catch (e) {}
-setTimeout(function () { window.close(); }, 600);
-</script></body></html>'''
+<script src="/auth-renewed.js" defer></script></body></html>'''
 
 
 def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
@@ -279,40 +275,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
 
     import_stages = {}
     import_lock = Lock()
-    import_ttl_seconds = 2 * 60 * 60   # unfinished or undelivered imports survive a re-sign-in
-    delivered_grace_seconds = 120      # a delivered draft can be fetched again if the reply was lost
-
-    def cleanup_imports():
-        now = time.monotonic()
-        for key, entry in list(import_stages.items()):
-            if isinstance(entry, dict) and (now - entry['created'] > import_ttl_seconds or (
-                    entry.get('delivered') and now - entry['delivered'] > delivered_grace_seconds)):
-                del import_stages[key]
-
-    def background_draft(import_id, extension, document):
-        def report_stage(stage, metrics=None):
-            with import_lock:
-                entry = import_stages.get(import_id)
-                if isinstance(entry, dict) and entry['status'] == 'processing':
-                    entry['stage'] = stage
-                    entry['activity'] = time.time()
-                    if metrics is not None:
-                        entry['metrics'] = metrics
-        try:
-            draft = workspace.draft(extension, document, report_stage)
-            completed = {'status': 'complete', 'stage': 'Draft ready for review',
-                         'profile': draft['profile'], 'source': draft['source']}
-        except (ValueError, UnicodeError) as exc:
-            completed = {'status': 'error', 'stage': 'Import failed', 'error': str(exc)}
-        except Exception:
-            # Do not expose source resumes or backend traces in public responses.
-            completed = {'status': 'error', 'stage': 'Import failed',
-                         'error': 'Resume extraction failed. Check the Ollama service and retry.'}
-        with import_lock:
-            entry = import_stages.get(import_id)
-            if isinstance(entry, dict):
-                completed['created'] = entry['created']
-                import_stages[import_id] = completed
+    durable = DurableImports(workspace.root, lambda *args: workspace.draft(*args))
 
     class DashboardHandler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -348,8 +311,29 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return web_origin
             return None
 
+        @staticmethod
+        def resume_imports():
+            durable.start()
+
+        @staticmethod
+        def stop_imports():
+            durable.stop()
+
+        def session_owner(self, request_origin):
+            if request_origin == web_origin:
+                claims = access_verifier.claims(self.headers.get('Cf-Access-Jwt-Assertion'))
+                if not isinstance(claims, dict) or not isinstance(claims.get('email'), str):
+                    return None
+                identity = claims['email'].strip().casefold()
+            elif request_origin == phone_origin:
+                identity = phone_user
+            else:
+                identity = 'loopback'
+            return hashlib.sha256((request_origin + '\0' + identity).encode('utf-8')).hexdigest()
+
         def do_GET(self):
-            if self.request_origin() is None:
+            request_origin = self.request_origin()
+            if request_origin is None:
                 return self.send_json({'error': 'Dashboard access denied for this address or session.'}, 403)
             url = urlsplit(self.path)
             query = parse_qs(url.query)
@@ -362,26 +346,24 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 if assertion and access_verifier is not None:
                     claims = access_verifier.claims(assertion)
                     expires = claims.get('exp') if claims else None
-                return self.send_json({'ok': True, 'token': token, 'expires': expires, 'now': time.time()})
+                owner = self.session_owner(request_origin)
+                if not owner:
+                    return self.send_json({'error': 'Dashboard access denied for this session.'}, 403)
+                return self.send_json({'ok': True, 'token': token, 'owner': owner, 'expires': expires, 'now': time.time()})
             if url.path == '/auth/renewed':
                 return self.send_content(RENEWED_PAGE, 'text/html; charset=utf-8')
             if url.path == '/api/import-progress':
                 if not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token):
                     return self.send_json({'error': 'Request not authorized.'}, 403)
-                with import_lock:
-                    cleanup_imports()
-                    import_id = query.get('id', [''])[0]
-                    entry = import_stages.get(import_id)
-                    if isinstance(entry, dict):
-                        response = {key: value for key, value in entry.items() if key != 'created'}
-                        response['now'] = time.time()
-                        response.pop('delivered', None)
-                        if entry['status'] in ('complete', 'error'):
-                            # Keep a delivered draft briefly in case the reply is lost (for example
-                            # a session expiring mid-request), then drop the personal data.
-                            entry.setdefault('delivered', time.monotonic())
-                    else:
-                        response = {'stage': entry, 'status': 'unknown' if entry is None else 'processing'}
+                owner = self.session_owner(request_origin)
+                if not owner:
+                    return self.send_json({'error': 'Dashboard access denied for this session.'}, 403)
+                identifier = query.get('id', [''])[0]
+                response = durable.get(owner, identifier)
+                if response is None:
+                    with import_lock:
+                        stage = import_stages.get((owner, identifier))
+                    response = {'stage': stage, 'status': 'processing' if stage else 'unknown'}
                 return self.send_json(response)
             if url.path == '/api/catalog':
                 from resume_bot.workflow import ROLES, TEMPLATES
@@ -421,6 +403,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                       '/live.js': ('live.js', 'text/javascript'),
                       '/import.js': ('import.js', 'text/javascript'),
                       '/auth.js': ('auth.js', 'text/javascript'),
+                      '/auth-renewed.js': ('auth-renewed.js', 'text/javascript'),
+                      '/recovery.js': ('recovery.js', 'text/javascript'),
                       '/dashboard.css': ('dashboard.css', 'text/css'),
                       '/dashboard.js': ('dashboard.js', 'text/javascript'),
                       '/workflow.js': ('workflow.js', 'text/javascript')}
@@ -453,6 +437,10 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             if asynchronous and not import_id:
                 return self.send_json({'error': 'An import identifier is required.'}, 400)
 
+            owner = self.session_owner(request_origin) if drafting and import_id else None
+            if drafting and import_id and not owner:
+                return self.send_json({'error': 'Dashboard access denied for this session.'}, 403)
+            import_key = (owner, import_id)
             draft_stage = None
 
             def report(stage, metrics=None):
@@ -460,7 +448,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 draft_stage = stage
                 if import_id:
                     with import_lock:
-                        import_stages[import_id] = stage
+                        import_stages[import_key] = stage
 
             limit = MAX_DOCUMENT if drafting else MAX_INPUT
             try:
@@ -468,34 +456,28 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 if not 0 < length <= limit:
                     return self.send_json({'error': f'Choose a file up to {limit // MAX_INPUT} MB.'}, 413)
                 data = self.rfile.read(length)
+                if len(data) != length:
+                    return self.send_json({'error': 'Upload incomplete; retry using the same import identifier.'}, 400)
                 if asynchronous:
-                    with import_lock:
-                        cleanup_imports()
-                        if import_id in import_stages:
-                            return self.send_json({'error': 'This import already exists.'}, 409)
-                        active = sum(isinstance(item, dict) and item['status'] == 'processing'
-                                     for item in import_stages.values())
-                        if active >= 2:
-                            return self.send_json({'error': 'Two imports are already processing. Retry shortly.'}, 429)
-                        import_stages[import_id] = {
-                            'created': time.monotonic(), 'status': 'processing',
-                            'stage': 'Reading document', 'started': time.time(), 'activity': time.time()}
-                    Thread(target=background_draft, args=(import_id, extension, data),
-                           name='resume-import', daemon=True).start()
-                    return self.send_json({'id': import_id, 'status': 'processing',
-                                           'stage': 'Reading document'}, 202)
+                    try:
+                        item = durable.enqueue(owner, import_id, extension, data)
+                    except ImportConflict as exc:
+                        return self.send_json({'error': str(exc)}, 409)
+                    except ImportCapacity as exc:
+                        return self.send_json({'error': str(exc)}, 429)
+                    return self.send_json({'id': import_id, **item}, 202)
                 if drafting:
                     if not import_id:
                         return self.send_json(workspace.draft(extension, data))
                     with import_lock:
-                        if import_id in import_stages:
+                        if import_key in import_stages:
                             return self.send_json({'error': 'This import is already processing.'}, 409)
-                        import_stages[import_id] = 'Reading document'
+                        import_stages[import_key] = 'Reading document'
                     try:
                         draft = workspace.draft(extension, data, report)
                     finally:
                         with import_lock:
-                            import_stages.pop(import_id, None)
+                            import_stages.pop(import_key, None)
                     return self.send_json(draft)
                 if self.path == '/api/retry':
                     from resume_bot.pipeline import request_retry
@@ -581,6 +563,7 @@ def main():
         Workspace(args.root, args.model, args.code_root), origin, secrets.token_hex(32), phone_url, args.phone_user,
         web_origin=web_url, access_verifier=verifier,
     )
+    request_handler.resume_imports()
     server = ThreadingHTTPServer(('127.0.0.1', args.port), request_handler)
     print(f'Resume Builder dashboard: {origin}', flush=True)
     if args.open:
@@ -590,6 +573,7 @@ def main():
         server.serve_forever()
     except KeyboardInterrupt:
         server.server_close()
+        request_handler.stop_imports()
 
 
 if __name__ == '__main__':

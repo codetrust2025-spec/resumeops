@@ -23,110 +23,79 @@
     const name = file.name.toLowerCase();
     return name.includes('.') ? '.' + name.split('.').pop() : '';
   }
-  async function readDocument(file, extension) {
-    const id = Array.from(crypto.getRandomValues(new Uint8Array(16)),
-      byte => byte.toString(16).padStart(2, '0')).join('');
-    const url = '/api/import-progress?id=' + id;
-    // Upload bytes are measured (0-25%). Reading and extraction start points are real boundaries;
-    // Ollama extraction has no knowable length, so the bar holds at 35% and the measured output
-    // and elapsed time are shown instead of an invented percentage.
-    const stages = {'Reading document': 30, 'Extracting candidate details with Ollama': 35,
-      'Draft ready for review': 95};
-    // The upload response is immediate; expensive Ollama extraction happens on the RTX.
-    // On session expiry the same file is sent again with the same import id after sign-in; if the
-    // first upload already started, the server answers 409 and the import simply continues.
-    const sendOnce = () => new Promise(resolve => {
+  const pause = delay => new Promise(resolve => setTimeout(resolve, delay));
+
+  function sendUpload(work) {
+    return new Promise(resolve => {
       const xhr = new XMLHttpRequest();
+      xhr.open('POST','/api/draft');
+      xhr.responseType = 'json';
+      xhr.timeout = 65000;
       xhr.upload.onprogress = event => {
         if (event.lengthComputable && event.total) {
           stage('Uploading resume', Math.floor(event.loaded / event.total * 25));
         }
       };
-      xhr.upload.onload = () => stage('Upload complete. Starting extraction', 25);
-      xhr.onerror = () => resolve({network: true});
-      xhr.onabort = () => resolve({aborted: true});
-      xhr.onload = () => resolve({status: xhr.status, body: xhr.response});
-      xhr.open('POST', '/api/draft');
-      xhr.responseType = 'json';
-      xhr.withCredentials = true;
-      const headers = ResumeAuth.headers({'X-Resume-Extension': extension, 'X-Resume-Import-ID': id,
-        'X-Resume-Async': '1'});
-      for (const [name, value] of Object.entries(headers)) xhr.setRequestHeader(name, value);
-      xhr.send(file);
+      xhr.onload = () => resolve({status:xhr.status,body:xhr.response});
+      xhr.onerror = xhr.ontimeout = xhr.onabort = () => resolve({status:0});
+      const headers = ResumeAuth.headers({'X-Resume-Extension':work.extension,
+        'X-Resume-Import-ID':work.id,'X-Resume-Async':'1'});
+      for (const [name,value] of Object.entries(headers)) xhr.setRequestHeader(name,value);
+      xhr.send(work.file);
     });
-    let tokenRefreshed = false;
+  }
+
+  async function readDocument(work) {
+    const url='/api/import-progress?id='+work.id;
+    const stages={'Reading document':25,'Extracting candidate details with Ollama':50,
+      'Draft ready for review':100};
+    let failures=0;
+    let tokenRefresh=false;
     for (;;) {
-      const outcome = await sendOnce();
-      if (outcome.aborted) throw new Error('Resume upload was cancelled.');
-      if (outcome.status === 202 && outcome.body?.status === 'processing') break;
-      if (outcome.status === 409) break;                 // this import id is already running
-      const accessDenied = outcome.status === 401 || outcome.status === 0 ||
-        (outcome.status === 403 && /access denied/i.test(outcome.body?.error || ''));
-      if (outcome.network || accessDenied) {
-        let signedOut = accessDenied;
-        if (outcome.network) {
-          try { signedOut = !(await ResumeAuth.session()); } catch { signedOut = false; }
-        }
-        if (signedOut) {
-          message('Sign-in expired during upload. The file is kept; it continues after you sign in again.', true);
-          await ResumeAuth.waitForSession();
-          stage('Signed in again. Resuming upload', 1);
-          continue;
-        }
-        // The browser lost the reply; the server may already be working on it.
-        stage('Reconnecting to resume import', 25);
-        break;
-      }
-      if (outcome.status === 403 && !tokenRefreshed && /not authorized/i.test(outcome.body?.error || '')) {
-        tokenRefreshed = true;
-        if (await ResumeAuth.session()) continue;
-      }
-      throw new Error(outcome.body?.error || 'Upload rejected (HTTP ' + outcome.status + '). Check the server logs.');
-    }
-    let budget = 10 * 60 * 1000;   // processing time only; time spent signing in again is added back
-    const started = Date.now();
-    let unknown = 0;
-    let failures = 0;
-    while (Date.now() - started < budget) {
-      let result;
-      const before = Date.now();
       try {
-        const response = await ResumeAuth.call(url, {cache: 'no-store'});
-        if (Date.now() - before > 5000) budget += Date.now() - before;
-        if (!response.ok) throw new Error('Status check failed (HTTP ' + response.status + ')');
-        result = await response.json();
-        failures = 0;
-      } catch (error) {
-        if (++failures >= 6) {
-          throw new Error('Could not reconnect to import status. Verify your connection and retry.');
+        const response=await ResumeAuth.call(url);
+        if (!response.ok) throw new Error('Import status could not be read.');
+        const result=await response.json();
+        if (result.status==='complete' && result.profile) return result;
+        if (result.status==='error') {
+          await ResumeRecovery.remove('import');
+          return Promise.reject(new Error(result.error || 'Local extraction failed.'));
         }
-        stage('Reconnecting to import status', 35);
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        continue;
-      }
-      if (result.status === 'complete' && result.profile) return result;
-      if (result.status === 'error') throw new Error(result.error || 'Local extraction failed.');
-      if (result.status === 'unknown') {
-        if (++unknown >= 4) throw new Error('Import session not found. Upload the file again.');
-      } else {
-        unknown = 0;
-        const pct = stages[result.stage];
-        if (pct !== undefined) stage(result.stage, pct);
-        if (result.started && result.now) {
-          const clock = s => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(Math.floor(s % 60)).padStart(2, '0');
-          const m = result.metrics;
-          const parts = [result.stage + ' — processing', 'elapsed ' + clock(result.now - result.started)];
-          if (m && m.phase === 'waiting') parts.push('waiting for the model to start');
-          if (m && m.tokens) parts.push(m.chars.toLocaleString() + ' characters · ' +
-            (m.elapsed ? (m.tokens / m.elapsed).toFixed(1) : '0') + ' tokens/s');
-          const idle = result.now - (result.activity || result.now);
-          if (idle > 30) parts.push('no new output for ' + Math.round(idle) + ' s');
-          message(parts.join(' · '));
+        if(result.status==='unknown'){
+          if(!work.file) return Promise.reject(new Error('The saved import expired. Select the source file again.'));
+          const outcome=await sendUpload(work);
+          if(outcome.status===202){
+            // Keep the file until the server has durably accepted it. Further recovery only needs the ID.
+            work={id:work.id, extension:work.extension};
+            await ResumeRecovery.put('import',work);
+            stage('Upload accepted. Reading document',25);
+          } else if(outcome.status===401 || outcome.status===0 ||
+                    (outcome.status===403 && !outcome.body)){
+            const current=await ResumeAuth.session().catch(() => undefined);
+            if(current===null) await ResumeAuth.waitForSession();
+            else stage('Reconnecting to upload',progress.value);
+          } else if(outcome.status===403 && !tokenRefresh){
+            tokenRefresh=true;
+            const current=await ResumeAuth.session();
+            if(!current) await ResumeAuth.waitForSession();
+          } else if(outcome.status!==429 && outcome.status<500){
+            await ResumeRecovery.remove('import');
+            return Promise.reject(new Error(outcome.body?.error || 'The resume upload was rejected.'));
+          }
+        } else {
+          if(work.file){
+            work={id:work.id, extension:work.extension};
+            await ResumeRecovery.put('import',work);
+          }
+          stage(result.stage,stages[result.stage] ?? progress.value);
         }
+        failures=0;
+      } catch(error) {
+        ++failures;
+        stage('Connection interrupted. ResumeOps will retry this import.',progress.value);
       }
-      await new Promise(resolve => setTimeout(resolve, 1100));
+      await pause(Math.min(10000,1000*(1+failures)));
     }
-    throw new Error('Extraction is taking unusually long. Check Ollama and RTX status before retrying.');
   }
 
   async function prefill(data) {
@@ -142,47 +111,89 @@
     feedback('Imported ' + count + ' candidate sections from the resume. Choose the target role, then review each step.');
   }
 
-  fileInput.addEventListener('change', () => {
+  fileInput.addEventListener('change', async () => {
     button.disabled = busy || !fileInput.files.length;
     progress.hidden = true;
     progress.value = 0;
     message('');
+    try {
+      const file = fileInput.files[0];
+      if (file && allowed.has(extensionOf(file)) && file.size <= 12 * 1024 * 1024) {
+        await ResumeRecovery.put('selected-import', file);
+      } else {
+        await ResumeRecovery.remove('selected-import');
+      }
+    } catch {
+      message('The selected file could not be saved for reload recovery.', true);
+    }
   });
-  button.addEventListener('click', async () => {
-    if (busy || !fileInput.files.length) return;
-    const file = fileInput.files[0];
-    const extension = extensionOf(file);
-    const max = extension === '.json' ? 1024 * 1024 : 12 * 1024 * 1024;
-    if (!allowed.has(extension)) {
-      message('Unsupported file type. Choose PDF, Word, TXT, Markdown, image or candidate JSON.', true);
-      return;
-    }
-    if (!file.size || file.size > max) {
-      message('File must be non-empty and no larger than ' + (max / 1048576) + ' MB.', true);
-      return;
-    }
-    busy = true;
-    button.disabled = true;
-    fileInput.disabled = true;
-    progress.value = 0;
-    stage('Reading resume', 1);
+  async function run(work) {
+    if(busy) return;
+    busy=true;
+    button.disabled=true;
+    fileInput.disabled=true;
+    progress.value=0;
+    stage('Reading resume',0);
     try {
       let data;
-      if (extension === '.json') {
-        const parsed = JSON.parse(await file.text());
-        data = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ?
-          ('profile' in parsed ? parsed : {profile: parsed}) : null;
+      if(work.extension==='.json'){
+        const parsed=JSON.parse(await work.file.text());
+        data=parsed && typeof parsed==='object' && !Array.isArray(parsed) ?
+          ('profile' in parsed ? parsed : {profile:parsed}) : null;
       } else {
-        data = await readDocument(file, extension);
+        data=await readDocument(work);
       }
       await prefill(data || {});
-      fileInput.value = '';
-    } catch (error) {
-      message('Import failed: ' + error.message + ' Existing form details were not queued.', true);
+      await persistDraft();
+      await ResumeRecovery.remove('import');
+      await ResumeRecovery.remove('selected-import');
+      fileInput.value='';
+    } catch(error) {
+      message('Import could not complete: '+error.message,true);
     } finally {
-      busy = false;
-      fileInput.disabled = false;
-      button.disabled = !fileInput.files.length;
+      busy=false;
+      fileInput.disabled=false;
+      button.disabled=!fileInput.files.length;
+    }
+  }
+  button.addEventListener('click',async () => {
+    if(busy || !fileInput.files.length) return;
+    const file=fileInput.files[0];
+    const extension=extensionOf(file);
+    const max=extension==='.json'?1024*1024:12*1024*1024;
+    if(!allowed.has(extension)){
+      message('Unsupported file type. Choose PDF, Word, TXT, Markdown, image or candidate JSON.',true);
+      return;
+    }
+    if(!file.size || file.size>max){
+      message('File must be non-empty and no larger than '+(max/1048576)+' MB.',true);
+      return;
+    }
+    try {
+      const work={id:crypto.randomUUID().replaceAll('-',''),extension,file};
+      await ResumeRecovery.put('import',work);
+      await ResumeRecovery.remove('selected-import');
+      await run(work);
+    } catch(error) {
+      message('Cannot save this upload for recovery. Check browser storage and retry.',true);
     }
   });
+  document.addEventListener('resumeops-builder-ready',async () => {
+    try {
+      const work=await ResumeRecovery.read('import');
+      if (work) {
+        await run(work);
+      } else {
+        const selected = await ResumeRecovery.read('selected-import');
+        if (selected && !fileInput.files.length) {
+          const files = new DataTransfer();
+          files.items.add(selected);
+          fileInput.files = files.files;
+          button.disabled = false;
+        }
+      }
+    } catch {
+      message('Could not restore the saved upload. Check browser storage.',true);
+    }
+  },{once:true});
 })();

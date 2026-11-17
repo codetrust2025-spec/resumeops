@@ -45,16 +45,16 @@ let selection = 0;
 let submitting = false;
 let imported = false;           // a resume file was imported for this candidate
 let yearsTouched = false;       // the experience level was chosen by hand (never overwrite it)
-const ACTIVE_KEY = 'resumeops.activeJob';
+let rememberedJob = null;
 
-function rememberJob(name, submitted) {
-  try { localStorage.setItem(ACTIVE_KEY, JSON.stringify({name, submitted, queued: Date.now()})); } catch {}
+async function rememberJob(name, submitted) {
+  rememberedJob={name,submitted,queued:Date.now()};
+  await ResumeRecovery.put('job',rememberedJob);
 }
-function storedJob() {
-  try { return JSON.parse(localStorage.getItem(ACTIVE_KEY) || 'null'); } catch { return null; }
-}
+function storedJob() { return rememberedJob; }
 function forgetJob() {
-  try { localStorage.removeItem(ACTIVE_KEY); } catch {}
+  rememberedJob=null;
+  ResumeRecovery.remove('job').catch(() => {});
 }
 
 async function request(path, payload) {
@@ -352,6 +352,7 @@ function renderStepper() {
 }
 function showStep(index, focus = true) {
   activeStep = index;
+  saveDraft();
   if (index <= STEP.GENERATE) furthestStep = Math.max(furthestStep, index);
   document.body.classList.remove('history-view');
   el('history').hidden = true;
@@ -544,7 +545,10 @@ form.addEventListener('submit', async event => {
   event.preventDefault();
   if (activeStep !== STEP.GENERATE || submitting) return;
   if (!fields.verified.checked) { feedback('Confirm the candidate facts before generating.', true); showStep(STEP.REVIEW); return; }
-  const submitted = payload();
+  await queueSubmission(payload());
+});
+
+async function queueSubmission(submitted) {
   const remembered = storedJob();
   if (watchedJob && remembered && remembered.submitted === JSON.stringify(submitted)) {
     feedback('This candidate is already being generated. Showing its progress.');
@@ -555,12 +559,14 @@ form.addEventListener('submit', async event => {
   const button = el('generate');
   button.disabled = true;
   try {
+    await ResumeRecovery.put('pending-generation',submitted);
     const result = await request('/api/queue', submitted);
     watchedJob = result.name;
     lastJob = null;
     queuedAt = Date.now();
     seenWatched = false;
-    rememberJob(result.name, JSON.stringify(submitted));
+    await rememberJob(result.name, JSON.stringify(submitted));
+    await ResumeRecovery.remove('pending-generation');
     forgetDraft();
     el('result-success').hidden = true;
     ++selection;               // the previous result stays in history; hide it so it is not mistaken for this job
@@ -578,7 +584,7 @@ form.addEventListener('submit', async event => {
     submitting = false;
     button.disabled = false;
   }
-});
+}
 
 /* ---------- Results ---------- */
 function showAts(ats) {
@@ -669,6 +675,7 @@ async function showRevision(revision, navigate = true) {
       if (!revision.files.includes(name)) continue;
       const link = rows('a', name === 'resume.pdf' ? 'Download PDF' : 'Download verified Overleaf PDF', 'button secondary');
       link.href = artifact(revision.key, name, true);
+      ResumeRecovery.protectDownload(link,name);
       link.target = '_blank';   // a sign-in redirect opens there, never replacing this page
       link.rel = 'noopener';
       links.push(link);
@@ -1034,30 +1041,28 @@ async function applyImport(data) {
 }
 
 /* ---------- Draft safety: survive a reload or re-sign-in without losing typed details ---------- */
-const DRAFT_KEY = 'resumeops.draft';   // sessionStorage: this tab only, cleared on Generate or reset
 let draftTimer = 0;
+let restoring = true;
+async function persistDraft() {
+  if(restoring || activeStep < STEP.INPUT || activeStep > STEP.GENERATE) return;
+  const data=payload();
+  const filled=Object.values(data.profile).some(value => Array.isArray(value)?value.length:value) || data.target.role;
+  if(filled) await ResumeRecovery.put('draft',{data,source:el('import-source').value,
+    step:activeStep,yearsTouched});
+}
 function saveDraft() {
   clearTimeout(draftTimer);
-  draftTimer = setTimeout(() => {
-    if (activeStep < STEP.INPUT || activeStep > STEP.GENERATE) return;
-    const data = payload();
-    const filled = Object.values(data.profile).some(value => Array.isArray(value) ? value.length : value) || data.target.role;
-    if (!filled) return;
-    try {
-      sessionStorage.setItem(DRAFT_KEY, JSON.stringify({data, source: el('import-source').value,
-        step: activeStep, yearsTouched, saved: Date.now()}));
-    } catch {}
-  }, 400);
+  draftTimer=setTimeout(() => persistDraft().catch(() => {}),200);
 }
 function forgetDraft() {
   clearTimeout(draftTimer);
-  try { sessionStorage.removeItem(DRAFT_KEY); } catch {}
+  ResumeRecovery.remove('draft').catch(() => {});
 }
-form.addEventListener('input', saveDraft);
-form.addEventListener('change', saveDraft);
+form.addEventListener('input',saveDraft);
+form.addEventListener('change',saveDraft);
+ResumeRecovery.protectDownload(el('download-latex'),'main.tex');
 async function restoreDraft(navigate = true) {
-  let draft = null;
-  try { draft = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || 'null'); } catch {}
+  const draft = await ResumeRecovery.read('draft');
   if (!draft || !draft.data || !draft.data.profile) return false;
   await applyImport({profile: draft.data.profile, target: draft.data.target, source: draft.source || ''});
   yearsTouched = Boolean(draft.yearsTouched);
@@ -1079,7 +1084,8 @@ resetLive();
 showStep(STEP.START, false);
 
 async function init() {
-  const restored = storedJob();
+  const restored = await ResumeRecovery.read('job').catch(() => null);
+  rememberedJob=restored;
   if (restored && restored.name) {
     watchedJob = restored.name;
     queuedAt = restored.queued || 0;
@@ -1094,6 +1100,12 @@ async function init() {
     fields.template.replaceChildren(...Object.entries(templates).map(([key, name]) => new Option(name, key)));
     showTemplate();
     await restoreDraft(!(restored && restored.name));
+    restoring=false;
+    document.dispatchEvent(new Event('resumeops-builder-ready'));
+    const pending=await ResumeRecovery.read('pending-generation');
+    if(pending) queueSubmission(pending);
+    const download=await ResumeRecovery.read('download');
+    if(download) ResumeRecovery.download(download).catch(error => feedback(error.message,true));
   } catch (error) {
     feedback(error.message, true);
   }
