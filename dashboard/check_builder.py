@@ -311,6 +311,7 @@ def check(screenshots):
                 mobile=browser.new_page(viewport={'width':390,'height':844})
                 mobile.goto(url)
                 expect(mobile.get_by_role('heading',name='Start',exact=True)).to_be_visible()
+                expect(mobile.locator('details.recent')).not_to_have_attribute('open', '')
                 assert mobile.evaluate('document.documentElement.scrollWidth <= innerWidth')
                 expect(mobile.locator('#step-meta')).to_be_visible()
                 expect(mobile.locator('#steps')).to_be_hidden()
@@ -382,6 +383,16 @@ def check(screenshots):
                 expect(ops_page.get_by_role('heading',name='Resume operations')).to_be_visible()
                 expect(ops_page.get_by_label('Candidate file')).to_be_visible()
                 ops_page.close()
+                phone_ops = browser.new_page(viewport={'width':390,'height':844})
+                phone_ops.goto(url+'/operations')
+                expect(phone_ops.get_by_role('heading',name='Resume operations')).to_be_visible()
+                cards = phone_ops.locator('.metrics > div')
+                expect(cards).to_have_count(4)
+                positions = cards.evaluate_all(
+                    'cards => cards.map(card => Math.round(card.getBoundingClientRect().top))')
+                assert len(set(positions)) == 1, positions  # four KPIs fit in a single mobile row
+                assert phone_ops.evaluate('document.documentElement.scrollWidth <= innerWidth')
+                phone_ops.close()
                 assert not errors, errors
                 browser.close()
                 print('Builder browser acceptance passed: wizard, keywords, history, three views, clipboard, actual TeX/PDF, downloads, mobile, and operations.')
