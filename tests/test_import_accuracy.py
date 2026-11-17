@@ -103,6 +103,10 @@ class ImportAccuracyTests(unittest.TestCase):
         prompt = model.prompts[0]
         for guide in ('ONE skill per item', 'Never put the name in headline', '"projects":[field]', '"portfolio":field'):
             self.assertIn(guide, prompt)
+        if for_review:
+            # Production showed a 4th bullet dropped by an old "at most three bullets" instruction.
+            self.assertNotIn('at most three', prompt)
+            self.assertIn('Include EVERY bullet', prompt)
         return profile
 
     def test_txt(self):

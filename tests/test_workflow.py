@@ -116,6 +116,8 @@ class WorkflowTests(unittest.TestCase):
                 self.assertEqual(len(outbox), 2)
                 health = json.loads((inbox / '.resume-bot-health.json').read_text())
                 self.assertTrue(health['mongodb']['queued'])
+                saved = json.loads(next((root / 'output').glob('*/*/result.json')).read_text())
+                self.assertTrue(saved['database']['queued'])
                 output = next((root / 'output').glob('*/*/resume.pdf'))
                 previous = output.read_bytes()
                 down['on'] = False
