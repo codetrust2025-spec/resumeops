@@ -352,7 +352,7 @@ def check(screenshots):
                     mobile.screenshot(path=screenshots/'new-mobile.png',full_page=True)
                 # Rotation keeps typed values; optional fields open on wide screens.
                 mobile.set_viewport_size({'width':1360,'height':960})
-                assert mobile.locator('#more-personal').evaluate('(node) => node.open')
+                expect(mobile.locator('#more-personal')).to_have_attribute('open', '')
                 assert mobile.get_by_label('Full name').input_value()=='Mobile Example'
                 assert mobile.get_by_label('Employer').input_value()=='Example Mobile Studio'
                 mobile.close()
