@@ -154,7 +154,11 @@ def role_terms(profile, keywords):
         r'(?<!\w)' + re.escape(' '.join(term.split()).casefold()) + r'(?!\w)', text)]
 
 
-def build_prompt(source, role=None, keywords=None, years=None):
+SUMMARY_RULE = ('- String 1 is the professional summary: 1-3 sentences aimed at the target role, built only from the\n'
+                "  candidate's own words in the array.")
+
+
+def build_prompt(source, role=None, keywords=None, years=None, has_summary=True):
     lines = ['You are an expert resume editor. Rewrite every string in the input array so it reads '
              'stronger and clearer for the target role, while saying exactly the same facts.']
     if role:
@@ -162,13 +166,12 @@ def build_prompt(source, role=None, keywords=None, years=None):
     if keywords:
         lines.append('Role keywords the candidate already has: ' + ', '.join(keywords) +
                      '. Use one only in a string that already mentions it, or in the summary.')
-    if years is not None:
+    if years is not None and has_summary:
         lines.append(f'Verified total experience: {years} years. You may state "{years} years" in the '
                      'first string (the summary) only.')
-    lines.append('''How to rewrite:
-- String 1 is the professional summary: 1-3 sentences aimed at the target role, built only from the
-  candidate's own words in the array.
-- Every other string is a work bullet: start with a strong past-tense verb that matches what was done
+    lines.append(f'''How to rewrite:
+{SUMMARY_RULE if has_summary else '- There is no summary in this array.'}
+- {'Every other' if has_summary else 'Every'} string is a work bullet: start with a strong past-tense verb that matches what was done
   (Built, Developed, Implemented, Integrated, Delivered, Fixed, Collaborated, Maintained, Documented,
   Tested, Reviewed), put the technology and purpose first, and remove filler such as "worked on",
   "was responsible for", "helped with".
@@ -178,7 +181,7 @@ Examples:
 "Worked on fixing login page bugs using Angular." -> "Fixed login page bugs in Angular."
 "Was responsible for writing unit tests for the payments service." -> "Wrote unit tests for the payments service."
 "Helped the team with migrating reports to SQL Server." -> "Collaborated on migrating reports to SQL Server."
-Keep empty strings empty and keep the array order and length.
+Return exactly {len(source)} string{'s' if len(source) != 1 else ''}: one rewrite per input string, in the same order. Never add or remove strings.
 Return one JSON object with exactly one key, "edits", containing the array of rewritten strings.
 INPUT ARRAY:''')
     return '\n'.join(lines) + '\n' + json.dumps(source, ensure_ascii=False)
@@ -186,10 +189,22 @@ INPUT ARRAY:''')
 
 def polish(profile, ai, on_progress=None, *, role=None, keywords=None, years=None):
     """Tailor ``profile`` with ``ai``. ``on_progress(fraction, metrics)`` receives received output
-    characters over the input size (a measured ratio; capped below 1 until the stream ends)."""
-    items = _items(profile)
+    characters over the input size (a measured ratio; capped below 1 until the stream ends).
+
+    Never fails the resume because of what the model returns: only non-empty lines are sent, and
+    a reply with the wrong shape (for example an extra, invented line) is discarded as a whole,
+    keeping every original line. The candidate's verified text is always a valid result."""
+    items = [item for item in _items(profile) if item[1].strip()]
+    base = {'role': role, 'method': 'grounded-rewrite-v2', 'changes': [], 'rejections': [],
+            'rejected_indices': [], 'changed': 0, 'rejected': 0, 'accepted': len(items)}
+    if not items:
+        if on_progress is not None:
+            on_progress(1.0, {'phase': 'done', 'chars': 0, 'chunks': 0, 'elapsed': 0.0})
+        return copy.deepcopy(profile), {**base, 'skipped': 'No summary or work bullets to tailor; '
+                                                           'the resume uses the verified facts as entered.'}
     source = [original for _, original, _ in items]
-    prompt = build_prompt(source, role, role_terms(profile, keywords), years)
+    has_summary = items[0][0] == ('summary',)
+    prompt = build_prompt(source, role, role_terms(profile, keywords), years, has_summary)
     expected = len(json.dumps({'edits': source}, ensure_ascii=False))
     callback = None
     if on_progress is not None:
@@ -200,17 +215,20 @@ def polish(profile, ai, on_progress=None, *, role=None, keywords=None, years=Non
                 on_progress(min(0.95, metrics['chars'] / expected) if expected else 0.0, metrics)
     from .ollama import generate
     result = generate(ai, prompt, on_progress=callback)
-    suggestions = result.get('edits')
+    suggestions = result.get('edits') if isinstance(result, dict) else None
     if not isinstance(suggestions, list) or len(suggestions) != len(source):
-        raise ValueError('Ollama did not return the same number of edit suggestions')
+        got = len(suggestions) if isinstance(suggestions, list) else 'no list'
+        reason = f'model returned {got} lines for {len(source)}; reply discarded, originals kept'
+        return copy.deepcopy(profile), {**base, 'accepted': 0, 'rejected': len(source),
+                                        'rejected_indices': list(range(len(source))),
+                                        'rejections': [{'index': None, 'reason': reason}],
+                                        'model_output_rejected': reason}
     out = copy.deepcopy(profile)
     rejected, changes, reasons = [], [], []
     for index, ((path, before, context), after) in enumerate(zip(items, suggestions)):
         extra = (years,) if path == ('summary',) and years is not None else ()
-        reason = '' if not before else grounded(before, after, context, extra)
-        if not before:
-            value = before
-        elif reason:
+        reason = grounded(before, after, context, extra)
+        if reason:
             value = before
             rejected.append(index)
             reasons.append({'index': index, 'reason': reason})
@@ -222,9 +240,9 @@ def polish(profile, ai, on_progress=None, *, role=None, keywords=None, years=Non
             out['summary'] = value
         else:
             out['experience'][path[1]]['bullets'][path[2]] = value
-    return out, {'accepted': len(source) - len(rejected), 'rejected': len(rejected),
+    return out, {**base, 'accepted': len(source) - len(rejected), 'rejected': len(rejected),
                  'rejected_indices': rejected, 'changed': len(changes), 'changes': changes,
-                 'rejections': reasons, 'role': role, 'method': 'grounded-rewrite-v1'}
+                 'rejections': reasons}
 
 
 def verify_tailored(original, tailored, years=None):

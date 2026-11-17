@@ -31,7 +31,7 @@ IMAGES = {'.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.webp'}
 # Measured progress fields written by the watcher (resume_bot/progress.py and pipeline.scan).
 LIVE_FIELDS = ('stage_key', 'stage_label', 'measured', 'units', 'detail', 'started', 'stage_started',
                'activity', 'expected_seconds', 'completed_stages', 'skipped_stages', 'heartbeat',
-               'attempt', 'next_retry', 'failed_stage', 'error_detail', 'ollama_runtime')
+               'attempt', 'next_retry', 'failed_stage', 'error_detail', 'ollama_runtime', 'retryable')
 
 
 def read_json(path):

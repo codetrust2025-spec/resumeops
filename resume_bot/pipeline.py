@@ -270,7 +270,8 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
             report['experience'] = experience
         if audit.get('polish'):
             report['tailoring'] = {key: audit['polish'][key] for key in
-                                   ('changed', 'accepted', 'rejected', 'changes', 'rejections', 'method')
+                                   ('changed', 'accepted', 'rejected', 'changes', 'rejections', 'method',
+                                    'skipped', 'model_output_rejected')
                                    if key in audit['polish']}
         if audit.get('ollama_runtime'):
             report['ollama_runtime'] = audit['ollama_runtime']
@@ -329,6 +330,10 @@ def _code_fingerprint():
 
 
 CODE = _code_fingerprint()
+CODE_VERSION = hashlib.sha256(json.dumps(CODE, sort_keys=True).encode()).hexdigest()[:16]
+MAX_AUTO_ATTEMPTS = 8  # transient failures: automatic retries with backoff, then a person decides
+# Errors that repeat identically for the same input and code: retrying cannot help.
+DETERMINISTIC = (ValueError, KeyError, TypeError, IndexError, json.JSONDecodeError)
 PROCESS = {'pid': os.getpid(), 'started': time.time()}
 RESTART_FILE = '.resume-bot-restart'
 
@@ -390,8 +395,14 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
                 continue
         retry_marker = inbox / RETRY_DIR / key
         retry_now = retry_marker.is_file()
-        if failures and not retry_now and time.time() - previous['last_attempt'] < _backoff(failures):
-            continue
+        if same and previous.get('status') == 'failed' and not retry_now:
+            new_code = previous.get('code_version') != CODE_VERSION
+            if previous.get('retryable') is False and not new_code:
+                continue  # deterministic: waits for new code, a changed file, or Retry now
+            if previous.get('retryable', True) and failures >= MAX_AUTO_ATTEMPTS and not new_code:
+                continue  # transient retries are bounded
+            if not new_code and time.time() - previous['last_attempt'] < _backoff(failures):
+                continue
         retry_marker.unlink(missing_ok=True)
         started_at = time.time()
         activity = {}
@@ -433,7 +444,7 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
             if fingerprint != result['source_sha256']:
                 continue
             record = {'sha256': digest, 'status': 'ok', 'output': result['output'],
-                      'attempt': failures + 1, **activity}
+                      'attempt': failures + 1, 'code_version': CODE_VERSION, **activity}
             print('OK resume processed', flush=True)
         except Exception as exc:
             blocked = isinstance(exc, (OllamaError, OverleafError, BuildError, DatabaseUnavailable,
@@ -449,15 +460,18 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
                 json.JSONDecodeError: 'Candidate JSON is incomplete or invalid.',
             }.get(type(exc), f'Processing failed during {activity.get("stage_label") or activity.get("stage", "input preparation")}.')
             now = time.time()
-            detail = f'{type(exc).__name__}: {exc}'[:300] if isinstance(exc, (OllamaError, OverleafError, BuildError)) else type(exc).__name__
+            retryable = not isinstance(exc, DETERMINISTIC) or isinstance(exc, (OSError,))
+            detail = f'{type(exc).__name__}: {exc}'[:300]
+            stopped = not retryable or failures + 1 >= MAX_AUTO_ATTEMPTS
             runtime = ai.runtime() if isinstance(exc, OllamaError) and hasattr(ai, 'runtime') else None
             if runtime:
                 LAST_RUNTIME.update(runtime, checked=time.time())
             record = {'sha256': digest, 'status': 'failed', 'blocked': blocked, 'error': error,
                       'error_detail': detail, 'ollama_runtime': runtime,
                       'failures': failures + 1, 'attempt': failures + 1, **activity,
-                      'failed_stage': activity.get('stage_key', ''),
-                      'next_retry': now + _backoff(failures + 1)}
+                      'failed_stage': activity.get('stage_key', ''), 'retryable': retryable,
+                      'code_version': CODE_VERSION,
+                      'next_retry': None if stopped else now + _backoff(failures + 1)}
             print(f'FAILED resume processing ({type(exc).__name__}); see local inbox state', flush=True)
         finally:
             stop.set()

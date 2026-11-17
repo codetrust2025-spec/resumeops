@@ -125,9 +125,11 @@
       if (job.error_detail && job.error_detail !== job.error) view.errorDetail = 'Technical detail: ' + job.error_detail;
       view.state = waitFor > 0 ? 'retrying' : 'failed';
       view.title = (waitFor > 0 ? 'Retry scheduled — ' : 'Failed — ') + percent + '%';
+      const stopped = job.retryable === false ? ' · not retried automatically: this error repeats for the same input. Correct the details or press Retry now.' :
+        job.next_retry === null ? ' · automatic retries used up. Press Retry now when the cause is fixed.' : '';
       view.status = 'Attempt ' + (job.attempt || job.failures || 1) + ' failed' +
         (job.stage_label ? ' during ' + job.stage_label : '') +
-        (waitFor > 0 ? ' · automatic retry in ' + clock(waitFor) : ' · waiting for the watcher to retry');
+        (stopped || (waitFor > 0 ? ' · automatic retry in ' + clock(waitFor) : ' · waiting for the watcher to retry'));
       return view;
     }
     // processing
