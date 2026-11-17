@@ -75,7 +75,7 @@ class AIIntakeContract(unittest.TestCase):
                          'portfolio_idea_not_completed')
         self.assertEqual(len(result['suggestions']['experience_responsibilities']), 1)
         self.assertEqual(result['suggestions']['project_writeups'], [])
-        self.assertIn('not candidate facts', ai.prompt.lower())
+        self.assertIn('never evidence of candidate experience', ai.prompt.lower())
 
     def test_unverified_resume_keyword_is_never_claimed_as_skill(self):
         result = suggest_sections(candidate(), FakeAI(), market_terms=['AWS'])
