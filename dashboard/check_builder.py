@@ -266,6 +266,9 @@ def check(screenshots):
                 expect(mobile.locator('#education-entries .resume-entry')).to_have_attribute('open','')
                 mobile.get_by_label('Degree',exact=True).fill('B.Tech')
                 expect(mobile.locator('.validation-notice')).to_be_hidden()
+                # After correcting the identified fields, Continue must advance to Review.
+                mobile.get_by_role('button',name='Continue').click()
+                expect(mobile.get_by_role('heading',name='Review and generate')).to_be_visible(timeout=15000)
                 assert mobile.evaluate('document.documentElement.scrollWidth <= innerWidth')
                 if screenshots:
                     mobile.screenshot(path=screenshots/'new-mobile.png',full_page=True)
