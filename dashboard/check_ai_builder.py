@@ -108,6 +108,13 @@ def check(ai_first=False):
                     assert 'id="candidate"' in page.request.get(origin + '/workflow').text()
                     page.goto(origin + builder)
                     assert_tap_targets(page, '.ai-nav-actions a, .ai-nav-actions button')
+                    # The compact view surfaces essential fields but hides long optional lists.
+                    expect(page.locator('#ai-contact')).not_to_have_attribute('open', '')
+                    expect(page.locator('#ai-section-work_experience')).not_to_have_attribute('open', '')
+                    expect(page.locator('#ai-section-education')).not_to_have_attribute('open', '')
+                    expect(page.locator('#ai-section-projects')).not_to_have_attribute('open', '')
+                    expect(page.locator('#ai-section-coding_platforms')).not_to_have_attribute('open', '')
+                    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                     # The import spinner is directly under the title, never a bottom sticky banner.
                     expect(page.locator('#ai-progress')).to_be_hidden()
                     page.evaluate("""() => updateProgress({
@@ -135,6 +142,7 @@ def check(ai_first=False):
                         "(item) => getComputedStyle(item).position !== 'sticky' && "
                         "item.getBoundingClientRect().top < innerHeight")
                     page.get_by_label('Full name').fill('Previous Candidate')
+                    page.locator('#ai-contact > summary').click()
                     page.get_by_label('Phone').fill('555-0101')
                     page.wait_for_function("""async () =>
                       (await ResumeRecovery.read('ai-builder'))?.intake?.phone === '555-0101'""")
@@ -167,6 +175,8 @@ def check(ai_first=False):
                         expect(page.get_by_role('status')).to_contain_text('Details imported')
                         expect(page.locator('#ai-progress-value')).to_have_text('100%')
                         expect(page.get_by_role('progressbar')).to_have_attribute('aria-valuenow','100')
+                    expect(page.locator('#ai-upload-options')).not_to_have_attribute('open', '')
+                    expect(page.locator('#ai-section-education > summary')).to_contain_text('(1)')
                     expect(page.get_by_label('Full name')).to_have_value('AI First Synthetic')
                     expect(page.get_by_label('Phone')).to_have_value('')
                     # A lone year extracted as the start date is the graduation year.
@@ -174,7 +184,10 @@ def check(ai_first=False):
                     # Degree and branch arrive as one verbatim span and are split into their own fields.
                     expect(page.locator('#ai-education [name=degree]')).to_have_value('B.Tech')
                     expect(page.locator('#ai-education [name=specialization]')).to_have_value('Computer Science')
+                    expect(page.locator('#ai-section-education > summary')).to_contain_text('(1)')
+                    page.locator('#ai-section-education > summary').click()
                     page.locator('#ai-education').get_by_role('button', name='Remove entry').click()
+                    expect(page.locator('#ai-section-education > summary')).to_contain_text('(0)')
                     access['armed'] = True
                     page.get_by_label('Target role').fill('Full Stack Developer')
                     page.get_by_label('Total years of experience').fill('0')
@@ -198,10 +211,14 @@ def check(ai_first=False):
                     expect(supported).to_have_count(1)
                     expect(unsupported).to_have_count(1)
                     expect(unsupported.get_by_role('checkbox')).not_to_be_checked()
+                    supported.locator('xpath=ancestor::details[1]').evaluate('(item) => item.open = true')
                     supported.get_by_role('checkbox').check()
                     page.get_by_label('I confirm the candidate details and selected statements are accurate.').check()
                     page.get_by_role('button', name='Preview and check ATS').click()
                     expect(page.get_by_text('ATS readiness:', exact=False)).to_be_visible()
+                    expect(page.locator('#ai-review')).to_be_hidden()
+                    page.locator('#ai-preview-content details').filter(
+                        has_text='BSc | Example University').locator('summary').click()
                     expect(page.get_by_text('BSc | Example University', exact=True)).to_be_visible()
                     assert not list(workspace.inbox.glob('*.json'))
                     request = page.evaluate("""async () => {
@@ -240,11 +257,13 @@ def check(ai_first=False):
                     senior.get_by_label('Total years of experience').fill('9')
                     senior.get_by_label('Full name').fill('Senior Synthetic')
                     senior.get_by_label('Email').fill('senior@example.com')
+                    senior.locator('#ai-section-work_experience > summary').click()
                     senior.get_by_role('button', name='Add work experience').click()
                     senior.get_by_label('Employer').fill('Example Engineering')
                     senior.get_by_label('Designation').fill('Software Engineer')
                     senior.get_by_label('Start date').fill('Jan 2017')
                     senior.get_by_label('End date').fill('Present')
+                    senior.locator('#ai-section-education > summary').click()
                     senior.get_by_role('button', name='Add education').click()
                     senior.get_by_label('Degree', exact=True).fill('BSc')
                     senior.get_by_label('University', exact=True).fill('Example University')
@@ -252,6 +271,7 @@ def check(ai_first=False):
                     expect(senior.get_by_role('heading', name='Review AI suggestions')).to_be_visible()
                     skills = senior.locator('[data-provenance="unsupported_role_keyword"]').filter(has_text=re.compile(r'^Skill '))
                     expect(skills).to_have_count(2)
+                    skills.first.locator('xpath=ancestor::details[1]').evaluate('(item) => item.open = true')
                     skills.first.get_by_role('checkbox').check()
                     senior.locator('#ai-attest').check()
                     senior.get_by_role('button', name='Preview and check ATS').click()
