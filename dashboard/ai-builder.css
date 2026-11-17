@@ -19,21 +19,26 @@
 /* Live progress belongs near the top of the builder, never as a bottom sticky banner. */
 .ai-progress{display:flex;align-items:center;gap:1rem;background:#edf3fa;border:1px solid #cbd9eb;border-radius:1rem;padding:1rem;margin:0 0 1rem}
 .ai-progress[hidden]{display:none}
-.ai-progress-ring{width:72px;height:72px;box-sizing:border-box;flex:0 0 72px;border:6px solid #cfdef1;border-top-color:#225ca9;border-radius:50%;display:grid;place-items:center;animation:ai-progress-spin 1s linear infinite}
-.ai-progress-ring span{font-size:.95rem;font-weight:700;color:#1c4a85}
+.ai-progress-ring{width:72px;height:72px;position:relative;box-sizing:border-box;flex:0 0 72px;display:grid;place-items:center}
+.ai-progress-ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ai-ring-track,.ai-ring-fill{fill:none;stroke-width:7}
+.ai-ring-track{stroke:#cfdef1}
+.ai-ring-fill{stroke:#225ca9;stroke-linecap:round;stroke-dasharray:175.93;stroke-dashoffset:175.93;transition:stroke-dashoffset .35s ease}
+.ai-progress-ring span{position:absolute;inset:0;display:grid;place-items:center;font-size:.93rem;font-weight:700;color:#1c4a85}
 .ai-progress-copy{min-width:0;overflow-wrap:anywhere}
 .ai-progress-copy strong{display:block;color:#153054;font-size:1rem}
 #ai-status{margin:.25rem 0 0;color:#243b55}
 .ai-progress-metrics{margin:.35rem 0 0;color:#4c6480;font-size:.875rem}
 .ai-progress-metrics:empty{display:none}
-.ai-progress[data-progress-state="complete"] .ai-progress-ring{animation:none;border-color:#168064}
+.ai-progress-steps{margin:.35rem 0 0;color:#34577d;font-size:.875rem;font-weight:600}
+.ai-progress-steps:empty{display:none}
+.ai-progress[data-progress-state="complete"] .ai-ring-fill{stroke:#168064}
 .ai-progress[data-progress-state="complete"] .ai-progress-ring span{color:#126e57}
 .ai-progress[data-progress-state="error"]{border-color:#ddaaa9;background:#fff3f1}
-.ai-progress[data-progress-state="error"] .ai-progress-ring{animation:none;border-color:#bd4c4a}
+.ai-progress[data-progress-state="error"] .ai-ring-fill{stroke:#bd4c4a}
 .ai-progress[data-progress-state="error"] .ai-progress-ring span{color:#962f2d}
 .ai-progress[data-progress-state="info"] .ai-progress-ring{display:none}
-@keyframes ai-progress-spin{to{transform:rotate(360deg)}}
-@media(prefers-reduced-motion:reduce){.ai-progress-ring{animation:none}}
+@media(prefers-reduced-motion:reduce){.ai-ring-fill{transition:none}}
 @media(max-width:540px){.ai-progress{gap:.75rem;padding:.9rem}.ai-progress-ring{width:62px;height:62px;flex-basis:62px}}
 
 @media(max-width:540px){.ai-fields{grid-template-columns:1fr}.ai-upload input{max-width:100%}}
