@@ -30,7 +30,10 @@
     const id = Array.from(crypto.getRandomValues(new Uint8Array(16)),
       byte => byte.toString(16).padStart(2, '0')).join('');
     const url = '/api/import-progress?id=' + id;
-    const stages = {'Reading document': 35, 'Extracting candidate details with Ollama': 70,
+    // Upload bytes are measured (0-25%). Reading and extraction start points are real boundaries;
+    // Ollama extraction has no knowable length, so the bar holds at 35% and the measured output
+    // and elapsed time are shown instead of an invented percentage.
+    const stages = {'Reading document': 30, 'Extracting candidate details with Ollama': 35,
       'Draft ready for review': 95};
     // The upload response is immediate; expensive Ollama extraction happens on the RTX.
     const upload = new Promise((resolve, reject) => {
@@ -103,6 +106,17 @@
         unknown = 0;
         const pct = stages[result.stage];
         if (pct !== undefined) stage(result.stage, pct);
+        if (result.started && result.now) {
+          const clock = s => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+          const m = result.metrics;
+          const parts = [result.stage + ' — processing', 'elapsed ' + clock(result.now - result.started)];
+          if (m && m.phase === 'waiting') parts.push('waiting for the model to start');
+          if (m && m.tokens) parts.push(m.chars.toLocaleString() + ' characters · ' +
+            (m.elapsed ? (m.tokens / m.elapsed).toFixed(1) : '0') + ' tokens/s');
+          const idle = result.now - (result.activity || result.now);
+          if (idle > 30) parts.push('no new output for ' + Math.round(idle) + ' s');
+          message(parts.join(' · '));
+        }
       }
       await new Promise(resolve => setTimeout(resolve, 1100));
     }

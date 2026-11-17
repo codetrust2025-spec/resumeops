@@ -79,3 +79,34 @@ button,.button{display:inline-block;padding:9px 14px;border:1px solid var(--prim
   .tabs button{padding:8px 9px;font-size:.85rem}
   .import-panel:has(#resume-import-progress:not([hidden])) #resume-import-status{margin-bottom:2px}
 }
+
+/* Live generation progress: one compact panel; stage chips wrap to two short rows on phones. */
+.live h2{margin:0;font-size:1.12rem}
+.live-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}
+.live-state{font-size:.78rem;font-weight:700;padding:3px 9px;border-radius:999px;background:var(--tint);color:var(--primary);white-space:nowrap}
+.live-state[data-state=retrying],.live-state[data-state=stalled]{background:#fff4e0;color:#8a5300}
+.live-state[data-state=failed]{background:#fbe9ec;color:#8c2432}
+.live-state[data-state=completed]{background:#e5f5ea;color:#1d6b3a}
+.live progress{width:100%;height:12px;accent-color:var(--primary)}
+.live-grid{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:10px 0 6px;font-size:.88rem}
+.live-grid dt{color:var(--muted)}
+.live-grid dd{margin:0;overflow-wrap:anywhere;color:var(--ink)}
+#job-elapsed{font-variant-numeric:tabular-nums}
+.live-detail{font-size:.8rem;margin:0 0 6px}
+.live-warnings{margin:0 0 6px;padding-left:18px;color:#8a5300;font-size:.82rem}
+.live-warnings:empty{display:none}
+.live-stages{list-style:none;padding:0;margin:8px 0;display:flex;flex-wrap:wrap;gap:4px}
+.live-stages li{font-size:.72rem;padding:3px 7px;border-radius:6px;border:1px solid var(--line);color:var(--muted)}
+.live-stages li[data-state=done]{background:#e5f5ea;border-color:#b9dfc6;color:#1d6b3a}
+.live-stages li[data-state=current]{background:var(--primary);border-color:var(--primary);color:#fff}
+.live-stages li[data-state=failed]{background:#fbe9ec;border-color:#e3b5bd;color:#8c2432}
+.live-stages li[data-state=skipped]{text-decoration:line-through;opacity:.6}
+.live-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.live-others{font-size:.8rem;margin:6px 0 0}
+.success{color:#1d6b3a;font-weight:650;margin:4px 0}
+@media(max-width:760px){
+  .live{padding:12px}
+  .live-grid{font-size:.84rem;margin:8px 0 4px}
+  .live-stages{gap:3px;margin:6px 0}
+  .live-stages li{font-size:.68rem;padding:2px 6px}
+}

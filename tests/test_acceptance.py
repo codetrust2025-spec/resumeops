@@ -27,7 +27,15 @@ class OllamaCompatibleHandler(BaseHTTPRequestHandler):
         if not m:
             self.send_error(400);return
         input_strings=json.loads(m.group(1))
-        output=json.dumps({'response':json.dumps({'edits':input_strings})}).encode()
+        text=json.dumps({'edits':input_strings})
+        if data.get('stream'):
+            # Real Ollama streams NDJSON chunks and ends with a done record carrying counters.
+            pieces=[text[i:i+16] for i in range(0,len(text),16)]
+            lines=[json.dumps({'response':p,'done':False}) for p in pieces]
+            lines.append(json.dumps({'response':'','done':True,'eval_count':len(pieces)}))
+            output=('\n'.join(lines)+'\n').encode()
+        else:
+            output=json.dumps({'response':text}).encode()
         self.send_response(200)
         self.send_header('Content-Type','application/json')
         self.send_header('Content-Length',str(len(output)))
@@ -45,7 +53,7 @@ class EndToEndTests(unittest.TestCase):
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         try:
             ai=Ollama('qwen2.5:7b',f'http://127.0.0.1:{server.server_port}',timeout=4)
-            def fake_download(zip_path, title, profile, *, pdf_path, saved_url):
+            def fake_download(zip_path, title, profile, *, pdf_path, saved_url, on_step=lambda *a: None):
                 shutil.copyfile(zip_path.parent / 'resume.pdf', pdf_path)
                 return {'status': 'uploaded', 'project_name': title,
                         'url': 'https://www.overleaf.com/project/abcdef123456'}
@@ -95,7 +103,7 @@ class EndToEndTests(unittest.TestCase):
         from resume_bot.compile import BuildError
 
         with tempfile.TemporaryDirectory() as td:
-            def remote(zip_path, title, browser, *, pdf_path, saved_url):
+            def remote(zip_path, title, browser, *, pdf_path, saved_url, on_step=lambda *a: None):
                 if uploader.call_count == 1:
                     pdf_path.write_bytes(b'not a PDF')
                 else:

@@ -19,6 +19,19 @@ let activeStep = 0;
 let roles = [];
 let templates = {};
 let watchedJob = '';
+let lastJob = null;
+let serverOffset = 0;            // server clock minus browser clock, from /api/status
+const shownPercent = {};         // highest percentage shown per job attempt (never decreases)
+const ACTIVE_KEY = 'resumeops.activeJob';
+function rememberJob(name, submitted) {
+  try { localStorage.setItem(ACTIVE_KEY, JSON.stringify({name, submitted})); } catch {}
+}
+function storedJob() {
+  try { return JSON.parse(localStorage.getItem(ACTIVE_KEY) || 'null'); } catch { return null; }
+}
+function forgetJob() {
+  try { localStorage.removeItem(ACTIVE_KEY); } catch {}
+}
 let shownRevision = '';
 let revisions = [];
 let historySnapshot = '';
@@ -293,9 +306,18 @@ form.addEventListener('submit',async event => {
   const button=el('generate');
   button.disabled=true;
   try {
-    const result=await request('/api/queue',payload());
+    const submitted=payload();
+    const result=await request('/api/queue',submitted);
     watchedJob=result.name;
+    rememberJob(result.name, JSON.stringify(submitted));
+    el('result-success').hidden=true;
+    // The previous candidate's result stays in history; hide it so it is not mistaken for this job.
+    ++selection;
+    shownRevision='';
+    el('results').hidden=true;
+    el('pdf-preview').removeAttribute('src');
     el('generation').hidden=false;
+    if (mobileLayout.matches) el('generation').scrollIntoView({block:'start'});
     el('job-progress').value=0;
     el('job-stage').textContent='Waiting for the watcher';
     feedback(result.created ? 'Resume queued.' : 'This revision already exists.');
@@ -390,13 +412,7 @@ el('copy-latex').addEventListener('click',async () => {
     el('copy-status').textContent='Clipboard unavailable. Use Download LaTeX.';
   }
 });
-el('another').addEventListener('click', () => {
-  ++selection;
-  watchedJob='';
-  shownRevision='';
-  el('results').hidden=true;
-  el('generation').hidden=true;
-  el('pdf-preview').removeAttribute('src');
+function clearForm(focus) {
   el('description').value='';
   el('experience-entries').replaceChildren();
   el('education-entries').replaceChildren();
@@ -417,7 +433,44 @@ el('another').addEventListener('click', () => {
   updateExperience();
   showTemplate();
   feedback('');
-  showStep(0);
+  showStep(0, focus);
+}
+
+function stopWatching() {
+  watchedJob='';
+  lastJob=null;
+  forgetJob();
+  el('generation').hidden=true;
+}
+
+function activeJob() {
+  return Boolean(watchedJob) && !(lastJob && lastJob.status==='ok' && lastJob.percent===100);
+}
+
+function resetBuilder(keepResults = false) {
+  if (!keepResults) {
+    ++selection;
+    shownRevision='';
+    el('results').hidden=true;
+    el('pdf-preview').removeAttribute('src');
+  }
+  stopWatching();
+  clearForm(!keepResults);
+  if (!keepResults) form.scrollIntoView();
+}
+el('another').addEventListener('click', () => {
+  if (!activeJob()) { resetBuilder(false); return; }
+  // A job is still running: start a new candidate but keep tracking that job.
+  ++selection;
+  shownRevision='';
+  el('results').hidden=true;
+  el('pdf-preview').removeAttribute('src');
+  clearForm(true);
+  form.scrollIntoView();
+});
+el('job-next').addEventListener('click', () => {
+  clearForm(true);
+  feedback('New candidate started. The previous job keeps running and its result will appear when verified.');
   form.scrollIntoView();
 });
 
@@ -449,23 +502,92 @@ async function refresh() {
       historySnapshot=historyVersion;
       renderHistory();
     }
+    if (typeof snapshot.now === 'number') serverOffset = snapshot.now - Date.now() / 1000;
+    const others=snapshot.jobs.filter(item => item.name!==watchedJob &&
+      ['processing','queued'].includes(item.status));
+    el('job-others').hidden=!others.length;
+    el('job-others').textContent=others.length ? 'Also in the watcher: ' + others.map(item =>
+      (item.candidate || 'Candidate') + ' (' + (item.status==='queued' ? 'waiting' : item.percent + '%') + ')').join(', ') : '';
+    if (!watchedJob) return;
     const job=snapshot.jobs.find(item => item.name===watchedJob);
-    if (!job) return;
-    const complete=job.status==='ok';
-    el('job-progress').value=complete?100:job.percent;
-    el('job-stage').textContent=(complete?100:job.percent)+'% · '+(job.stage || 'Waiting for the watcher')+
-      (job.error ? ' · '+job.error : '');
-    el('job-timestamp').textContent='Updated '+loc(job.updated)+(job.failures?' · Retries '+job.failures:'');
+    if (!job) {
+      el('job-stage').textContent='This job is no longer in the inbox.';
+      return;
+    }
+    lastJob=job;
+    el('generation').hidden=false;
+    renderLive();
     const revision=revisions.find(item => item.key===job.revision);
-    if (complete && revision && shownRevision!==revision.key){watchedJob='';showRevision(revision,true);}
+    // Reset only after the watcher reports a verified 100% result whose outputs are listed.
+    if (job.status==='ok' && job.percent===100 && revision) completeJob(job, revision);
   } catch(error) {
-    if(watchedJob) el('job-stage').textContent='Connection interrupted. Checking again.';
+    if(watchedJob) el('job-status').textContent='Connection interrupted. Checking again; no work is restarted.';
   } finally {
     refreshPending=false;
   }
 }
 
+function renderLive() {
+  if (!lastJob) return;
+  const now=Date.now()/1000+serverOffset;
+  const view=ResumeLive.describe(lastJob, now, shownPercent);
+  el('job-title').textContent=view.title;
+  el('job-state').textContent={waiting:'Waiting',running:'Running',processing:'Processing',stalled:'No heartbeat',
+    retrying:'Retrying',failed:'Failed',completed:'Completed'}[view.state];
+  el('job-state').dataset.state=view.state;
+  el('job-progress').value=view.percent;
+  el('job-stage').textContent=view.stage;
+  el('job-elapsed').textContent=view.elapsed;
+  el('job-status').textContent=view.status;
+  el('job-detail').textContent=view.detail;
+  el('job-detail').hidden=!view.detail;
+  el('job-warnings').replaceChildren(...view.warnings.map(text => rows('li',text)));
+  el('job-stages').replaceChildren(...view.stages.map(item => {
+    const node=rows('li',item.label);
+    node.dataset.state=item.state;
+    if (item.state==='current') node.setAttribute('aria-current','step');
+    return node;
+  }));
+  el('job-retry').hidden=!view.canRetry;
+  el('job-next').hidden=view.complete;
+  el('job-timestamp').textContent='Last update '+loc(lastJob.updated || lastJob.last);
+}
+
+function completeJob(job, revision) {
+  const remembered=storedJob();
+  // Clear the builder only if it still holds the candidate that was submitted, so a new
+  // candidate typed while the previous job ran is never lost.
+  const unchanged=!remembered || remembered.name!==job.name || remembered.submitted===JSON.stringify(payload());
+  showRevision(revision,false).then(() => {
+    el('result-success').hidden=false;
+    if (unchanged) resetBuilder(true);
+    else { watchedJob=''; lastJob=null; forgetJob(); el('generation').hidden=true; }
+    el('results').scrollIntoView({block:'start'});
+  });
+  watchedJob='';
+}
+
+el('job-retry').addEventListener('click', async () => {
+  if (!lastJob) return;
+  const button=el('job-retry');
+  button.disabled=true;
+  try {
+    await request('/api/retry',{name:lastJob.name});
+    el('job-status').textContent='Retry requested. The watcher will start it at its next scan.';
+  } catch(error) {
+    el('job-status').textContent=error.message;
+  } finally {
+    button.disabled=false;
+  }
+});
+
 async function init() {
+  const restored=storedJob();
+  if (restored && restored.name) {
+    watchedJob=restored.name;
+    el('generation').hidden=false;
+    el('job-stage').textContent='Restoring the active job…';
+  }
   try {
     const catalog=await request('/api/catalog');
     roles=catalog.roles;templates=catalog.templates;
@@ -475,7 +597,9 @@ async function init() {
   } catch(error) {
     feedback(error.message,true);
   }
-  refresh();
-  setInterval(refresh,2000);
+  // Poll the authoritative status every second while a job is tracked, otherwise every 2 s.
+  const poll=async () => { await refresh(); setTimeout(poll, activeJob() ? 1000 : 2000); };
+  poll();
+  setInterval(renderLive,1000);   // elapsed-time clock only; progress comes from the server
 }
 init();

@@ -28,6 +28,12 @@ OFFICE = {'.doc', '.odt', '.rtf'}
 IMAGES = {'.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.webp'}
 
 
+# Measured progress fields written by the watcher (resume_bot/progress.py and pipeline.scan).
+LIVE_FIELDS = ('stage_key', 'stage_label', 'measured', 'units', 'detail', 'started', 'stage_started',
+               'activity', 'expected_seconds', 'completed_stages', 'skipped_stages', 'heartbeat',
+               'attempt', 'next_retry', 'failed_stage')
+
+
 def read_json(path):
     try:
         return json.loads(path.read_text(encoding='utf-8-sig'))
@@ -73,8 +79,20 @@ class Workspace:
                          'blocked': bool(record.get('blocked')) if status else False,
                          'percent': record.get('percent', 0) if status else 0,
                          'stage': record.get('stage', '') if status else '',
-                         'updated': record.get('updated', last or modified) if status else modified})
+                         'updated': record.get('updated', last or modified) if status else modified,
+                         **{field: record.get(field) for field in LIVE_FIELDS if status and field in record}})
         jobs.sort(key=lambda job: job['last'], reverse=True)
+        # The watcher handles files in name order; report each waiting job's place in that line.
+        waiting = sorted(job['name'] for job in jobs if job['status'] == 'queued')
+        for job in jobs:
+            if job['status'] == 'queued':
+                job['queue_position'] = waiting.index(job['name']) + 1
+                request = read_json(self.inbox / job['name'])
+                if isinstance(request, dict):
+                    profile = request.get('profile', request)
+                    name = profile.get('full_name') if isinstance(profile, dict) else None
+                    if isinstance(name, str):
+                        job['candidate'] = name[:120]
         revisions = []
         for path in self.output.glob('*/*/result.json'):
             if not contained(path, self.output):
@@ -111,7 +129,7 @@ class Workspace:
                 'logs': [name for name in LOGS if (self.logs / name).is_file()
                          and contained(self.logs / name, self.logs)]}
 
-    def draft(self, extension, data, report=lambda stage: None):
+    def draft(self, extension, data, report=lambda stage, metrics=None: None):
         from resume_bot.ingest import extract_profile, read_resume_text
         from resume_bot.ollama import Ollama
 
@@ -152,7 +170,14 @@ class Workspace:
                 raise ValueError('The source needs 120–75,000 characters of readable résumé text.')
             report('Extracting candidate details with Ollama')
             model = Ollama(model=self.model, url='http://127.0.0.1:11434')
-            return {'profile': extract_profile(source_text, model, for_review=True), 'source': source_text}
+
+            def measured(metrics):
+                # Extraction output length is unknown, so only measured counters are reported.
+                report('Extracting candidate details with Ollama', {
+                    'phase': metrics['phase'], 'chars': metrics['chars'], 'tokens': metrics['chunks'],
+                    'elapsed': round(metrics.get('elapsed', 0), 1)})
+            return {'profile': extract_profile(source_text, model, for_review=True, on_progress=measured),
+                    'source': source_text}
 
     @staticmethod
     def _tool(arguments):
@@ -249,11 +274,14 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 del import_stages[key]
 
     def background_draft(import_id, extension, document):
-        def report_stage(stage):
+        def report_stage(stage, metrics=None):
             with import_lock:
                 entry = import_stages.get(import_id)
                 if isinstance(entry, dict) and entry['status'] == 'processing':
                     entry['stage'] = stage
+                    entry['activity'] = time.time()
+                    if metrics is not None:
+                        entry['metrics'] = metrics
         try:
             draft = workspace.draft(extension, document, report_stage)
             completed = {'status': 'complete', 'stage': 'Draft ready for review',
@@ -318,6 +346,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                     entry = import_stages.get(import_id)
                     if isinstance(entry, dict):
                         response = {key: value for key, value in entry.items() if key != 'created'}
+                        response['now'] = time.time()
                         if entry['status'] in ('complete', 'error'):
                             # Deliver each draft once; don't retain personal data on the server.
                             del import_stages[import_id]
@@ -338,7 +367,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                     return self.send_json(revision)
                 return self.send_json({'error': 'Resume revision unavailable.'}, 404)
             if url.path == '/api/status':
-                return self.send_json(workspace.status())
+                # Server time lets browsers compute elapsed time without trusting their own clock.
+                return self.send_json({**workspace.status(), 'now': time.time()})
             if url.path == '/api/artifact':
                 path = workspace.artifact(query.get('key', [''])[0], query.get('name', [''])[0])
                 if path:
@@ -358,6 +388,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                       '/operations': ('operations.html', 'text/html'),
                       '/builder.css': ('builder.css', 'text/css'),
                       '/builder.js': ('builder.js', 'text/javascript'),
+                      '/live.js': ('live.js', 'text/javascript'),
                       '/import.js': ('import.js', 'text/javascript'),
                       '/dashboard.css': ('dashboard.css', 'text/css'),
                       '/dashboard.js': ('dashboard.js', 'text/javascript'),
@@ -373,7 +404,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
 
         def do_POST(self):
             request_origin = self.request_origin()
-            if (self.path not in ('/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract') or request_origin is None
+            if (self.path not in ('/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry') or request_origin is None
                     or self.headers.get('Origin') != request_origin
                     or not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token)):
                 return self.send_json({'error': 'Request not authorized.'}, 403)
@@ -393,7 +424,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
 
             draft_stage = None
 
-            def report(stage):
+            def report(stage, metrics=None):
                 nonlocal draft_stage
                 draft_stage = stage
                 if import_id:
@@ -417,7 +448,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                             return self.send_json({'error': 'Two imports are already processing. Retry shortly.'}, 429)
                         import_stages[import_id] = {
                             'created': time.monotonic(), 'status': 'processing',
-                            'stage': 'Reading document'}
+                            'stage': 'Reading document', 'started': time.time(), 'activity': time.time()}
                     Thread(target=background_draft, args=(import_id, extension, data),
                            name='resume-import', daemon=True).start()
                     return self.send_json({'id': import_id, 'status': 'processing',
@@ -435,6 +466,15 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                         with import_lock:
                             import_stages.pop(import_id, None)
                     return self.send_json(draft)
+                if self.path == '/api/retry':
+                    from resume_bot.pipeline import request_retry
+                    request = json.loads(data.decode('utf-8-sig'))
+                    name = request.get('name', '') if isinstance(request, dict) else ''
+                    job = next((item for item in workspace.status()['jobs'] if item['name'] == name), None)
+                    if not job or job['status'] != 'failed':
+                        raise ValueError('Only a failed job can be retried')
+                    request_retry(workspace.inbox, name)
+                    return self.send_json({'name': name, 'retry': 'requested'})
                 if self.path.startswith('/api/keywords/'):
                     from resume_bot.workflow import matched_terms
                     request = json.loads(data.decode('utf-8-sig'))
