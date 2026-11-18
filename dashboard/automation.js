@@ -4,16 +4,23 @@ const byId = id => document.getElementById(id);
 const form = byId('ai-form');
 const fileControl = byId('auto-file');
 const role = form.elements.role;
+const customRole = byId('auto-custom-role');
+const CUSTOM = 'Custom Role';
 const required = [['full_name','Full name'], ['email','Email','email'],
-  ['years_of_experience','Years of experience','number']];
+  ['years_of_experience','Years of experience (0 for a fresher)','number']];
 const optional = [['phone','Phone','tel'], ['location','Location'], ['current_company','Current company'],
-  ['linkedin','LinkedIn','url'], ['github','GitHub','url'], ['portfolio','Portfolio','url']];
+  ['linkedin','LinkedIn','url'], ['github','GitHub','url'], ['portfolio','Portfolio','url'],
+  ['certifications','Certifications (one per line)','textarea'], ['achievements','Achievements (one per line)','textarea']];
+const skillsField = ['skills','Technical skills (comma separated)','textarea'];
 const collections = [
-  ['work_experience','Work experience',[['company','Employer'],['position','Job title'],['start','Start date'],['end','End date'],['location','Location']]],
+  ['work_experience','Work experience',[['company','Employer'],['position','Job title'],['start','Start date'],['end','End date'],['location','Location'],
+    ['responsibilities','Responsibilities (one per line)','textarea']]],
   ['education','Education',[['university','Institution'],['degree','Degree'],['specialization','Specialization'],['graduation_year','Graduation year'],['cgpa','CGPA']]],
-  ['projects','Completed projects',[['name','Project name']]],
+  ['projects','Completed projects',[['name','Project name'],['stack','Tech stack (comma separated)'],
+    ['description','What you built (one point per line)','textarea']]],
   ['coding_platforms','Coding platforms',[['platform','Platform'],['url','Profile URL','url']]]
 ];
+let catalogNames = [];
 let requestRunning = false;
 let preparing = false;
 let pending = null;
@@ -30,14 +37,42 @@ function element(tag, text) {
 
 function input([key, label, type = 'text'], mandatory = false) {
   const node = element('label', label);
-  const field = element('input');
+  const field = element(type === 'textarea' ? 'textarea' : 'input');
   field.name = key;
-  field.type = type;
+  if (type === 'textarea') { field.rows = 3; field.maxLength = 3000; node.classList.add('auto-wide'); }
+  else { field.type = type; field.maxLength = 250; }
   field.required = mandatory;
-  field.maxLength = 250;
   if (type === 'number') { field.min = '0'; field.max = '60'; field.step = '0.5'; }
   node.append(field);
   return node;
+}
+
+// Searchable role picker: the catalog roles plus "Custom Role". Any other title is a custom role.
+async function loadRoles() {
+  try {
+    const response = await ResumeAuth.call('/api/catalog?visible=1');
+    if (!response.ok) return;
+    const {roles} = await response.json();
+    catalogNames = roles.map(item => item.name);
+    byId('auto-role-options').replaceChildren(...[...catalogNames, CUSTOM].map(name => {
+      const option = element('option');
+      option.value = name;
+      return option;
+    }));
+  } catch (error) { /* the field still accepts any valid title */ }
+}
+
+function roleChanged() {
+  const custom = role.value.trim().toLowerCase() === CUSTOM.toLowerCase();
+  byId('auto-custom-wrap').hidden = !custom;
+  customRole.required = custom;
+  const known = catalogNames.some(name => name.toLowerCase() === role.value.trim().toLowerCase());
+  byId('auto-role-hint').textContent = custom || !role.value.trim() || known ? '' :
+    'Custom role: keywords come from job-market data instead of the role catalog.';
+}
+
+function selectedRole() {
+  return role.value.trim().toLowerCase() === CUSTOM.toLowerCase() ? customRole.value.trim() : role.value.trim();
 }
 
 function addSection([key, title, fields]) {
@@ -59,7 +94,7 @@ function addSection([key, title, fields]) {
     row.append(...fields.map(field => input(field)), remove);
     rows.append(row);
     update();
-    row.querySelector('input').focus();
+    row.querySelector('input, textarea').focus();
   });
   function update() { summary.textContent = title + ' (' + rows.children.length + ')'; }
   details.append(summary, rows, add);
@@ -76,18 +111,23 @@ function mode() {
 }
 
 function candidate() {
-  const info = Object.fromEntries([...required, ...optional].map(([key]) => [key, form.elements[key].value]));
+  const info = Object.fromEntries([...required, ...optional, skillsField].map(([key]) => [key, form.elements[key].value]));
   info.years_of_experience = Number(info.years_of_experience);
   for (const [key] of collections) {
     const rows = form.querySelector('[data-entries="' + key + '"]').children;
     info[key] = [...rows].map(row =>
-      Object.fromEntries([...row.querySelectorAll('input')].map(item => [item.name, item.value])));
+      Object.fromEntries([...row.querySelectorAll('input, textarea')].map(item => [item.name, item.value])));
   }
   return info;
 }
 
 async function body() {
-  const data = {role: role.value, consent: 'resumeops-auto-1'};
+  if (role.value.trim().toLowerCase() === CUSTOM.toLowerCase() && !customRole.value.trim()) {
+    const error = new Error('Enter the custom role title.');
+    error.control = customRole;
+    throw error;
+  }
+  const data = {role: selectedRole(), consent: 'resumeops-auto-1'};
   if (mode()) return {...data, candidate: candidate()};
   const file = fileControl.files[0];
   const extension = file?.name.match(/\.(pdf|docx|txt)$/i)?.[1]?.toLowerCase();
@@ -176,6 +216,7 @@ function fieldError(control, message) {
 function controlFor(message) {
   const rules = [
     [/full name/i, () => form.elements.full_name],
+    [/custom role/i, () => customRole],
     [/target role/i, () => role],
     [/consent|confirm the facts/i, () => byId('auto-consent')],
     [/pdf, docx or txt|uploaded file|resume file|word document|12 mb/i, () => fileControl],
@@ -208,6 +249,11 @@ function links(job) {
     });
     box.append(link);
   }
+  const preview = element('a', 'Preview PDF');
+  preview.href = '/api/artifact?' + new URLSearchParams({key: job.revision, name: 'resume.pdf'});
+  preview.target = '_blank';
+  preview.rel = 'noopener';
+  box.append(preview);
   if (job.overleaf && /^https:\/\/www\.overleaf\.com\/project\/[A-Za-z0-9_-]+$/.test(job.overleaf)) {
     const link = element('a', 'Open Overleaf project');
     link.href = job.overleaf;
@@ -216,6 +262,135 @@ function links(job) {
     box.append(link);
   }
   return box;
+}
+
+// Explainable ATS readiness: category points, what lost points, and suggested (not added) keywords.
+function atsDetails(ats) {
+  const box = element('details');
+  box.className = 'auto-ats';
+  box.append(element('summary', 'ATS readiness ' + ats.ats_readiness + '/100'));
+  if (ats.categories) {
+    const table = element('table');
+    for (const category of ats.categories) {
+      const row = element('tr');
+      row.append(element('th', category.label), element('td', category.points + ' / ' + category.max));
+      table.append(row);
+    }
+    box.append(table);
+  }
+  const lists = [['Recommendations', ats.recommendations || ats.suggestions || []],
+    ['Your skills that match the role', ats.role_relevant_skills || ats.matched || []],
+    ['Suggested keywords (add only if you have used them)', ats.suggested_skills || ats.missing || []]];
+  for (const [title, values] of lists) {
+    if (!values.length) continue;
+    box.append(element('h4', title));
+    const list = element('ul');
+    list.append(...values.slice(0, 15).map(value => element('li', value)));
+    box.append(list);
+  }
+  return box;
+}
+
+// Suggested projects: never resume content until the candidate includes (and may edit) one.
+function proposalsForm(job) {
+  const box = element('form');
+  box.className = 'auto-answer auto-proposals';
+  box.noValidate = true;
+  box.append(element('p', job.error || 'Suggested projects are ready for your review.'));
+  job.proposals.forEach((proposal, index) => {
+    const card = element('fieldset');
+    card.className = 'auto-proposal';
+    card.dataset.index = index;
+    card.append(element('legend', 'Suggested project ' + (index + 1) + ' (AI proposal, not yet confirmed)'));
+    const name = element('input'); name.name = 'name'; name.value = proposal.name; name.maxLength = 70;
+    const nameLabel = element('label', 'Project name'); nameLabel.append(name);
+    const facts = element('dl');
+    for (const [term, value] of [['Problem', proposal.problem], ['Architecture', proposal.architecture],
+      ['Key features', (proposal.features || []).join('; ')], ['Responsibilities', proposal.responsibilities]]) {
+      if (value) facts.append(element('dt', term), element('dd', value));
+    }
+    const stack = element('input'); stack.name = 'stack'; stack.value = proposal.stack.join(', '); stack.maxLength = 300;
+    const stackLabel = element('label', 'Tech stack (comma separated)'); stackLabel.append(stack);
+    const bullets = element('textarea'); bullets.name = 'bullets'; bullets.rows = 4; bullets.maxLength = 1500;
+    bullets.value = proposal.bullets.join('\n');
+    const bulletsLabel = element('label', 'Bullets (one per line)'); bulletsLabel.append(bullets);
+    const choice = element('div');
+    choice.className = 'auto-choice';
+    for (const [value, text] of [['include', 'I built this: include it'], ['skip', 'Skip']]) {
+      const option = element('label'); const radio = element('input');
+      radio.type = 'radio'; radio.name = 'decision-' + index; radio.value = value;
+      option.append(radio, ' ' + text); choice.append(option);
+    }
+    card.append(nameLabel, facts, stackLabel, bulletsLabel, choice);
+    box.append(card);
+  });
+  const submit = element('button', 'Save project choices');
+  submit.type = 'submit';
+  submit.className = 'primary';
+  box.append(submit);
+  box.addEventListener('submit', async event => {
+    event.preventDefault();
+    clearFieldErrors(box);
+    const cards = [...box.querySelectorAll('.auto-proposal')];
+    const undecided = cards.find(card => !card.querySelector('input[type=radio]:checked'));
+    if (undecided) { fieldError(undecided.querySelector('input[type=radio]'), 'Choose include or skip.'); return; }
+    const decisions = cards.map(card => {
+      const include = card.querySelector('input[type=radio]:checked').value === 'include';
+      return include ? {include, name: card.querySelector('[name=name]').value, stack: card.querySelector('[name=stack]').value,
+        bullets: card.querySelector('[name=bullets]').value} : {include};
+    });
+    submit.disabled = true;
+    try {
+      const response = await ResumeAuth.call('/api/automation/projects', {method: 'POST',
+        headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id: job.id, decisions})});
+      const result = await response.json();
+      if (!response.ok) {
+        const card = /^project\.(\d+)$/.exec(result.field || '');
+        fieldError(card ? cards[Number(card[1])].querySelector('[name=bullets]') : submit, result.error || 'Could not save.');
+        return;
+      }
+      tracked = job.id;
+      await refresh();
+    } catch (error) { fieldError(submit, error.message); }
+    finally { submit.disabled = false; }
+  });
+  return box;
+}
+
+function regenerateForm(job) {
+  const box = element('form');
+  box.className = 'auto-regenerate';
+  const label = element('label', 'Regenerate for another role');
+  const field = element('input');
+  field.name = 'role'; field.setAttribute('list', 'auto-role-options'); field.maxLength = 100;
+  field.placeholder = 'Search roles';
+  label.append(field);
+  const submit = element('button', 'Regenerate');
+  submit.type = 'submit'; submit.className = 'secondary';
+  box.append(label, submit);
+  box.addEventListener('submit', async event => {
+    event.preventDefault();
+    clearFieldErrors(box);
+    if (!field.value.trim() || field.value.trim().toLowerCase() === CUSTOM.toLowerCase()) {
+      fieldError(field, 'Choose a role or type a role title.'); return;
+    }
+    submit.disabled = true;
+    try {
+      const response = await ResumeAuth.call('/api/automation/regenerate', {method: 'POST',
+        headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id: job.id, role: field.value.trim()})});
+      const result = await response.json();
+      if (!response.ok) { fieldError(field, result.error || 'Could not regenerate.'); return; }
+      tracked = result.id;
+      await refresh();
+    } catch (error) { fieldError(field, error.message); }
+    finally { submit.disabled = false; }
+  });
+  return box;
+}
+
+function meta(job) {
+  const when = job.created ? new Date(job.created * 1000).toLocaleString() : '';
+  return [job.candidate || 'Candidate', job.role, when].filter(Boolean).join(' · ');
 }
 
 const ACTIVE = new Set(['queued', 'processing', 'handed_off', 'retrying']);
@@ -242,7 +417,8 @@ function showCurrent(jobs) {
   if (!tracked) tracked = jobs.find(job => ACTIVE.has(job.status))?.id || null;
   const job = jobs.find(item => item.id === tracked);
   if (!job || pending) { if (!pending && !requestRunning) byId('auto-status').hidden = true; return; }
-  if (job.status === 'needs_input') progress('Needs your input', null, 'Answer the questions under My resumes to continue.');
+  if (job.status === 'needs_input') progress('Needs your input', null, (job.proposals || []).length ?
+    'Review the suggested projects under My resumes to continue.' : 'Answer the questions under My resumes to continue.');
   else if (job.status === 'blocked') progress('Stopped', null, 'See My resumes for the reason.');
   else progress(job.stage, job.percent, job.status === 'retrying' ? retryText(job) : '');
 }
@@ -301,18 +477,22 @@ function jobItem(job) {
   const item = element('li');
   item.dataset.status = job.status;
   item.dataset.id = job.id;
+  const label = element('span', meta(job));
+  label.className = 'auto-meta';
   if (job.status === 'needs_input') {
-    item.append(element('strong', 'Needs your input'), answerForm(job));
+    item.append(element('strong', 'Needs your input'), label,
+      (job.proposals || []).length ? proposalsForm(job) : answerForm(job));
   } else if (job.status === 'blocked') {
-    item.append(element('strong', 'Needs attention'), element('span', explain(job.error)));
+    item.append(element('strong', 'Needs attention'), label, element('span', explain(job.error)));
   } else {
-    item.append(element('strong', job.stage + ' · ' + job.percent + '%'));
+    item.append(element('strong', job.stage + ' · ' + job.percent + '%'), label);
     if (job.status === 'retrying') item.append(element('span', retryText(job)));
   }
   for (const notice of job.notice || []) item.append(element('span', notice));
   if (job.status === 'complete') {
-    if (job.ats) item.append(element('span', 'ATS readiness ' + job.ats.ats_readiness + '/100'));
+    if (job.ats) item.append(atsDetails(job.ats));
     item.append(links(job));
+    if (job.regenerable) item.append(regenerateForm(job));
   }
   return item;
 }
@@ -345,16 +525,19 @@ async function refresh() {
 }
 
 async function init() {
-  byId('auto-basics').append(...required.map(field => input(field, true)));
+  byId('auto-basics').append(...required.map(field => input(field, true)), input(skillsField));
   byId('auto-optional').append(...optional.map(field => input(field)));
   collections.forEach(addSection);
   form.addEventListener('change',mode);
+  role.addEventListener('input', roleChanged);
+  role.addEventListener('change', roleChanged);
   form.addEventListener('invalid', event => {
     const details = event.target.closest('details:not([open])');
     if (details) { details.open = true; event.target.getBoundingClientRect(); }
   },true);
   mode();
   await ResumeAuth.ready();
+  await loadRoles();
   pending = await ResumeRecovery.read('automation-pending');
   form.addEventListener('reset', () => clearFieldErrors(form));
   form.addEventListener('submit', async event => {
@@ -369,7 +552,7 @@ async function init() {
       await send();
     } catch (error) {
       pending = null;
-      fieldError(controlFor(error.message), error.message);
+      fieldError(error.control || controlFor(error.message), error.message);
     } finally { preparing = false; }
   });
   if (pending) await send();

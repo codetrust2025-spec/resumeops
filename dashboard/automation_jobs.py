@@ -3,6 +3,7 @@ import base64
 import binascii
 import hashlib
 import json
+import logging
 import re
 import sqlite3
 import time
@@ -67,8 +68,12 @@ class AutomationJobs:
                 job TEXT, error TEXT, PRIMARY KEY(owner,id))''')
             # Notices: entries omitted because the source does not support them. Added in place;
             # earlier releases select columns by name, so rollback is unaffected.
-            if 'notice' not in {row[1] for row in db.execute('PRAGMA table_info(automation)')}:
-                db.execute('ALTER TABLE automation ADD COLUMN notice TEXT')
+            columns = {row[1] for row in db.execute('PRAGMA table_info(automation)')}
+            # role/candidate: History labels. facts: the verified facts of a finished resume, owner-scoped,
+            # so it can be regenerated for another role without uploading again.
+            for column in ('notice', 'role', 'candidate', 'facts'):
+                if column not in columns:
+                    db.execute(f'ALTER TABLE automation ADD COLUMN {column} TEXT')
 
     def connection(self):
         db = sqlite3.connect(self.path, timeout=5)
@@ -90,11 +95,27 @@ class AutomationJobs:
                 global_pending = db.execute("SELECT count(*) FROM automation WHERE payload IS NOT NULL").fetchone()[0]
                 if pending >= 4 or global_pending >= 24:
                     raise AutomationCapacity('The automation queue is busy. Try again shortly.')
-                db.execute('INSERT INTO automation(owner,id,payload,created,updated) VALUES (?,?,?,?,?)',
-                           (owner, identifier, raw, now, now))
+                db.execute('INSERT INTO automation(owner,id,payload,created,updated,role) VALUES (?,?,?,?,?,?)',
+                           (owner, identifier, raw, now, now, request['role']))
         self.start()
         self.wake.set()
         return identifier
+
+    # The builder's measured stages, placed in the published progress bands: ATS analysis 65-75,
+    # LaTeX 75-85, PDF 85-90, Overleaf 90-95, verification 95-99; 100 only after History verifies
+    # the downloads (see below).
+    WATCHER_BANDS = {'validate': (65, 66), 'job': (66, 67), 'source': (67, 68), 'ai': (68, 68),
+                     'checks': (68, 75), 'latex': (75, 85), 'pdf': (85, 90), 'overleaf': (90, 95), 'verify': (95, 99)}
+
+    def _watcher_percent(self, task):
+        from resume_bot.progress import BANDS
+        key = task.get('stage_key')
+        if key not in self.WATCHER_BANDS or key not in BANDS:
+            return 65
+        low, high = self.WATCHER_BANDS[key]
+        _, band_low, band_high, _ = BANDS[key]
+        fraction = max(0.0, min(1.0, ((task.get('percent') or band_low) - band_low) / max(1, band_high - band_low)))
+        return low + round(fraction * (high - low))
 
     def _status(self, row, state, owner):
         current = dict(row)
@@ -103,8 +124,8 @@ class AutomationJobs:
             return current
         task = state.get(name, {})
         state_name = task.get('status')
-        current.update(stage=task.get('stage') or 'Waiting for the resume watcher',
-                       percent=55 + 44 * max(0, min(100, task.get('percent') or 0)) // 100)
+        current.update(stage=task.get('stage') or 'Waiting for the resume builder',
+                       percent=self._watcher_percent(task) if task else 65)
         if state_name == 'ok' and task.get('percent') == 100:
             key = self.workspace.private_revision_key(task.get('output'), owner)
             revision = self.workspace.revision(key) if key else None
@@ -127,9 +148,10 @@ class AutomationJobs:
         return current
 
     def list(self, owner, identity=None):
-        fields = 'id, status, stage, percent, attempts, next_retry, error, created, updated, job, notice'
+        fields = 'id, status, stage, percent, attempts, next_retry, error, created, updated, job, notice, role, candidate'
         with closing(self.connection()) as db:
-            rows = db.execute(f"SELECT {fields}, CASE status WHEN 'needs_input' THEN checkpoints END AS waiting "
+            rows = db.execute(f"SELECT {fields}, CASE status WHEN 'needs_input' THEN checkpoints END AS waiting, "
+                              'facts IS NOT NULL AS regenerable '
                               'FROM automation WHERE owner=? AND (? IS NULL OR id=?) ORDER BY created DESC LIMIT 50',
                               (owner, identity, identity)).fetchall()
         state = self.workspace.automation_state()
@@ -137,12 +159,80 @@ class AutomationJobs:
         for row in rows:
             job = self._status(row, state, owner)
             job['notice'] = json.loads(job.get('notice') or '[]')
-            waiting = json.loads(job.pop('waiting') or '{}')  # only the questions leave the server
+            job['regenerable'] = bool(job.get('regenerable')) and job['status'] == 'complete'
+            waiting = json.loads(job.pop('waiting') or '{}')  # only the questions and proposals leave the server
             if job['status'] == 'needs_input':
                 job['questions'] = [{key: question[key] for key in ('id', 'field', 'label', 'explanation', 'value')}
                                     for question in waiting.get('questions', [])]
+                job['proposals'] = waiting.get('proposals', [])
             jobs.append(job)
         return jobs
+
+    def decide_projects(self, owner, identifier, decisions):
+        """Apply the candidate's decision on each suggested project. Only projects they confirm, as
+        they edited them, become resume content; the rest are dropped. Then the job continues."""
+        from resume_bot.automation import AnswerError
+        from resume_bot.generate import confirmed_project
+
+        with closing(self.connection()) as db, db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT status, checkpoints, notice FROM automation WHERE owner=? AND id=?',
+                             (owner, identifier)).fetchone()
+            checkpoints = json.loads(row['checkpoints']) if row else {}
+            if not row or row['status'] != 'needs_input' or 'proposals' not in checkpoints:
+                raise AnswerError('This resume is not waiting for project decisions.')
+            proposals = checkpoints['proposals']
+            if not isinstance(decisions, list) or len(decisions) != len(proposals):
+                raise AnswerError('Choose include or skip for every suggested project.')
+            confirmed, notes = [], json.loads(row['notice'] or '[]')
+            for index, (proposal, decision) in enumerate(zip(proposals, decisions)):
+                if not isinstance(decision, dict) or decision.get('include') not in (True, False):
+                    raise AnswerError('Choose include or skip for this project.', f'project.{index}')
+                if not decision['include']:
+                    notes.append(f'Not included: suggested project "{proposal["name"]}".')
+                    continue
+                stack = decision.get('stack', proposal['stack'])
+                bullets = decision.get('bullets', proposal['bullets'])
+                stack = [s for s in re.split(r'[,\n]', stack)] if isinstance(stack, str) else stack
+                bullets = [b for b in bullets.split('\n')] if isinstance(bullets, str) else bullets
+                if not isinstance(stack, list) or not isinstance(bullets, list):
+                    raise AnswerError('Project details are invalid.', f'project.{index}')
+                try:
+                    project = confirmed_project(decision.get('name', proposal['name']), stack, bullets)
+                except ValueError as exc:
+                    raise AnswerError(str(exc), f'project.{index}') from exc
+                confirmed.append(project)
+                notes.append(f'Confirmed by you: project "{project.split(" - ")[0]}".')
+            checkpoints.pop('proposals')
+            checkpoints.update(projects_reviewed=True, confirmed_projects=confirmed)
+            db.execute("UPDATE automation SET status='queued',stage='Project choices saved; continuing',percent=max(percent,62),"
+                       'error=NULL,next_retry=0,checkpoints=?,notice=?,updated=? WHERE owner=? AND id=?',
+                       (json.dumps(checkpoints), json.dumps(notes), time.time(), owner, identifier))
+        self.start()
+        self.wake.set()
+
+    def regenerate(self, owner, identifier, role):
+        """A new resume for another role from a finished resume's verified facts (no new upload)."""
+        from resume_bot.automation import AnswerError, CONSENT_VERSION, select_target
+
+        role = select_target(role)
+        with closing(self.connection()) as db, db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT facts, candidate FROM automation WHERE owner=? AND id=?', (owner, identifier)).fetchone()
+            if not row or not row['facts']:
+                raise AnswerError('Only a finished resume can be regenerated.')
+            facts = json.loads(row['facts'])
+            new_id = hashlib.sha256(json.dumps({'from': identifier, 'role': role.casefold()}).encode()).hexdigest()
+            if not db.execute('SELECT 1 FROM automation WHERE owner=? AND id=?', (owner, new_id)).fetchone():
+                payload = json.dumps({'consent': CONSENT_VERSION, 'role': role, 'regenerated_from': identifier})
+                checkpoints = json.dumps({'source': facts, 'facts': facts, 'projects_reviewed': bool(facts.get('projects'))})
+                now = time.time()
+                db.execute('INSERT INTO automation(owner,id,payload,checkpoints,created,updated,role,candidate,percent,stage) '
+                           "VALUES (?,?,?,?,?,?,?,?,30,'Verified facts reused from an earlier resume')",
+                           (owner, new_id, payload, checkpoints, now, now, role, row['candidate']))
+        self.start()
+        self.wake.set()
+        return new_id
 
     def answer(self, owner, identifier, answers):
         """Apply the candidate's answers to a job that needs input, then continue it where it stopped."""
@@ -208,8 +298,9 @@ class AutomationJobs:
                 self.wake.clear()
 
     def _prepare(self, job):
-        from resume_bot.automation import (NeedsInput, inferred_years, role_intelligence, source_profile, tailor_facts,
+        from resume_bot.automation import (NeedsInput, inferred_years, role_intelligence, source_profile, tailor_role,
                                            verified_request)
+        from resume_bot.generate import propose_projects, split_project
         from resume_bot.ollama import Ollama, OllamaError
 
         key = (job['owner'], job['id'])
@@ -233,16 +324,22 @@ class AutomationJobs:
         def extract():
             if 'profile' in request:
                 return request['profile']
-            progress(10, 'Reading resume')
+            progress(12, 'File extraction: reading the resume')
             return self.workspace.read_automation_source(request['extension'], base64.b64decode(request['document']))
 
         def extraction_progress(metrics):
             fields = min(metrics.get('fields_emitted', 0), 15)
-            progress(15 + fields * 10 // 15, f'Extracting source facts with Ollama ({fields} fields)')
+            progress(12 + fields * 8 // 15, f'File extraction: candidate facts with Ollama ({fields} fields)')
 
-        def drafting_progress(metrics):
+        def ranking_progress(metrics):
             fields = min(metrics.get('fields_emitted', 0), 8)
-            progress(35 + fields, 'Ranking verified evidence with Ollama')
+            progress(40 + fields * 7 // 8, 'AI resume generation: ordering evidence for the role')
+
+        def summary_progress(metrics):
+            progress(48 + min(6, metrics.get('chunks', 0) // 20), 'AI resume generation: writing the summary')
+
+        def proposal_progress(metrics):
+            progress(56 + min(3, metrics.get('chunks', 0) // 60), 'Project selection: proposing role-specific projects')
 
         try:
             source = checkpoints.get('source')
@@ -250,38 +347,67 @@ class AutomationJobs:
                 source = checkpoint('source', extract())
             facts = checkpoints.get('facts')
             if facts is None:
+                progress(20, 'Candidate fact validation')
                 facts = checkpoint('facts', source if isinstance(source, dict) else
                                    source_profile(source, model, extraction_progress))
-            progress(27, 'Candidate facts validated')
+            with closing(self.connection()) as db, db:
+                db.execute('UPDATE automation SET candidate=? WHERE owner=? AND id=?', (facts.get('full_name'), *key))
+            progress(30, 'Candidate facts validated')
             role = request['role']
             years = request.get('years', inferred_years(facts))
             intelligence = checkpoints.get('role')
             if intelligence is None:
+                progress(33, f'Selected role analysis: {role}')
                 intelligence = checkpoint('role', role_intelligence(role, self.workspace.root))
-            progress(35, 'Target role and keyword evidence prepared')
-            prepared = checkpoints.get('prepared')
-            if prepared is None:
-                profile = tailor_facts(facts, intelligence['label'], years, intelligence, model, drafting_progress)
-                packet, claims = verified_request(profile, role, years, intelligence)
-                prepared = checkpoint('prepared', [packet, claims])
-            packet, claims = prepared
-            progress(50, 'Evidence verified and ATS inputs prepared')
+            progress(40, 'Role keywords and skill areas prepared')
+            tailored = checkpoints.get('tailored')
+            if tailored is None:
+                profile, how = tailor_role(facts, intelligence['label'], years, intelligence, model,
+                                           ranking_progress, summary_progress)
+                tailored = checkpoint('tailored', [profile, how])
+            profile, how = tailored
+            progress(55, 'Role-based summary, skills and evidence order prepared')
+            if not facts.get('projects') and not checkpoints.get('projects_reviewed'):
+                proposals = checkpoints.get('proposals_made')
+                if proposals is None:
+                    progress(56, 'Project selection: proposing role-specific projects')
+                    proposals = checkpoint('proposals_made', propose_projects(
+                        facts, {'role': intelligence['role'], 'keywords': intelligence['terms']},
+                        intelligence['label'], years, model, proposal_progress))
+                if proposals:
+                    # Suggestions are never resume content until the candidate confirms them.
+                    checkpoints['proposals'] = proposals
+                    with closing(self.connection()) as db, db:
+                        db.execute("UPDATE automation SET status='needs_input',stage='Review suggested projects',percent=60,"
+                                   'error=?,checkpoints=?,updated=? WHERE owner=? AND id=?',
+                                   (f'{len(proposals)} project suggestions are ready. Include only the ones you have '
+                                    'built, edit them as needed, or skip them.', json.dumps(checkpoints), updated(), *key))
+                    return
+            confirmed = checkpoints.get('confirmed_projects') or []
+            final_facts = {**facts, 'projects': [*(facts.get('projects') or []), *confirmed]}
+            profile = {**profile, 'projects': [*(profile.get('projects') or []), *confirmed]}
+            if not profile['projects']:
+                profile.pop('projects')
+                final_facts.pop('projects')
+            packet, claims = verified_request(profile, role, years, intelligence)
+            progress(65, 'Projects confirmed; facts and claims verified')
             approval = {'operation': job['id'], 'approved_by': job['owner'], 'claims': claims,
-                        'project_names': packet['profile'].get('projects', []),
+                        'project_names': [split_project(p)[0] for p in packet['profile'].get('projects', [])],
                         'market_sources': intelligence['sources'],
-                        'automation': {'consent': request['consent'], 'submission_sha256': job['id'],
-                                       'source_kind': request.get('extension', 'attested form'),
+                        'automation': {'v': 3, 'consent': request['consent'], 'submission_sha256': job['id'],
+                                       'source_kind': request.get('extension', 'regenerated' if request.get('regenerated_from')
+                                                                  else 'attested form'),
                                        'source_sha256': hashlib.sha256(
                                            (source if isinstance(source, str) else
                                             json.dumps(source, sort_keys=True)).encode()).hexdigest(),
-                                       'facts': facts}}
+                                       'facts': final_facts, 'summary': how, 'confirmed_projects': confirmed}}
             packet['target']['automation_owner'] = job['owner']
             packet['target']['automation_id'] = job['id']
             match = self.workspace.enqueue(json.dumps(packet).encode(), approval=approval)
             with closing(self.connection()) as db, db:
-                db.execute("UPDATE automation SET status='handed_off',stage='Waiting for the resume watcher',percent=55,"
-                           "payload=NULL,checkpoints='{}',error=NULL,updated=?,job=? WHERE owner=? AND id=?",
-                           (updated(), match['name'], *key))
+                db.execute("UPDATE automation SET status='handed_off',stage='Waiting for the resume builder',percent=65,"
+                           "payload=NULL,checkpoints='{}',error=NULL,updated=?,job=?,facts=? WHERE owner=? AND id=?",
+                           (updated(), match['name'], json.dumps(final_facts), *key))
         except NeedsInput as gap:
             # Keep the submission and everything already done; ask only for what the resume lacks.
             checkpoints.update(draft=gap.draft, questions=gap.questions)
@@ -305,6 +431,7 @@ class AutomationJobs:
                 db.execute("UPDATE automation SET status='blocked',stage='Needs your input',error=?,payload=NULL,"
                            "checkpoints='{}',updated=? WHERE owner=? AND id=?", (str(error), updated(), *key))
         except Exception:
+            logging.getLogger('resumeops.automation').exception('Unexpected preparation failure for %s', job['id'][:12])
             with closing(self.connection()) as db, db:
                 db.execute("UPDATE automation SET status='blocked',stage='Needs operator attention',error=?,payload=NULL,"
                            "checkpoints='{}',updated=? WHERE owner=? AND id=?",

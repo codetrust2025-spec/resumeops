@@ -1,134 +1,1498 @@
 {
-  "roles": [
-    {
-      "id": "azure-data-engineer",
-      "name": "Azure Data Engineer",
-      "keywords": [
-        "Azure Data Factory", "Azure Synapse Analytics", "Azure Databricks",
-        "Azure SQL Database", "Data Lake", "ETL", "Data Pipeline",
-        "Azure DevOps", "Python", "PySpark", "SQL", "Power BI",
-        "Data Warehousing", "Azure Functions", "Azure Storage",
-        "Data Modeling", "Azure Stream Analytics", "Cosmos DB"
-      ],
-      "titleVariations": [
-        "Azure Data Engineer",
-        "Senior Azure Data Engineer",
-        "Azure Big Data Engineer",
-        "Microsoft Azure Data Engineer",
-        "Cloud Data Engineer - Azure"
-      ]
-    },
-    {
-      "id": "frontend-developer",
-      "name": "Frontend Developer",
-      "keywords": [
-        "React.js", "Next.js", "JavaScript", "TypeScript", "HTML5", "CSS3",
-        "Redux", "Material UI", "Tailwind CSS", "REST API", "GraphQL",
-        "Responsive Design", "Jest", "Webpack", "Git", "Agile"
-      ],
-      "titleVariations": [
-        "Frontend Developer",
-        "Senior Frontend Developer",
-        "React.js Developer",
-        "UI Developer",
-        "Frontend Engineer"
-      ]
-    },
-    {
-      "id": "fullstack-developer",
-      "name": "Full Stack Developer",
-      "keywords": [
-        "React.js", "Node.js", "Express.js", "MongoDB", "SQL",
-        "REST API", "GraphQL", "Docker", "AWS", "Azure",
-        "TypeScript", "Redis", "Microservices", "CI/CD", "Git"
-      ],
-      "titleVariations": [
-        "Full Stack Developer",
-        "Senior Full Stack Developer",
-        "MERN Stack Developer",
-        "Full Stack Engineer",
-        "Software Engineer"
-      ]
-    },
-    {
-      "id": "automation-tester",
-      "name": "Automation Tester",
-      "keywords": [
-        "Selenium", "Playwright", "Cypress", "TestNG", "JUnit",
-        "API Testing", "Postman", "Java", "Python", "JavaScript",
-        "CI/CD", "Jenkins", "Git", "Agile", "Test Automation Framework"
-      ],
-      "titleVariations": [
-        "Automation Tester",
-        "Senior Automation Test Engineer",
-        "QA Automation Engineer",
-        "Test Automation Specialist",
-        "SDET"
-      ]
-    },
-    {
-      "id": "backend-developer",
-      "name": "Backend Developer",
-      "keywords": [
-        "Node.js", "Express.js", "Python", "Django", "Flask",
-        "REST API", "GraphQL", "MongoDB", "PostgreSQL", "MySQL",
-        "Redis", "Docker", "Kubernetes", "AWS", "Microservices"
-      ],
-      "titleVariations": [
-        "Backend Developer",
-        "Senior Backend Developer",
-        "Backend Engineer",
-        "API Developer",
-        "Server-Side Developer"
-      ]
-    },
-    {
-      "id": "devops-engineer",
-      "name": "DevOps Engineer",
-      "keywords": [
-        "Docker", "Kubernetes", "Jenkins", "GitLab CI/CD", "Terraform",
-        "AWS", "Azure", "Linux", "Shell Scripting", "Python",
-        "Ansible", "Monitoring", "Prometheus", "Grafana", "Git"
-      ],
-      "titleVariations": [
-        "DevOps Engineer",
-        "Senior DevOps Engineer",
-        "Site Reliability Engineer",
-        "Cloud DevOps Engineer",
-        "Infrastructure Engineer"
-      ]
-    },
-    {
-      "id": "cloud-engineer",
-      "name": "Cloud Engineer",
-      "keywords": [
-        "AWS", "Azure", "GCP", "Cloud Architecture", "Terraform",
-        "CloudFormation", "Lambda", "EC2", "S3", "VPC",
-        "IAM", "Security", "Networking", "Cost Optimization", "Migration"
-      ],
-      "titleVariations": [
-        "Cloud Engineer",
-        "Senior Cloud Engineer",
-        "Cloud Solutions Architect",
-        "Cloud Infrastructure Engineer",
-        "Multi-Cloud Engineer"
-      ]
-    },
-    {
-      "id": "ml-engineer",
-      "name": "Machine Learning Engineer",
-      "keywords": [
-        "Python", "TensorFlow", "PyTorch", "Scikit-learn", "Pandas",
-        "NumPy", "Machine Learning", "Deep Learning", "NLP", "Computer Vision",
-        "MLOps", "Model Deployment", "AWS SageMaker", "Azure ML", "Docker"
-      ],
-      "titleVariations": [
-        "Machine Learning Engineer",
-        "Senior ML Engineer",
-        "AI Engineer",
-        "Data Scientist",
-        "MLOps Engineer"
-      ]
-    }
+ "version": 3,
+ "aliases": {
+  "REST APIs": [
+   "REST API",
+   "RESTful API",
+   "RESTful APIs",
+   "RESTful services",
+   "REST services"
+  ],
+  "JavaScript": [
+   "ES6",
+   "ECMAScript"
+  ],
+  "React.js": [
+   "React",
+   "ReactJS"
+  ],
+  "Angular": [
+   "AngularJS",
+   "Angular 2+"
+  ],
+  "Node.js": [
+   "NodeJS"
+  ],
+  "Express.js": [
+   "ExpressJS"
+  ],
+  "Next.js": [
+   "NextJS"
+  ],
+  "Vue.js": [
+   "Vue",
+   "VueJS"
+  ],
+  "HTML": [
+   "HTML5"
+  ],
+  "CSS": [
+   "CSS3"
+  ],
+  "Spring Boot": [
+   "SpringBoot"
+  ],
+  "Spring Data JPA": [
+   "JPA"
+  ],
+  "Microservices": [
+   "Microservice",
+   "Microservices architecture"
+  ],
+  "PostgreSQL": [
+   "Postgres"
+  ],
+  "MongoDB": [
+   "Mongo"
+  ],
+  "Kubernetes": [
+   "K8s"
+  ],
+  "CI/CD": [
+   "CI CD",
+   "Continuous Integration",
+   "Continuous Delivery"
+  ],
+  "Amazon Web Services": [
+   "AWS"
+  ],
+  "Microsoft Azure": [
+   "Azure"
+  ],
+  "Google Cloud": [
+   "GCP",
+   "Google Cloud Platform"
+  ],
+  "Azure Data Factory": [
+   "ADF"
+  ],
+  "Azure Databricks": [
+   "Databricks"
+  ],
+  "Azure Data Lake": [
+   "ADLS",
+   "Azure Data Lake Storage",
+   "Data Lake"
+  ],
+  "Machine Learning": [
+   "ML"
+  ],
+  "Large Language Models": [
+   "LLM",
+   "LLMs"
+  ],
+  "Retrieval-Augmented Generation": [
+   "RAG"
+  ],
+  "scikit-learn": [
+   "sklearn"
+  ],
+  "Power BI": [
+   "PowerBI"
+  ],
+  "Unit Testing": [
+   "unit tests"
+  ],
+  ".NET": [
+   "dotnet",
+   ".NET Core",
+   ".NET 6",
+   ".NET 8"
+  ],
+  "ASP.NET Core": [
+   "ASP.NET"
+  ],
+  "Entity Framework": [
+   "EF Core",
+   "Entity Framework Core"
+  ],
+  "Responsive Design": [
+   "Responsive UI",
+   "Responsive web design"
+  ],
+  "Git": [
+   "GitHub",
+   "GitLab",
+   "Bitbucket"
   ]
+ },
+ "roles": [
+  {
+   "id": "ui-developer",
+   "name": "UI Developer",
+   "family": "frontend",
+   "titleVariations": [
+    "UI Developer",
+    "UI Engineer",
+    "Web UI Developer",
+    "Front End UI Developer"
+   ],
+   "groups": {
+    "Languages": [
+     "JavaScript",
+     "TypeScript",
+     "HTML",
+     "CSS"
+    ],
+    "Frameworks": [
+     "React.js",
+     "Angular",
+     "Redux",
+     "Bootstrap",
+     "Tailwind CSS",
+     "SASS"
+    ],
+    "Testing": [
+     "Jest",
+     "React Testing Library",
+     "Cypress"
+    ],
+    "Tools": [
+     "Git",
+     "Webpack",
+     "Vite",
+     "Figma",
+     "Chrome DevTools"
+    ],
+    "Concepts": [
+     "Responsive Design",
+     "REST APIs",
+     "Accessibility",
+     "Cross-browser Compatibility",
+     "UI Performance Optimization"
+    ]
+   },
+   "projectThemes": [
+    "Responsive admin dashboard consuming REST APIs",
+    "Accessible component library with design tokens",
+    "Performance-tuned single-page storefront"
+   ]
+  },
+  {
+   "id": "frontend-developer",
+   "name": "Frontend Developer",
+   "family": "frontend",
+   "titleVariations": [
+    "Frontend Developer",
+    "Front End Developer",
+    "Frontend Engineer",
+    "Senior Frontend Developer"
+   ],
+   "groups": {
+    "Languages": [
+     "JavaScript",
+     "TypeScript",
+     "HTML",
+     "CSS"
+    ],
+    "Frameworks": [
+     "React.js",
+     "Next.js",
+     "Angular",
+     "Vue.js",
+     "Redux",
+     "Tailwind CSS"
+    ],
+    "Testing": [
+     "Jest",
+     "React Testing Library",
+     "Cypress",
+     "Playwright"
+    ],
+    "Tools": [
+     "Git",
+     "Webpack",
+     "Vite",
+     "npm"
+    ],
+    "Concepts": [
+     "Responsive Design",
+     "REST APIs",
+     "GraphQL",
+     "Accessibility",
+     "Web Performance"
+    ]
+   },
+   "projectThemes": [
+    "Server-rendered product catalogue with search and filters",
+    "Real-time notifications panel over WebSockets",
+    "Form-heavy onboarding flow with client-side validation"
+   ]
+  },
+  {
+   "id": "react-developer",
+   "name": "React.js Developer",
+   "family": "frontend",
+   "titleVariations": [
+    "React.js Developer",
+    "React Developer",
+    "React Engineer",
+    "ReactJS Developer"
+   ],
+   "groups": {
+    "Languages": [
+     "JavaScript",
+     "TypeScript",
+     "HTML",
+     "CSS"
+    ],
+    "Frameworks": [
+     "React.js",
+     "Redux",
+     "Redux Toolkit",
+     "React Router",
+     "Next.js",
+     "React Query",
+     "Material UI"
+    ],
+    "Testing": [
+     "Jest",
+     "React Testing Library",
+     "Cypress"
+    ],
+    "Tools": [
+     "Git",
+     "Vite",
+     "Webpack",
+     "npm"
+    ],
+    "Concepts": [
+     "React Hooks",
+     "State Management",
+     "REST APIs",
+     "Responsive Design",
+     "Code Splitting"
+    ]
+   },
+   "projectThemes": [
+    "Task board with drag-and-drop and Redux Toolkit",
+    "Analytics dashboard with React Query and charts",
+    "Multi-step checkout with form validation"
+   ]
+  },
+  {
+   "id": "angular-developer",
+   "name": "Angular Developer",
+   "family": "frontend",
+   "titleVariations": [
+    "Angular Developer",
+    "Angular Engineer",
+    "Angular Frontend Developer"
+   ],
+   "groups": {
+    "Languages": [
+     "TypeScript",
+     "JavaScript",
+     "HTML",
+     "CSS"
+    ],
+    "Frameworks": [
+     "Angular",
+     "RxJS",
+     "NgRx",
+     "Angular Material",
+     "Bootstrap"
+    ],
+    "Testing": [
+     "Jasmine",
+     "Karma",
+     "Cypress"
+    ],
+    "Tools": [
+     "Git",
+     "Angular CLI",
+     "npm"
+    ],
+    "Concepts": [
+     "Reactive Forms",
+     "Lazy Loading",
+     "REST APIs",
+     "Responsive Design",
+     "Dependency Injection"
+    ]
+   },
+   "projectThemes": [
+    "Employee directory with lazy-loaded feature modules",
+    "Reactive-forms based claims portal",
+    "NgRx-backed order tracking dashboard"
+   ]
+  },
+  {
+   "id": "java-backend-developer",
+   "name": "Java Backend Developer",
+   "family": "backend-java",
+   "titleVariations": [
+    "Java Backend Developer",
+    "Java Developer",
+    "Java Software Engineer",
+    "Backend Java Developer",
+    "Java Spring Boot Developer"
+   ],
+   "groups": {
+    "Languages": [
+     "Java",
+     "SQL"
+    ],
+    "Frameworks": [
+     "Spring Boot",
+     "Spring MVC",
+     "Spring Data JPA",
+     "Spring Security",
+     "Hibernate"
+    ],
+    "Databases": [
+     "MySQL",
+     "PostgreSQL",
+     "Oracle",
+     "MongoDB",
+     "Redis"
+    ],
+    "Testing": [
+     "JUnit",
+     "Mockito",
+     "Postman"
+    ],
+    "Cloud & DevOps": [
+     "Docker",
+     "Kubernetes",
+     "Jenkins",
+     "Amazon Web Services",
+     "Kafka"
+    ],
+    "Tools": [
+     "Maven",
+     "Gradle",
+     "Git",
+     "IntelliJ IDEA"
+    ],
+    "Concepts": [
+     "REST APIs",
+     "Microservices",
+     "Unit Testing",
+     "Design Patterns",
+     "Exception Handling"
+    ]
+   },
+   "projectThemes": [
+    "Order management REST service with Spring Boot and PostgreSQL",
+    "Inventory microservice with Spring Data JPA and Kafka events",
+    "Role-based authentication service with Spring Security and JWT"
+   ]
+  },
+  {
+   "id": "python-backend-developer",
+   "name": "Python Backend Developer",
+   "family": "backend-python",
+   "titleVariations": [
+    "Python Backend Developer",
+    "Python Developer",
+    "Backend Python Engineer",
+    "Django Developer",
+    "FastAPI Developer"
+   ],
+   "groups": {
+    "Languages": [
+     "Python",
+     "SQL"
+    ],
+    "Frameworks": [
+     "Django",
+     "Django REST Framework",
+     "FastAPI",
+     "Flask",
+     "SQLAlchemy",
+     "Celery"
+    ],
+    "Databases": [
+     "PostgreSQL",
+     "MySQL",
+     "MongoDB",
+     "Redis"
+    ],
+    "Testing": [
+     "pytest",
+     "unittest",
+     "Postman"
+    ],
+    "Cloud & DevOps": [
+     "Docker",
+     "Kubernetes",
+     "Amazon Web Services",
+     "CI/CD",
+     "Linux"
+    ],
+    "Tools": [
+     "Git",
+     "Poetry",
+     "pip"
+    ],
+    "Concepts": [
+     "REST APIs",
+     "Microservices",
+     "Asynchronous Programming",
+     "ORM",
+     "Unit Testing"
+    ]
+   },
+   "projectThemes": [
+    "Booking API with FastAPI, PostgreSQL and background jobs",
+    "Django REST Framework service with token authentication",
+    "Async data ingestion worker with Celery and Redis"
+   ]
+  },
+  {
+   "id": "nodejs-developer",
+   "name": "Node.js Developer",
+   "family": "backend-node",
+   "titleVariations": [
+    "Node.js Developer",
+    "Node Developer",
+    "Node.js Backend Developer",
+    "Backend JavaScript Developer"
+   ],
+   "groups": {
+    "Languages": [
+     "JavaScript",
+     "TypeScript",
+     "SQL"
+    ],
+    "Frameworks": [
+     "Node.js",
+     "Express.js",
+     "NestJS",
+     "Mongoose",
+     "Prisma",
+     "Socket.IO"
+    ],
+    "Databases": [
+     "MongoDB",
+     "PostgreSQL",
+     "MySQL",
+     "Redis"
+    ],
+    "Testing": [
+     "Jest",
+     "Mocha",
+     "Supertest"
+    ],
+    "Cloud & DevOps": [
+     "Docker",
+     "Amazon Web Services",
+     "CI/CD"
+    ],
+    "Tools": [
+     "Git",
+     "npm",
+     "Postman"
+    ],
+    "Concepts": [
+     "REST APIs",
+     "GraphQL",
+     "Microservices",
+     "JWT Authentication",
+     "Event-driven Architecture"
+    ]
+   },
+   "projectThemes": [
+    "Chat backend with Express.js and Socket.IO",
+    "Multi-tenant REST API with NestJS and PostgreSQL",
+    "Webhook processing service with a Redis-backed queue"
+   ]
+  },
+  {
+   "id": "java-fullstack-developer",
+   "name": "Java Full Stack Developer",
+   "family": "fullstack-java",
+   "titleVariations": [
+    "Java Full Stack Developer",
+    "Full Stack Java Developer",
+    "Java Fullstack Engineer"
+   ],
+   "groups": {
+    "Languages": [
+     "Java",
+     "JavaScript",
+     "TypeScript",
+     "SQL",
+     "HTML",
+     "CSS"
+    ],
+    "Frameworks": [
+     "Spring Boot",
+     "Spring Data JPA",
+     "Hibernate",
+     "React.js",
+     "Angular"
+    ],
+    "Databases": [
+     "MySQL",
+     "PostgreSQL",
+     "MongoDB"
+    ],
+    "Testing": [
+     "JUnit",
+     "Mockito",
+     "Jest"
+    ],
+    "Cloud & DevOps": [
+     "Docker",
+     "Jenkins",
+     "Amazon Web Services",
+     "CI/CD"
+    ],
+    "Tools": [
+     "Maven",
+     "Git",
+     "Postman"
+    ],
+    "Concepts": [
+     "REST APIs",
+     "Microservices",
+     "Responsive Design",
+     "Unit Testing"
+    ]
+   },
+   "projectThemes": [
+    "Employee leave management app with Spring Boot and React",
+    "Product catalogue with Angular front end and Spring REST APIs",
+    "Ticketing system with role-based access"
+   ]
+  },
+  {
+   "id": "mern-stack-developer",
+   "name": "MERN Stack Developer",
+   "family": "fullstack-js",
+   "titleVariations": [
+    "MERN Stack Developer",
+    "MERN Developer",
+    "Full Stack JavaScript Developer"
+   ],
+   "groups": {
+    "Languages": [
+     "JavaScript",
+     "TypeScript",
+     "HTML",
+     "CSS"
+    ],
+    "Frameworks": [
+     "React.js",
+     "Node.js",
+     "Express.js",
+     "Redux",
+     "Mongoose"
+    ],
+    "Databases": [
+     "MongoDB",
+     "Redis"
+    ],
+    "Testing": [
+     "Jest",
+     "React Testing Library",
+     "Supertest"
+    ],
+    "Cloud & DevOps": [
+     "Docker",
+     "Amazon Web Services",
+     "CI/CD"
+    ],
+    "Tools": [
+     "Git",
+     "npm",
+     "Postman"
+    ],
+    "Concepts": [
+     "REST APIs",
+     "JWT Authentication",
+     "Responsive Design",
+     "State Management"
+    ]
+   },
+   "projectThemes": [
+    "Recipe sharing app with React, Express and MongoDB",
+    "Expense tracker with JWT authentication",
+    "Job board with search, filters and saved jobs"
+   ]
+  },
+  {
+   "id": "dotnet-developer",
+   "name": ".NET Developer",
+   "family": "backend-dotnet",
+   "titleVariations": [
+    ".NET Developer",
+    "C# Developer",
+    "ASP.NET Developer",
+    ".NET Core Developer"
+   ],
+   "groups": {
+    "Languages": [
+     "C#",
+     "SQL"
+    ],
+    "Frameworks": [
+     ".NET",
+     "ASP.NET Core",
+     "Entity Framework",
+     "LINQ",
+     "Web API"
+    ],
+    "Databases": [
+     "SQL Server",
+     "PostgreSQL",
+     "Azure SQL Database"
+    ],
+    "Testing": [
+     "xUnit",
+     "NUnit",
+     "Moq"
+    ],
+    "Cloud & DevOps": [
+     "Microsoft Azure",
+     "Azure DevOps",
+     "Docker"
+    ],
+    "Tools": [
+     "Visual Studio",
+     "Git"
+    ],
+    "Concepts": [
+     "REST APIs",
+     "Microservices",
+     "Dependency Injection",
+     "Unit Testing"
+    ]
+   },
+   "projectThemes": [
+    "Appointment scheduling Web API with ASP.NET Core and EF Core",
+    "Invoice service with SQL Server and background processing",
+    "Identity-secured customer portal API"
+   ]
+  },
+  {
+   "id": "devops-engineer",
+   "name": "DevOps Engineer",
+   "family": "devops",
+   "titleVariations": [
+    "DevOps Engineer",
+    "Site Reliability Engineer",
+    "Platform Engineer",
+    "Build and Release Engineer"
+   ],
+   "groups": {
+    "Languages": [
+     "Bash",
+     "Python",
+     "YAML"
+    ],
+    "Cloud & DevOps": [
+     "Docker",
+     "Kubernetes",
+     "Helm",
+     "Jenkins",
+     "GitHub Actions",
+     "Terraform",
+     "Ansible",
+     "Amazon Web Services",
+     "Microsoft Azure"
+    ],
+    "Monitoring": [
+     "Prometheus",
+     "Grafana",
+     "ELK Stack"
+    ],
+    "Tools": [
+     "Git",
+     "Linux",
+     "Nginx"
+    ],
+    "Concepts": [
+     "CI/CD",
+     "Infrastructure as Code",
+     "Containerization",
+     "Monitoring",
+     "Release Management"
+    ]
+   },
+   "projectThemes": [
+    "CI/CD pipeline with GitHub Actions, Docker and Kubernetes",
+    "Terraform modules for a staged cloud environment",
+    "Prometheus and Grafana monitoring for containerized services"
+   ]
+  },
+  {
+   "id": "aws-cloud-engineer",
+   "name": "AWS Cloud Engineer",
+   "family": "cloud-aws",
+   "titleVariations": [
+    "AWS Cloud Engineer",
+    "AWS Engineer",
+    "Cloud Engineer - AWS",
+    "AWS Solutions Engineer"
+   ],
+   "groups": {
+    "Cloud": [
+     "Amazon Web Services",
+     "EC2",
+     "S3",
+     "IAM",
+     "VPC",
+     "Lambda",
+     "RDS",
+     "CloudWatch",
+     "CloudFormation",
+     "EKS"
+    ],
+    "Cloud & DevOps": [
+     "Terraform",
+     "Docker",
+     "Kubernetes",
+     "CI/CD"
+    ],
+    "Languages": [
+     "Python",
+     "Bash"
+    ],
+    "Tools": [
+     "AWS CLI",
+     "Git",
+     "Linux"
+    ],
+    "Concepts": [
+     "Infrastructure as Code",
+     "High Availability",
+     "Networking",
+     "Cloud Security"
+    ]
+   },
+   "projectThemes": [
+    "Serverless image-processing pipeline with Lambda and S3",
+    "Multi-AZ web tier with Auto Scaling and RDS",
+    "Terraform-provisioned VPC with private subnets"
+   ]
+  },
+  {
+   "id": "azure-cloud-engineer",
+   "name": "Azure Cloud Engineer",
+   "family": "cloud-azure",
+   "titleVariations": [
+    "Azure Cloud Engineer",
+    "Azure Engineer",
+    "Cloud Engineer - Azure",
+    "Azure Infrastructure Engineer"
+   ],
+   "groups": {
+    "Cloud": [
+     "Microsoft Azure",
+     "Azure Virtual Machines",
+     "Azure App Service",
+     "Azure Functions",
+     "Azure Storage",
+     "Azure Kubernetes Service",
+     "Azure Active Directory",
+     "Azure Monitor"
+    ],
+    "Cloud & DevOps": [
+     "ARM Templates",
+     "Bicep",
+     "Terraform",
+     "Azure DevOps",
+     "Docker"
+    ],
+    "Languages": [
+     "PowerShell",
+     "Bash"
+    ],
+    "Tools": [
+     "Azure CLI",
+     "Git"
+    ],
+    "Concepts": [
+     "Infrastructure as Code",
+     "Networking",
+     "Identity and Access Management",
+     "Cloud Security"
+    ]
+   },
+   "projectThemes": [
+    "App Service deployment pipeline with Azure DevOps",
+    "Bicep templates for a hub-and-spoke network",
+    "Event-driven file processing with Azure Functions"
+   ]
+  },
+  {
+   "id": "gcp-cloud-engineer",
+   "name": "GCP Cloud Engineer",
+   "family": "cloud-gcp",
+   "titleVariations": [
+    "GCP Cloud Engineer",
+    "Google Cloud Engineer",
+    "Cloud Engineer - GCP"
+   ],
+   "groups": {
+    "Cloud": [
+     "Google Cloud",
+     "Compute Engine",
+     "Cloud Storage",
+     "Cloud Run",
+     "Google Kubernetes Engine",
+     "Cloud Functions",
+     "Cloud IAM",
+     "Cloud Monitoring"
+    ],
+    "Cloud & DevOps": [
+     "Terraform",
+     "Docker",
+     "Kubernetes",
+     "Cloud Build"
+    ],
+    "Languages": [
+     "Python",
+     "Bash"
+    ],
+    "Tools": [
+     "gcloud CLI",
+     "Git",
+     "Linux"
+    ],
+    "Concepts": [
+     "Infrastructure as Code",
+     "Networking",
+     "Cloud Security",
+     "High Availability"
+    ]
+   },
+   "projectThemes": [
+    "Containerized API on Cloud Run with Cloud Build",
+    "GKE deployment with Terraform-managed networking",
+    "Event-driven processing with Cloud Functions and Pub/Sub"
+   ]
+  },
+  {
+   "id": "azure-data-engineer",
+   "name": "Azure Data Engineer",
+   "family": "data-azure",
+   "titleVariations": [
+    "Azure Data Engineer",
+    "Senior Azure Data Engineer",
+    "Azure Big Data Engineer",
+    "Cloud Data Engineer - Azure"
+   ],
+   "groups": {
+    "Languages": [
+     "Python",
+     "SQL",
+     "PySpark"
+    ],
+    "Cloud": [
+     "Azure Data Factory",
+     "Azure Databricks",
+     "Azure Data Lake",
+     "Azure Synapse Analytics",
+     "Azure SQL Database",
+     "Azure Functions"
+    ],
+    "Data": [
+     "Apache Spark",
+     "Delta Lake",
+     "Power BI"
+    ],
+    "Cloud & DevOps": [
+     "Azure DevOps",
+     "Git"
+    ],
+    "Concepts": [
+     "ETL",
+     "Data Pipelines",
+     "Data Modeling",
+     "Data Warehousing",
+     "Data Quality"
+    ]
+   },
+   "projectThemes": [
+    "Incremental ETL from SQL sources into a Delta Lake with ADF and Databricks",
+    "Medallion-architecture lakehouse on Azure Data Lake",
+    "Data-quality checks for daily sales pipelines"
+   ]
+  },
+  {
+   "id": "gcp-data-engineer",
+   "name": "GCP Data Engineer",
+   "family": "data-gcp",
+   "titleVariations": [
+    "GCP Data Engineer",
+    "Google Cloud Data Engineer",
+    "Data Engineer - GCP"
+   ],
+   "groups": {
+    "Languages": [
+     "Python",
+     "SQL"
+    ],
+    "Cloud": [
+     "BigQuery",
+     "Dataflow",
+     "Dataproc",
+     "Cloud Composer",
+     "Pub/Sub",
+     "Cloud Storage"
+    ],
+    "Data": [
+     "Apache Beam",
+     "Apache Airflow",
+     "Apache Spark",
+     "Looker Studio"
+    ],
+    "Cloud & DevOps": [
+     "Terraform",
+     "Git"
+    ],
+    "Concepts": [
+     "ETL",
+     "Data Pipelines",
+     "Data Modeling",
+     "Data Warehousing",
+     "Streaming"
+    ]
+   },
+   "projectThemes": [
+    "Streaming events into BigQuery with Pub/Sub and Dataflow",
+    "Airflow-orchestrated batch pipeline on Cloud Composer",
+    "Partitioned BigQuery warehouse for reporting"
+   ]
+  },
+  {
+   "id": "data-analyst",
+   "name": "Data Analyst",
+   "family": "analytics",
+   "titleVariations": [
+    "Data Analyst",
+    "Business Data Analyst",
+    "Reporting Analyst",
+    "BI Analyst"
+   ],
+   "groups": {
+    "Languages": [
+     "SQL",
+     "Python"
+    ],
+    "Tools": [
+     "Excel",
+     "Power BI",
+     "Tableau",
+     "Pandas",
+     "Jupyter"
+    ],
+    "Concepts": [
+     "Data Cleaning",
+     "Data Visualization",
+     "Dashboards",
+     "Statistics",
+     "Exploratory Data Analysis",
+     "KPI Reporting"
+    ]
+   },
+   "projectThemes": [
+    "Sales performance dashboard in Power BI",
+    "Customer churn exploratory analysis in Python",
+    "SQL reporting views for monthly operations metrics"
+   ]
+  },
+  {
+   "id": "data-scientist",
+   "name": "Data Scientist",
+   "family": "data-science",
+   "titleVariations": [
+    "Data Scientist",
+    "Junior Data Scientist",
+    "Applied Data Scientist"
+   ],
+   "groups": {
+    "Languages": [
+     "Python",
+     "SQL",
+     "R"
+    ],
+    "Frameworks": [
+     "Pandas",
+     "NumPy",
+     "scikit-learn",
+     "XGBoost",
+     "TensorFlow",
+     "PyTorch"
+    ],
+    "Tools": [
+     "Jupyter",
+     "Git",
+     "Matplotlib",
+     "Seaborn"
+    ],
+    "Concepts": [
+     "Machine Learning",
+     "Statistics",
+     "Feature Engineering",
+     "Model Evaluation",
+     "Exploratory Data Analysis",
+     "A/B Testing"
+    ]
+   },
+   "projectThemes": [
+    "Customer churn prediction with scikit-learn",
+    "Demand forecasting with gradient-boosted trees",
+    "Text classification of support tickets"
+   ]
+  },
+  {
+   "id": "ml-engineer",
+   "name": "AI / ML Engineer",
+   "family": "ml",
+   "titleVariations": [
+    "AI / ML Engineer",
+    "Machine Learning Engineer",
+    "ML Engineer",
+    "AI Engineer"
+   ],
+   "groups": {
+    "Languages": [
+     "Python",
+     "SQL"
+    ],
+    "Frameworks": [
+     "PyTorch",
+     "TensorFlow",
+     "scikit-learn",
+     "Pandas",
+     "NumPy",
+     "FastAPI"
+    ],
+    "MLOps": [
+     "MLflow",
+     "Docker",
+     "Kubernetes",
+     "Airflow"
+    ],
+    "Cloud": [
+     "Amazon Web Services",
+     "Microsoft Azure",
+     "Google Cloud"
+    ],
+    "Concepts": [
+     "Machine Learning",
+     "Deep Learning",
+     "Model Deployment",
+     "Feature Engineering",
+     "Model Monitoring"
+    ]
+   },
+   "projectThemes": [
+    "Model serving API with FastAPI and Docker",
+    "Experiment tracking and model registry with MLflow",
+    "Image classification model with PyTorch"
+   ]
+  },
+  {
+   "id": "generative-ai-engineer",
+   "name": "Generative AI Engineer",
+   "family": "genai",
+   "titleVariations": [
+    "Generative AI Engineer",
+    "GenAI Engineer",
+    "LLM Engineer",
+    "AI Application Engineer"
+   ],
+   "groups": {
+    "Languages": [
+     "Python",
+     "TypeScript"
+    ],
+    "Frameworks": [
+     "LangChain",
+     "LlamaIndex",
+     "Hugging Face Transformers",
+     "FastAPI",
+     "OpenAI API"
+    ],
+    "Data": [
+     "Vector Databases",
+     "FAISS",
+     "Chroma",
+     "PostgreSQL"
+    ],
+    "Cloud & DevOps": [
+     "Docker",
+     "Microsoft Azure",
+     "Amazon Web Services"
+    ],
+    "Concepts": [
+     "Large Language Models",
+     "Retrieval-Augmented Generation",
+     "Prompt Engineering",
+     "Embeddings",
+     "LLM Evaluation"
+    ]
+   },
+   "projectThemes": [
+    "Document question-answering with retrieval-augmented generation",
+    "Support-ticket summarizer with a local LLM",
+    "Evaluation harness for prompt and retrieval changes"
+   ]
+  },
+  {
+   "id": "automation-tester",
+   "name": "QA Automation Engineer",
+   "family": "qa",
+   "titleVariations": [
+    "QA Automation Engineer",
+    "Automation Tester",
+    "SDET",
+    "Test Automation Engineer"
+   ],
+   "groups": {
+    "Languages": [
+     "Java",
+     "Python",
+     "JavaScript"
+    ],
+    "Frameworks": [
+     "Selenium WebDriver",
+     "TestNG",
+     "JUnit",
+     "Cucumber",
+     "Playwright",
+     "Cypress",
+     "Rest Assured"
+    ],
+    "Tools": [
+     "Postman",
+     "Jenkins",
+     "Git",
+     "JIRA",
+     "Maven"
+    ],
+    "Concepts": [
+     "Test Automation",
+     "API Testing",
+     "Regression Testing",
+     "Page Object Model",
+     "BDD",
+     "CI/CD"
+    ]
+   },
+   "projectThemes": [
+    "Selenium and TestNG regression suite with the Page Object Model",
+    "REST API test suite with Rest Assured",
+    "Playwright end-to-end tests running in CI"
+   ]
+  },
+  {
+   "id": "salesforce-developer",
+   "name": "Salesforce Developer",
+   "family": "salesforce",
+   "titleVariations": [
+    "Salesforce Developer",
+    "Salesforce Engineer",
+    "SFDC Developer"
+   ],
+   "groups": {
+    "Languages": [
+     "Apex",
+     "SOQL",
+     "JavaScript"
+    ],
+    "Frameworks": [
+     "Lightning Web Components",
+     "Visualforce",
+     "Aura Components"
+    ],
+    "Platform": [
+     "Salesforce Flow",
+     "Sales Cloud",
+     "Service Cloud",
+     "Salesforce DX"
+    ],
+    "Tools": [
+     "Git",
+     "VS Code"
+    ],
+    "Concepts": [
+     "Triggers",
+     "Governor Limits",
+     "Integration",
+     "REST APIs",
+     "Unit Testing"
+    ]
+   },
+   "projectThemes": [
+    "Case escalation automation with Apex triggers and Flow",
+    "Lightning Web Component for account insights",
+    "REST integration between Salesforce and an external order system"
+   ]
+  },
+  {
+   "id": "mobile-app-developer",
+   "name": "Mobile App Developer",
+   "family": "mobile",
+   "titleVariations": [
+    "Mobile App Developer",
+    "Mobile Developer",
+    "Cross-platform Mobile Developer",
+    "Flutter Developer",
+    "React Native Developer"
+   ],
+   "groups": {
+    "Languages": [
+     "Dart",
+     "JavaScript",
+     "TypeScript",
+     "Kotlin",
+     "Swift"
+    ],
+    "Frameworks": [
+     "Flutter",
+     "React Native",
+     "Firebase"
+    ],
+    "Testing": [
+     "Jest",
+     "Flutter Test"
+    ],
+    "Tools": [
+     "Git",
+     "Android Studio",
+     "Xcode"
+    ],
+    "Concepts": [
+     "REST APIs",
+     "Offline Storage",
+     "Push Notifications",
+     "State Management",
+     "App Store Release"
+    ]
+   },
+   "projectThemes": [
+    "Cross-platform expense tracker with offline sync",
+    "Event check-in app with QR scanning",
+    "News reader with push notifications"
+   ]
+  },
+  {
+   "id": "android-developer",
+   "name": "Android Developer",
+   "family": "mobile-android",
+   "titleVariations": [
+    "Android Developer",
+    "Android Engineer",
+    "Android App Developer"
+   ],
+   "groups": {
+    "Languages": [
+     "Kotlin",
+     "Java"
+    ],
+    "Frameworks": [
+     "Jetpack Compose",
+     "Android Jetpack",
+     "Room",
+     "Retrofit",
+     "Coroutines",
+     "Hilt"
+    ],
+    "Testing": [
+     "JUnit",
+     "Espresso"
+    ],
+    "Tools": [
+     "Android Studio",
+     "Gradle",
+     "Git",
+     "Firebase"
+    ],
+    "Concepts": [
+     "MVVM",
+     "REST APIs",
+     "Offline Storage",
+     "Material Design"
+    ]
+   },
+   "projectThemes": [
+    "Notes app with Jetpack Compose and Room",
+    "Weather app using Retrofit and MVVM",
+    "Habit tracker with WorkManager reminders"
+   ]
+  },
+  {
+   "id": "ios-developer",
+   "name": "iOS Developer",
+   "family": "mobile-ios",
+   "titleVariations": [
+    "iOS Developer",
+    "iOS Engineer",
+    "Swift Developer"
+   ],
+   "groups": {
+    "Languages": [
+     "Swift",
+     "Objective-C"
+    ],
+    "Frameworks": [
+     "SwiftUI",
+     "UIKit",
+     "Combine",
+     "Core Data",
+     "URLSession"
+    ],
+    "Testing": [
+     "XCTest"
+    ],
+    "Tools": [
+     "Xcode",
+     "Git",
+     "TestFlight"
+    ],
+    "Concepts": [
+     "MVVM",
+     "REST APIs",
+     "Auto Layout",
+     "App Store Release"
+    ]
+   },
+   "projectThemes": [
+    "Reading list app with SwiftUI and Core Data",
+    "Fitness log with HealthKit integration",
+    "Photo gallery using URLSession and caching"
+   ]
+  },
+  {
+   "id": "fullstack-developer",
+   "name": "Full Stack Developer",
+   "family": "fullstack-js",
+   "hidden": true,
+   "titleVariations": [
+    "Full Stack Developer",
+    "Senior Full Stack Developer",
+    "Full Stack Engineer"
+   ],
+   "groups": {
+    "Frameworks": [
+     "React.js",
+     "Node.js",
+     "Express.js"
+    ],
+    "Databases": [
+     "MongoDB",
+     "SQL",
+     "Redis",
+     "PostgreSQL"
+    ],
+    "Concepts": [
+     "REST APIs",
+     "GraphQL",
+     "Microservices"
+    ],
+    "Cloud & DevOps": [
+     "Docker",
+     "Amazon Web Services",
+     "Microsoft Azure",
+     "CI/CD"
+    ],
+    "Languages": [
+     "TypeScript",
+     "JavaScript"
+    ],
+    "Tools": [
+     "Git"
+    ]
+   },
+   "projectThemes": [
+    "Task tracker with React, Node.js and PostgreSQL"
+   ]
+  },
+  {
+   "id": "backend-developer",
+   "name": "Backend Developer",
+   "family": "backend",
+   "hidden": true,
+   "titleVariations": [
+    "Backend Developer",
+    "Backend Engineer",
+    "Server-side Developer"
+   ],
+   "groups": {
+    "Languages": [
+     "Java",
+     "Python",
+     "JavaScript",
+     "SQL"
+    ],
+    "Frameworks": [
+     "Spring Boot",
+     "Django",
+     "Node.js",
+     "Express.js"
+    ],
+    "Databases": [
+     "PostgreSQL",
+     "MySQL",
+     "MongoDB",
+     "Redis"
+    ],
+    "Cloud & DevOps": [
+     "Docker",
+     "Kubernetes",
+     "Amazon Web Services"
+    ],
+    "Concepts": [
+     "REST APIs",
+     "Microservices",
+     "Unit Testing"
+    ]
+   },
+   "projectThemes": [
+    "REST API with authentication and a relational database"
+   ]
+  },
+  {
+   "id": "cloud-engineer",
+   "name": "Cloud Engineer",
+   "family": "cloud",
+   "hidden": true,
+   "titleVariations": [
+    "Cloud Engineer",
+    "Cloud Infrastructure Engineer"
+   ],
+   "groups": {
+    "Cloud": [
+     "Amazon Web Services",
+     "Microsoft Azure",
+     "Google Cloud"
+    ],
+    "Cloud & DevOps": [
+     "Terraform",
+     "Docker",
+     "Kubernetes",
+     "CI/CD"
+    ],
+    "Languages": [
+     "Python",
+     "Bash"
+    ],
+    "Concepts": [
+     "Infrastructure as Code",
+     "Networking",
+     "Cloud Security"
+    ]
+   },
+   "projectThemes": [
+    "Infrastructure as Code for a staged web environment"
+   ]
+  }
+ ]
 }

@@ -12,22 +12,59 @@ from .workflow import dated_months, matched_terms, normalize_request, valid_role
 CONSENT_VERSION = 'resumeops-auto-1'
 
 
-def attested_profile(candidate):
-    """Only the fields in the initial form are eligible as directly attested facts."""
-    from .ai_first import validate_intake
+SCRATCH_TEXT = {'skills': ('Technical skills', 1500), 'certifications': ('Certifications', 1500),
+                'achievements': ('Achievements', 2000)}
 
+
+def _form_lines(value, label, limit, commas=False):
+    if not isinstance(value, str) or len(value) > limit:
+        raise ValueError(f'{label}: up to {limit} characters.')
+    from .generate import clean_bullet
+    parts = re.split(r'[\n,;]' if commas else r'\n', value)
+    return list(dict.fromkeys(item for item in (clean_bullet(' '.join(p.split())) for p in parts) if item))
+
+
+def attested_profile(candidate):
+    """The 'Enter details' form, as attested facts. The candidate states every line; nothing is added."""
+    from copy import deepcopy
+
+    from .ai_first import validate_intake
+    from .generate import confirmed_project
+
+    if not isinstance(candidate, dict):
+        raise ValueError('Expected candidate form details.')
+    candidate = deepcopy(candidate)
+    extras = {key: _form_lines(candidate.pop(key, ''), label, limit, commas=key == 'skills')
+              for key, (label, limit) in SCRATCH_TEXT.items()}
+    duties = [_form_lines(entry.pop('responsibilities', '') if isinstance(entry, dict) else '',
+                          'Responsibilities', 3000) for entry in candidate.get('work_experience') or []]
+    details = [(_form_lines(entry.pop('stack', '') if isinstance(entry, dict) else '', 'Project stack', 300, commas=True),
+                _form_lines(entry.pop('description', '') if isinstance(entry, dict) else '', 'Project description', 1500))
+               for entry in candidate.get('projects') or []]
     candidate = validate_intake(candidate)
     profile = {key: candidate[key] for key in (
         'full_name', 'email', 'phone', 'location', 'current_company', 'linkedin', 'github', 'portfolio')}
-    profile['experience'] = candidate['work_experience']
+    profile['experience'] = [{**entry, 'bullets': bullets} for entry, bullets in zip(candidate['work_experience'], duties)]
     profile['education'] = [
         {'institution': item['university'], 'degree': item['degree'], 'end': item['graduation_year'],
          'details': ' | '.join(filter(None, [item['specialization'],
                                            'CGPA ' + item['cgpa'] if item['cgpa'] else '']))}
         for item in candidate['education']]
-    profile['projects'] = [item['name'] for item in candidate['projects']]
+    projects = []
+    for item, (stack, lines) in zip(candidate['projects'], details):
+        if lines:
+            projects.append(confirmed_project(item['name'], stack, lines))
+        elif stack:
+            projects.append(item['name'] + ' - Tech stack: ' + ', '.join(stack))
+        else:
+            projects.append(item['name'])
+    profile['projects'] = projects
     profile['coding_platforms'] = [
         ' '.join(filter(None, item.values())) for item in candidate['coding_platforms']]
+    profile['skills'] = extras['skills']
+    profile['certifications'] = extras['certifications']
+    if extras['achievements']:
+        profile['achievements'] = extras['achievements']
     return validate_profile(profile)
 
 
@@ -127,6 +164,9 @@ def source_profile(source, ai, on_progress=None, notices=None):
                     f'The resume does not show this {FIELD_NAMES[field]} with the role. Confirm or correct it.',
                     job, suggest=True)
         job['bullets'] = [bullet for bullet in job['bullets'] if phrase(bullet) in block]
+    from .generate import clean_bullet
+    for job in draft['experience']:
+        job['bullets'] = [clean_bullet(bullet) for bullet in job['bullets'] if clean_bullet(bullet)]
     for index, entry in enumerate(draft['education']):
         absent = [field for field in ('institution', 'degree') if not (entry.get(field) or '').strip()]
         for field in absent:
@@ -261,6 +301,47 @@ def framing(profile, title, terms):
     return {'headline': headline, 'summary': ' '.join(lines)}
 
 
+def tailor_role(facts, title, years, intelligence, ai, ranking_progress=None, summary_progress=None):
+    """V3 role tailoring of verified facts: evidence ranking, the role title as headline, a checked
+    summary, and the candidate's own skills ordered and grouped for the role. Returns (profile, how)."""
+    from .generate import relevant_skills, skill_groups, write_summary
+    from .workflow import ROLES
+
+    profile = tailor_facts(facts, title, years, intelligence, ai, ranking_progress)
+    profile['headline'] = title
+    summary, how = write_summary(profile, title, years, intelligence['terms'], ai, summary_progress)
+    profile['summary'] = summary
+    profile['skills'] = relevant_skills(profile, intelligence['terms'])
+    if profile['skills']:
+        profile['skill_groups'] = skill_groups(profile['skills'], ROLES.get(intelligence['role'], {}))
+    return profile, how
+
+
+def _verified_v3(profile, target, evidence):
+    """The watcher's independent check of a V3 automated resume against the attested evidence."""
+    from .generate import summary_problems
+    from .workflow import role_name
+
+    title, years = role_name(target), target.get('experience_years')
+    if profile.get('headline') != title or summary_problems(profile.get('summary', ''), evidence, title, years):
+        return False
+    for key in ('skills', 'projects', 'certifications', 'achievements', 'coding_platforms', 'competencies'):
+        if Counter(profile.get(key) or []) != Counter(evidence.get(key) or []):
+            return False
+    groups = profile.get('skill_groups')
+    if groups is not None and Counter(item for group in groups for item in group['items']) != Counter(profile['skills']):
+        return False
+    if len(profile['experience']) != len(evidence['experience']):
+        return False
+    for original, ranked in zip(evidence['experience'], profile['experience']):
+        if {k: v for k, v in original.items() if k != 'bullets'} != {k: v for k, v in ranked.items() if k != 'bullets'} \
+                or Counter(original['bullets']) != Counter(ranked['bullets']):
+            return False
+    free = {'headline', 'summary', 'skills', 'skill_groups', 'projects', 'experience', 'certifications',
+            'achievements', 'coding_platforms', 'competencies'}
+    return {k: v for k, v in profile.items() if k not in free} == {k: v for k, v in evidence.items() if k not in free}
+
+
 def verified_automation(profile, target, approval):
     from .workflow import role_name
 
@@ -273,6 +354,8 @@ def verified_automation(profile, target, approval):
         evidence = validate_profile(proof['facts'])
     except (KeyError, ValueError):
         return False
+    if proof.get('v') == 3:
+        return _verified_v3(profile, target, evidence)
     # A separate watcher process checks that the submitted profile is exactly the
     # evidence, allowing only ranking and deterministic career-objective framing.
     expected = framing(profile, role_name(target), target['keywords'])
@@ -292,22 +375,29 @@ def verified_automation(profile, target, approval):
 
 
 def verified_request(profile, title, years, intelligence):
-    """Record every watcher-checked phrase from the approved one-submit evidence contract."""
+    """Record every watcher-checked phrase from the approved one-submit evidence contract.
+
+    The summary of a V3 resume is generated from verified facts and re-checked by the watcher
+    (provenance generated_from_verified_facts). A project with details carries them as one
+    candidate-confirmed 'Project detail' claim."""
     claims = []
-    def add(section, text, index=None):
+    def add(section, text, index=None, provenance='verified_from_source'):
         if text:
             claims.append({'id': str(len(claims)), 'section': section, 'text': text,
-                           'index': index, 'provenance': 'verified_from_source',
+                           'index': index, 'provenance': provenance,
                            'candidate_confirmed': True})
 
     for key, label in (('summary', 'Summary'), ('skills', 'Skill'), ('competencies', 'Competency'),
                        ('achievements', 'Achievement'), ('certifications', 'Earned certification')):
         value = profile.get(key, [])
         for item in [value] if isinstance(value, str) else value:
-            add(label, item)
+            add(label, item, provenance='generated_from_verified_facts' if key == 'summary' else 'verified_from_source')
     for index, job in enumerate(profile['experience']):
         for line in job['bullets']:
             add('Responsibility', line, index)
+    for index, project in enumerate(profile.get('projects') or []):
+        if ' - ' in project:
+            add('Project detail', project.split(' - ', 1)[1], index, provenance='candidate_confirmed')
     target = {'role': intelligence['role'], 'keywords': intelligence['terms'],
               'experience_years': min(25, max(0, int(years))), 'template': 'standard'}
     if target['role'] == 'custom':

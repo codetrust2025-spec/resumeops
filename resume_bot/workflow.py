@@ -6,9 +6,108 @@ from pathlib import Path
 
 from .profile import ProfileError, validate_profile
 
-ROLES = {role['id']: role for role in json.loads(
-    Path(__file__).with_name('roles.json').read_text(encoding='utf-8'))['roles']}
 TEMPLATES = {'standard': 'Standard', 'compact': 'Compact'}
+
+# Role catalog: the bundled roles.json plus an operator-managed data file (role-catalog.json in the
+# data root, or RESUMEOPS_ROLE_CATALOG). Same id replaces, a new id adds, "hidden": true retires a role
+# from the picker while saved jobs that use it still render. Edited without changing code.
+CATALOG_ENV = 'RESUMEOPS_ROLE_CATALOG'
+BUNDLED_CATALOG = Path(__file__).with_name('roles.json')
+ROLES = {}
+ALIASES = {}
+CATALOG_STATUS = {'source': None, 'error': None}
+_catalog_stamp = None
+
+
+def _text(value, field, limit=100):
+    if not isinstance(value, str) or not value.strip() or len(value) > limit or any(ord(c) < 32 for c in value):
+        raise ValueError(f'{field}: expected text up to {limit} characters')
+    return ' '.join(value.split())
+
+
+def _texts(value, field, limit=60, maximum=40):
+    if not isinstance(value, list) or len(value) > maximum:
+        raise ValueError(f'{field}: expected a list of up to {maximum} entries')
+    return list(dict.fromkeys(_text(item, field, limit) for item in value))
+
+
+def validate_catalog(data):
+    """Return (roles, aliases) from a catalog document, or raise ValueError naming the problem."""
+    if not isinstance(data, dict) or not isinstance(data.get('roles'), list) or len(data['roles']) > 200:
+        raise ValueError('Catalog must be an object with a "roles" list (up to 200 roles)')
+    roles = {}
+    for index, role in enumerate(data['roles']):
+        where = f'roles[{index}]'
+        if not isinstance(role, dict) or set(role) - {'id', 'name', 'family', 'titleVariations', 'groups', 'keywords',
+                                                      'projectThemes', 'hidden'}:
+            raise ValueError(f'{where}: unknown fields')
+        identifier = role.get('id')
+        if not isinstance(identifier, str) or not re.fullmatch(r'[a-z0-9][a-z0-9-]{1,59}', identifier) or identifier == 'custom':
+            raise ValueError(f'{where}.id: use 2-60 lowercase letters, digits or hyphens')
+        groups = role.get('groups', {})
+        if not isinstance(groups, dict) or len(groups) > 12:
+            raise ValueError(f'{where}.groups: expected up to 12 named skill groups')
+        clean_groups = {_text(name, f'{where}.groups', 40): _texts(items, f'{where}.groups.{name}') for name, items in groups.items()}
+        keywords = list(dict.fromkeys([*(term for items in clean_groups.values() for term in items),
+                                       *_texts(role.get('keywords', []), f'{where}.keywords', maximum=80)]))
+        if not keywords:
+            raise ValueError(f'{where}: add at least one skill group or keyword')
+        roles[identifier] = {
+            'id': identifier, 'name': _text(role.get('name'), f'{where}.name'),
+            'family': _text(role.get('family', identifier), f'{where}.family', 60),
+            'titleVariations': _texts(role.get('titleVariations', []), f'{where}.titleVariations', 100, 20),
+            'groups': clean_groups, 'keywords': keywords,
+            'projectThemes': _texts(role.get('projectThemes', []), f'{where}.projectThemes', 160, 10),
+            'hidden': role.get('hidden') is True,
+        }
+    aliases = data.get('aliases', {})
+    if not isinstance(aliases, dict) or len(aliases) > 500:
+        raise ValueError('aliases: expected an object of term -> list of alternative spellings')
+    return roles, {_text(term, 'aliases', 60): _texts(names, f'aliases.{term}') for term, names in aliases.items()}
+
+
+def catalog_path():
+    return Path(os.environ.get(CATALOG_ENV) or Path.cwd() / 'role-catalog.json')
+
+
+def load_roles(force=False):
+    """(Re)load the merged catalog when the bundled or operator file changed. Returns ROLES."""
+    global _catalog_stamp
+    override = catalog_path()
+    stamp = (BUNDLED_CATALOG.stat().st_mtime_ns, str(override),
+             override.stat().st_mtime_ns if override.is_file() else None)
+    if stamp == _catalog_stamp and not force:
+        return ROLES
+    roles, aliases = validate_catalog(json.loads(BUNDLED_CATALOG.read_text(encoding='utf-8')))
+    status = {'source': 'bundled', 'error': None}
+    if override.is_file():
+        try:
+            extra_roles, extra_aliases = validate_catalog(json.loads(override.read_text(encoding='utf-8')))
+            roles.update(extra_roles)
+            aliases.update(extra_aliases)
+            status['source'] = 'bundled+' + override.name
+        except (OSError, ValueError) as exc:  # a bad edit must not take the site down
+            status['error'] = f'{override.name} ignored: {exc}'
+    ROLES.clear()
+    ROLES.update(roles)
+    ALIASES.clear()
+    ALIASES.update(aliases)
+    CATALOG_STATUS.update(status)
+    _catalog_stamp = stamp
+    return ROLES
+
+
+def role_by_title(title):
+    """The catalog role whose name or title variation matches ``title`` (case-insensitive), or None."""
+    wanted = ' '.join(str(title).split()).casefold()
+    load_roles()
+    for role in ROLES.values():
+        if wanted in {role['name'].casefold(), *(t.casefold() for t in role['titleVariations'])}:
+            return role
+    return None
+
+
+load_roles()
 
 
 class DatabaseUnavailable(RuntimeError):
@@ -150,15 +249,46 @@ def role_keywords(target):
                  [*ROLES.get(target['role'], {}).get('keywords', []), *target.get('keywords', [])]}.values())
 
 
+def term_pattern(term):
+    """A term, its catalog aliases, an optional plural "s", and an optional version ("Java 17")."""
+    spellings = sorted({' '.join(t.split()) for t in [term, *ALIASES.get(term, [])]}, key=len, reverse=True)
+    body = '|'.join(re.escape(spelling) for spelling in spellings)
+    return re.compile(r'(?<![\w.#+])(?:' + body + r')s?(?:\s?v?\d+(?:\.\d+)*\+?)?(?![\w#+])', re.IGNORECASE)
+
+
 def matched_terms(terms, text):
     normalized = ' '.join(text.split())
-    return [term for term in terms if re.search(
-        r'(?<!\w)' + re.escape(' '.join(term.split())) + r'(?!\w)', normalized, re.IGNORECASE)]
+    return [term for term in terms if term_pattern(term).search(normalized)]
 
 
 def analyze(profile, target, keywords=None, today=None):
+    """Explainable 100-point ATS readiness (resume_bot.ats) for a catalog or custom role."""
+    from . import ats
+    load_roles()
     keywords = role_keywords(target) if keywords is None else keywords
-    # An automation headline names the requested role. It is an objective, not a skill claim.
+    # An automation headline names the requested role. It is an objective, not a skill claim; the
+    # summary of an automated resume restates verified facts, so it is not separate evidence either.
+    automated = bool(target.get('automation_owner'))
+    evidence = [*([] if automated else [profile['headline'], profile['summary']]), *profile['skills'],
+                *profile['certifications']]
+    evidence.extend(profile.get('competencies', []))
+    evidence.extend(profile.get('projects', []))
+    evidence.extend(profile.get('achievements', []))
+    for entry in profile['experience']:
+        evidence.extend([entry['position'], *entry['bullets']])
+    for entry in profile['education']:
+        evidence.extend([entry['degree'], entry['details']])
+    experience = experience_evidence(profile, target, today)
+    report = ats.score(profile, {**target, '_groups': ROLES.get(target['role'], {}).get('groups')}, keywords,
+                       role_title=role_name(target), matched_terms=matched_terms, experience=experience,
+                       evidence_text=' '.join(evidence))
+    return {'role': target['role'], **({'role_title': target['role_title']} if 'role_title' in target else {}),
+            'template': target['template'], **report, 'experience': experience}
+
+
+def _legacy_analyze(profile, target, keywords=None, today=None):
+    """The v2 50/30/20 rubric, kept for reference by older reports; not used for new scores."""
+    keywords = role_keywords(target) if keywords is None else keywords
     headline_evidence = [] if target.get('automation_owner') else [profile['headline']]
     evidence = [*headline_evidence, profile['summary'], *profile['skills'], *profile['certifications']]
     evidence.extend(profile.get('competencies', []))

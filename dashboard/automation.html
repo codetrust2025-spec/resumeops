@@ -22,7 +22,15 @@
     <p id="auto-error" role="alert"></p>
   </section>
   <form id="ai-form" class="auto-card">
-    <label>Target role<input name="role" maxlength="100" required placeholder="e.g. Azure Data Engineer"></label>
+    <label>Target role (technology or job role)
+      <input name="role" id="auto-role" list="auto-role-options" maxlength="100" required autocomplete="off"
+             placeholder="Search roles, e.g. Java Backend Developer">
+      <span id="auto-role-hint" class="field-hint" aria-live="polite"></span>
+    </label>
+    <datalist id="auto-role-options"></datalist>
+    <label id="auto-custom-wrap" hidden>Custom role title
+      <input id="auto-custom-role" maxlength="100" placeholder="e.g. Kotlin Backend Developer">
+    </label>
     <fieldset class="auto-choice">
       <legend>Candidate evidence</legend>
       <label><input type="radio" name="method" value="upload" checked> Upload resume</label>

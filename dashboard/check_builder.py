@@ -168,7 +168,7 @@ def check(screenshots):
                 page.get_by_role('button', name='Continue').click()
                 expect(page.get_by_role('heading', name='Choose a target role')).to_be_visible()
                 role = page.get_by_label('Target role')
-                expect(role.locator('option', has_text='Full Stack Developer')).to_have_count(1)
+                expect(role.locator('option', has_text=re.compile(r'^Full Stack Developer$'))).to_have_count(1)
                 role.select_option('fullstack-developer')
                 page.get_by_label('Resume template').select_option('compact')
                 expect(page.locator('#template-name')).to_have_text('Compact')
@@ -273,7 +273,7 @@ def check(screenshots):
                 assert Path(pdf.value.path()).read_bytes().startswith(b'%PDF-')
                 page.locator('.tile', has_text='LaTeX Code').click()
                 expect(page.get_by_role('tab',name='LaTeX Code')).to_have_attribute('aria-selected','true')
-                expect(page.locator('#latex-source')).to_contain_text('PROJECTS')
+                expect(page.locator('#latex-source')).to_contain_text('section*{Projects}')
                 page.get_by_role('button',name='Copy LaTeX').click()
                 expect(page.locator('#copy-status')).to_have_text('LaTeX copied.')
                 assert 'Example Labs' in page.evaluate('navigator.clipboard.readText()')
@@ -283,7 +283,7 @@ def check(screenshots):
                 picture('new-latex.png')
                 page.get_by_role('tab',name='LaTeX Code').press('ArrowRight')
                 expect(page.get_by_role('tab',name='ATS Analysis')).to_have_attribute('aria-selected','true')
-                for label in ['Role keyword alignment','Section structure','Evidence completeness',
+                for label in ['Job role relevance','Supported keyword coverage','Resume structure','Project relevance','Evidence completeness',
                               'Matched keywords','Missing keywords','Improvement suggestions']:
                     expect(page.locator('#ats-result')).to_contain_text(label)
                 expect(page.locator('#ats-result')).to_contain_text('C++')
