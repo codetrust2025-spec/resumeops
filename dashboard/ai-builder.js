@@ -96,6 +96,35 @@ function control([key, label, type], value = '') {
   wrapper.append(input);
   return wrapper;
 }
+function disclosure(title, id, open = false) {
+  const detail = node('details');
+  detail.id = id;
+  detail.className = 'ai-disclosure';
+  detail.open = open;
+  detail.append(node('summary', title));
+  return detail;
+}
+function updateCounts() {
+  const optional = ai('ai-contact-summary');
+  if (optional) {
+    const count = basic.slice(4).filter(([key]) =>
+      ai('ai-basics').querySelector('[name=' + key + ']')?.value.trim()).length;
+    optional.textContent = count ? ' · ' + count + ' added' : ' · optional';
+  }
+  for (const [key,title] of collections) {
+    const count = ai('ai-' + key)?.children.length || 0;
+    const summary = ai('ai-section-' + key)?.querySelector('summary');
+    if (summary) summary.textContent = title + ' (' + count + ')';
+  }
+}
+function updateReviewCounts() {
+  for (const details of ai('ai-claims').querySelectorAll('details[data-section]')) {
+    const all = details.querySelectorAll('[data-claim]');
+    const checked = [...all].filter(item => item.querySelector('input[type=checkbox]').checked).length;
+    details.querySelector('summary').textContent =
+      details.dataset.section + ' · ' + checked + '/' + all.length + ' selected';
+  }
+}
 function addEntry(key, fields, value = {}) {
   const container = ai('ai-' + key);
   if (container.children.length >= 40) return;
@@ -104,8 +133,11 @@ function addEntry(key, fields, value = {}) {
   const group = node('div');
   group.className = 'ai-fields';
   for (const field of fields) group.append(control(field,value[field[0]] || ''));
-  entry.append(group,button('Remove entry',() => {entry.remove(); save();}));
+  entry.append(group,button('Remove entry',() => {
+    entry.remove(); updateCounts(); save();
+  }));
   container.append(entry);
+  updateCounts();
 }
 function intake() {
   const data = Object.fromEntries(basic.map(([key]) => [key,ai('ai-basics').querySelector('[name='+key+']').value]));
@@ -122,6 +154,7 @@ function fill(data) {
     ai('ai-' + key).replaceChildren();
     for (const item of data[key] || []) addEntry(key,fields,item);
   }
+  updateCounts();
 }
 async function save() {
   if (!ResumeAuth.owner) return;
@@ -198,13 +231,22 @@ async function importFile() {
   state.importId = job.id;
   delete state.import;
   await save();
+  ai('ai-upload-options').open = false;
   showProgress('Resume import complete', 'Details imported. Check the fields before drafting.', 'complete');
 }
 function renderReview(draft) {
   ai('ai-intake').hidden = true;
   ai('ai-review').hidden = false;
   ai('ai-claims').replaceChildren();
+  const claimGroups = new Map();
   for (const claim of draft.claims) {
+    if (!claimGroups.has(claim.section)) {
+      const section = disclosure(claim.section, 'ai-review-section-' + claimGroups.size,
+                                 claimGroups.size === 0);
+      section.dataset.section = claim.section;
+      ai('ai-claims').append(section);
+      claimGroups.set(claim.section, section);
+    }
     const row = node('div');
     row.className='ai-claim';
     row.dataset.claim=claim.id;
@@ -225,8 +267,9 @@ function renderReview(draft) {
     text.rows=2; text.value=state.edits?.[claim.id] ?? state.approval?.claims?.[claim.id] ?? claim.text;
     text.setAttribute('aria-label','Edit ' + claim.section.toLowerCase());
     row.append(label,node('p',claim.reason),text);
-    ai('ai-claims').append(row);
+    claimGroups.get(claim.section).append(row);
   }
+  updateReviewCounts();
   ai('ai-attest').checked=state.approval?.attested === true;
   const suggestions = draft.suggestions;
   ai('ai-ideas').replaceChildren(node('h3','Portfolio ideas (not completed)'),
@@ -258,6 +301,7 @@ async function draftContent() {
   await api('/api/ai-draft',draft);
   renderReview(await poll(draft.id, 'Drafting resume'));
   showProgress('AI draft complete', 'Review your AI suggestions.', 'complete');
+  ai('ai-review').scrollIntoView({block:'start'});
 }
 function selected() {
   const claims = {};
@@ -268,6 +312,7 @@ function selected() {
     if (row.querySelector('input').checked) claims[row.dataset.claim] = text;
   }
   state.edits = edits;
+  updateReviewCounts();
   return {attested:ai('ai-attest').checked,claims};
 }
 async function preview() {
@@ -276,8 +321,18 @@ async function preview() {
   view.replaceChildren(node('h3',profile.full_name),
     node('p',[profile.email,profile.phone,profile.location,profile.linkedin,profile.github,profile.portfolio].filter(Boolean).join(' | ')));
   if (profile.current_company) view.append(node('p','Current company: ' + profile.current_company));
+  const score = node('p','ATS readiness: ' + ats.ats_readiness + '/100');
+  score.className = 'ai-score';
+  view.append(score);
   function section(title, entries) {
-    if (entries.length) view.append(node('h4',title),...entries);
+    if (!entries.length) return;
+    const group=disclosure(title + ' (' + entries.length + ')', 'ai-preview-section-' +
+      view.querySelectorAll('details').length, title === 'Professional summary');
+    const body = node('div');
+    body.className = 'ai-preview-items';
+    body.append(...entries);
+    group.append(body);
+    view.append(group);
   }
   section('Professional summary',profile.summary ? [node('p',profile.summary)] : []);
   section('Technical skills',profile.skills.map(text => node('p',text)));
@@ -292,21 +347,23 @@ async function preview() {
     ['certifications','Certifications'],['coding_platforms','Coding platforms']]) {
     section(title,(profile[key] || []).map(text => node('p',text)));
   }
-  view.append(node('p','ATS readiness: ' + ats.ats_readiness + '/100'),
-    node('p','Matched: ' + ats.matched.join(', ')),node('p','Missing: ' + ats.missing.join(', ')),
+  section('ATS analysis', [node('p','Matched: ' + ats.matched.join(', ')),
+    node('p','Missing: ' + ats.missing.join(', ')),
     ...ats.breakdown.map(part => node('p',part.label + ': ' + part.points + '/' + part.max)),
-    ...ats.suggestions.map(tip => node('p',tip)));
+    ...ats.suggestions.map(tip => node('p',tip))]);
   if (quality) {
-    view.append(node('h4','Review checks'),
+    section('Review checks', [
       node('p','Target role: ' + quality.role_title),
       node('p',quality.verified_claims + ' candidate-approved statements.'),
       node('p',quality.role_keywords_available ? quality.keyword_matches + ' relevant keyword matches.' :
         'No sourced or curated keyword list is available for this title.'),
       node('p',quality.experience_dates_support_level ? 'Selected experience level passes the date check.' :
-        'Check the selected experience level against the supplied employment dates.'));
+        'Check the selected experience level against the supplied employment dates.')]);
   }
+  ai('ai-review').hidden=true;
   ai('ai-result').hidden=false;
   status('Review the preview before generating.');
+  ai('ai-result').scrollIntoView({block:'start'});
 }
 async function queue() {
   const result = await api('/api/ai-queue',state.queuing);
@@ -322,13 +379,28 @@ async function init() {
     return;
   }
   ResumeAuth.onBeforeRenewal(save);
-  for (const field of basic) ai('ai-basics').append(control(field));
+  for (const field of basic.slice(0,4)) ai('ai-basics').append(control(field));
+  const contact = disclosure('Contact and profiles', 'ai-contact');
+  const summary = contact.querySelector('summary');
+  const count = node('span');
+  count.id = 'ai-contact-summary';
+  summary.append(count);
+  const contactFields = node('div');
+  contactFields.className = 'ai-fields ai-optional-fields';
+  for (const field of basic.slice(4)) contactFields.append(control(field));
+  contact.append(contactFields);
+  ai('ai-basics').append(contact);
   for (const [key,title,fields] of collections) {
-    const section=node('section'); section.className='ai-collection';
+    const section=disclosure(title, 'ai-section-' + key);
+    section.classList.add('ai-collection');
     const list=node('div'); list.id='ai-'+key;
-    section.append(node('h3',title),list,button('Add '+title.toLowerCase(),() => addEntry(key,fields)));
+    section.append(list,button('Add '+title.toLowerCase(),() => {
+      section.open = true;
+      addEntry(key,fields);
+    }));
     ai('ai-lists').append(section);
   }
+  updateCounts();
   const roles = node('datalist');
   roles.id='ai-roles';
   ai('ai-basics').append(roles);
@@ -348,7 +420,16 @@ async function init() {
     ai('ai-result').hidden = true;
     status('Saved draft cleared in this browser. Completed resumes remain in History.');
   }));
-  ai('ai-form').addEventListener('input',() => save().catch(error => status(error.message)));
+  ai('ai-form').addEventListener('input',() => {
+    updateCounts(); save().catch(error => status(error.message));
+  });
+  ai('ai-form').addEventListener('invalid', event => {
+    const section = event.target.closest('details:not([open])');
+    if (!section) return;
+    section.open = true;
+    // Let the browser focus the newly visible control during native validation.
+    event.target.getBoundingClientRect();
+  }, true);
   ai('ai-form').addEventListener('submit',handle(async () => {
     state.draft={id:newId(),candidate:intake(),import_id:state.importId};
     delete state.approval;
@@ -373,6 +454,11 @@ async function init() {
   ai('ai-preview').addEventListener('click',handle(async () => {
     state.approval=selected(); await save(); await preview();
   }));
+  ai('ai-edit-review').addEventListener('click',() => {
+    ai('ai-result').hidden = true;
+    ai('ai-review').hidden = false;
+    ai('ai-review').scrollIntoView({block:'start'});
+  });
   ai('ai-generate').addEventListener('click',handle(async () => {
     state.queuing={id:state.draft.id,approval:structuredClone(state.approval)};
     await save();

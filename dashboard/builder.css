@@ -278,3 +278,32 @@ input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true]{b
 .auth-banner p{margin:0;flex:1 1 320px;color:#5c3a00;font-weight:600}
 .auth-banner small{flex-basis:100%;color:#7a5200}.auth-banner small:empty{display:none}
 .sprite{position:absolute;width:0;height:0;overflow:hidden}
+
+/* Reduce non-essential vertical space without disabling necessary page scrolling. */
+.recent{margin-top:12px}
+.recent #recent-list{padding:0 12px 8px}
+@media (max-width:760px){
+  .start-hero{padding:12px 10px}
+  .start-hero .icon.big{width:30px;height:30px}
+  .start-hero p{font-size:.85rem}
+  .start-hero .stack{margin:10px auto 0;gap:7px}
+  .recent{margin-top:9px}
+  .step-head{margin-bottom:8px}
+  .step-head p{font-size:.8rem}
+  .card{padding:12px}
+  .step-actions{margin:10px -12px -12px;padding:8px 12px max(8px,env(safe-area-inset-bottom))}
+  .result-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:10px}
+  .tile{min-height:56px;padding:8px 6px;justify-content:center;text-align:center}
+  .tile .icon,.tile .ring{display:none}
+  .tile b{font-size:.78rem;line-height:1.2;overflow-wrap:anywhere}
+  .tile small{display:none}
+  .tabs{margin-bottom:8px}
+  .tabs button{padding:6px 4px;font-size:.78rem}
+  iframe{min-height:340px;height:55dvh}
+  .live-grid{margin:8px 0 4px}
+  .pipeline{row-gap:8px;margin-bottom:8px}
+}
+@media (max-width:355px){
+  .result-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .tile{min-height:54px}
+}

@@ -12,9 +12,9 @@
 <script defer src="/ai-builder.js"></script>
 </head>
 <body data-ai-builder>
-<header class="top"><div class="width ai-nav"><strong>ResumeOps</strong><span class="ai-nav-actions"><a href="/workflow#history">History</a><button class="secondary" id="ai-reset" type="button">Clear saved draft</button></span></div></header>
+<header class="top"><div class="width ai-nav"><strong>ResumeOps</strong><span class="ai-nav-actions"><a href="/workflow#history">History</a><button class="secondary" id="ai-reset" type="button" aria-label="Clear saved draft"><span class="ai-long">Clear saved draft</span><span class="ai-short" aria-hidden="true">Clear</span></button></span></div></header>
 <main class="width ai-layout">
-<header class="intro"><h1>Resume builder</h1><p>Enter your details or import a resume. Review AI suggestions before creating your resume.</p></header>
+<header class="intro"><h1>Resume builder</h1><p>Import a resume or enter verified details.</p></header>
 <section id="ai-progress" class="ai-progress" aria-label="Resume progress" hidden>
   <div class="ai-progress-ring" id="ai-progress-ring" role="progressbar"
        aria-label="Completed processing checkpoints" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
@@ -33,11 +33,14 @@
 </section>
 <section id="ai-intake" class="ai-panel">
   <h2>Candidate details</h2>
-  <div class="ai-upload">
-    <label for="ai-file">Import a resume (PDF, DOCX or TXT)</label>
+  <details class="ai-disclosure ai-upload-options" id="ai-upload-options" open>
+    <summary>Import resume (PDF, DOCX or TXT)</summary>
+    <div class="ai-upload">
+    <label for="ai-file">Choose a PDF, DOCX or TXT file</label>
     <input type="file" id="ai-file" accept=".pdf,.docx,.txt">
     <button class="secondary" id="ai-import" type="button">Import details</button>
-  </div>
+    </div>
+  </details>
   <form id="ai-form">
     <div class="ai-fields" id="ai-basics"></div>
     <div id="ai-lists"></div>
@@ -48,8 +51,12 @@
   <h2>Review AI suggestions</h2>
   <p>Select only statements you can confirm are true. You can edit the suggested wording.</p>
   <div id="ai-claims"></div>
-  <div id="ai-ideas"></div>
-  <div id="ai-sources"></div>
+  <details class="ai-disclosure ai-reference">
+    <summary>Portfolio ideas and learning recommendations</summary><div id="ai-ideas"></div>
+  </details>
+  <details class="ai-disclosure ai-reference">
+    <summary>Role research and sources</summary><div id="ai-sources"></div>
+  </details>
   <label class="ai-confirm"><input type="checkbox" id="ai-attest"> I confirm the candidate details and selected statements are accurate.</label>
   <div class="ai-actions">
     <button class="secondary" type="button" id="ai-back">Edit candidate details</button>
@@ -58,7 +65,8 @@
 </section>
 <section id="ai-result" class="ai-panel" hidden>
   <h2>Resume preview and ATS</h2><div id="ai-preview-content"></div>
-  <button type="button" class="primary" id="ai-generate">Generate resume</button>
+  <div class="ai-actions"><button type="button" class="secondary" id="ai-edit-review">Back to review</button>
+  <button type="button" class="primary" id="ai-generate">Generate resume</button></div>
 </section>
 </main>
 </body>
