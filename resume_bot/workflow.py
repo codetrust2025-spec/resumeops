@@ -158,7 +158,9 @@ def matched_terms(terms, text):
 
 def analyze(profile, target, keywords=None, today=None):
     keywords = role_keywords(target) if keywords is None else keywords
-    evidence = [profile['headline'], profile['summary'], *profile['skills'], *profile['certifications']]
+    # An automation headline names the requested role. It is an objective, not a skill claim.
+    headline_evidence = [] if target.get('automation_owner') else [profile['headline']]
+    evidence = [*headline_evidence, profile['summary'], *profile['skills'], *profile['certifications']]
     evidence.extend(profile.get('competencies', []))
     evidence.extend(profile.get('projects', []))
     evidence.extend(profile.get('achievements', []))

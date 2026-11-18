@@ -98,6 +98,18 @@ class AutomationContract(unittest.TestCase):
                 packet['profile']['skills'].append(target)
                 self.assertFalse(verified_automation(packet['profile'], packet['target'], proof))
 
+    def test_role_objective_does_not_count_as_ats_evidence(self):
+        from resume_bot.profile import validate_profile
+        from resume_bot.workflow import analyze
+
+        profile = validate_profile(make_facts())
+        profile['headline'] = 'Target role: Azure Data Engineer'
+        target = {'role': 'custom', 'role_title': 'Azure Data Engineer', 'template': 'standard',
+                  'automation_owner': 'a' * 64, 'experience_years': 3}
+        score = analyze(profile, target, ['Azure', 'SQL'])
+        self.assertEqual(score['matched'], ['SQL'])
+        self.assertEqual(score['missing'], ['Azure'])
+
     def test_document_sources_exclude_planned_certificates(self):
         with patch('resume_bot.automation.extract_profile', return_value=make_facts()):
             profile = source_profile(SOURCE, object())
