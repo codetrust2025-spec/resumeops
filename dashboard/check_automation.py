@@ -18,13 +18,15 @@ from unittest.mock import patch
 from playwright.sync_api import expect, sync_playwright
 
 from resume_dashboard import Workspace, handler
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 from resume_bot.automation import CONSENT_VERSION, source_profile, tailor_facts, verified_automation, verified_request
 from resume_bot.ollama import OllamaError
 from resume_bot.pipeline import CODE, scan
 from resume_bot.compile import compile_latex
 from resume_bot.storage import write_json
 
-ROOT = Path(__file__).resolve().parents[1]
 PUBLIC = 'https://resumeops.example'
 TARGET = 'Azure Data Engineer'
 SOURCE = """Synthetic Applicant
