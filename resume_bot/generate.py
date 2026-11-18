@@ -308,7 +308,9 @@ def write_summary(profile, role_title, years, keywords, ai, on_progress=None):
         # already held ("Transitioned into DevOps Engineer role focusing on ...").
         return composed_summary(profile, role_title, years, keywords), 'composed'
     opening = ('begin with the degree (a fresher)' if not profile['experience'] else
-               f'begin with the target role, for example "{role_title} with <years> years of experience building ..."')
+               f'begin with the target role, for example "{role_title} with <years> years of experience", followed by '
+               'the responsibilities in their own verbs ("maintaining" for "Maintained", never an added verb such as '
+               '"building and maintaining")')
     rules = ('Write a 2-3 sentence professional resume summary for the target role using ONLY these verified facts. '
              f'Write it the way a recruiter-ready resume reads: {opening}; no pronouns at all '
              '(no I, my, they, this candidate), plain concrete wording about the work and tools. Rules: no numbers '
