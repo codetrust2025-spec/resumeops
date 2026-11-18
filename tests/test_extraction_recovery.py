@@ -15,7 +15,7 @@ from unittest.mock import patch
 from xml.sax.saxutils import escape
 from zipfile import ZipFile
 
-from resume_bot.automation import CONSENT_VERSION, source_profile
+from resume_bot.automation import CONSENT_VERSION, AnswerError, NeedsInput, apply_answers, source_profile
 from resume_bot.ingest import ExtractionError, extract_profile, read_resume_text
 from resume_bot.ollama import Ollama, OllamaBudgetError
 
@@ -169,17 +169,38 @@ class ExtractionRecoveryTests(unittest.TestCase):
         strict = extract_profile(RESUME, model)
         self.assertEqual(len(strict['experience']), 3)
 
-    def test_incomplete_role_is_omitted_with_a_notice_and_nothing_is_invented(self):
-        notices = []
-        profile = source_profile(RESUME, QuotingModel(), notices=notices)
+    def needs_input(self, source, model):
+        with self.assertRaises(NeedsInput) as caught:
+            source_profile(source, model)
+        return caught.exception
+
+    def test_missing_employer_becomes_a_question_and_every_entry_is_kept(self):
+        gap = self.needs_input(RESUME, QuotingModel())
+        self.assertEqual([q['id'] for q in gap.questions], ['experience.3.company'])
+        question = gap.questions[0]
+        self.assertEqual(question['value'], '', 'a missing employer is never pre-filled')
+        self.assertIn('does not state the employer', question['explanation'])
+        self.assertEqual(question['label'], 'Employer for Freelance Developer (Mar 2018 - Dec 2018)')
+        self.assertEqual([e['company'] for e in gap.draft['experience']], [r[0] for r in ROLES] + [''])
+        self.assertEqual(gap.draft['experience'][1]['bullets'], ROLES[1][4])
+        profile = apply_answers(gap.draft, gap.questions, {'experience.3.company': '  Self-employed '})
         self.assertEqual([(e['company'], e['position']) for e in profile['experience']],
-                         [(c, p) for c, p, *_ in ROLES])
-        self.assertEqual(profile['experience'][1]['bullets'], ROLES[1][4])
-        self.assertNotIn('Freelance Developer', json.dumps(profile['experience']))
-        self.assertEqual(notices, ['Omitted work entry "Freelance Developer": the resume does not state its employer.'])
+                         [(c, p) for c, p, *_ in ROLES] + [('Self-employed', 'Freelance Developer')])
+
+    def test_answers_are_validated_per_field(self):
+        gap = self.needs_input(RESUME, QuotingModel())
+        for answers, field, message in (({}, 'experience.3.company', 'Enter the employer'),
+                                        ({'experience.3.company': '   '}, 'experience.3.company', 'Enter the employer'),
+                                        ({'experience.3.company': 'x' * 251}, 'experience.3.company', 'under 250'),
+                                        ({'experience.3.company': 'A', 'experience.0.company': 'B'}, 'experience.0.company', 'not part')):
+            with self.subTest(answers=list(answers)):
+                with self.assertRaises(AnswerError) as caught:
+                    apply_answers(json.loads(json.dumps(gap.draft)), gap.questions, answers)
+                self.assertEqual(caught.exception.field, field)
+                self.assertIn(message, str(caught.exception))
 
     def test_email_is_recovered_verbatim_when_the_model_misses_it(self):
-        self.assertEqual(source_profile(RESUME, QuotingModel(email=''))['email'], 'asha.example@example.com')
+        self.assertEqual(self.needs_input(RESUME, QuotingModel(email='')).draft['email'], 'asha.example@example.com')
 
     def test_job_title_copied_into_employer_is_not_an_employer(self):
         # Observed from real qwen2.5:7b: company "Freelance Developer" == position "Freelance Developer".
@@ -193,29 +214,37 @@ class ExtractionRecoveryTests(unittest.TestCase):
                                        'bullets': [field('Built websites for local clients.')]})
             return data
         model.generate = copied
-        notices = []
-        profile = source_profile(RESUME, model, notices=notices)
-        self.assertEqual(len(profile['experience']), 3)
-        self.assertEqual(notices, ['Omitted work entry "Freelance Developer": the resume does not state its employer.'])
+        gap = self.needs_input(RESUME, model)
+        self.assertEqual([q['id'] for q in gap.questions], ['experience.3.company'])
+        self.assertEqual(gap.draft['experience'][3]['company'], '')
+        self.assertEqual(len(gap.draft['experience']), 4)
 
-    def test_mandatory_facts_are_reported(self):
-        with self.assertRaisesRegex(ExtractionError, 'full name and email'):
-            source_profile(NO_EMAIL, QuotingModel(email=''))
-        nothing = QuotingModel(roles=[], freelance=True, padding=1)
+    def test_missing_email_is_asked_and_no_history_is_reported(self):
+        gap = self.needs_input(NO_EMAIL, QuotingModel(email='', freelance=False))
+        self.assertEqual([q['id'] for q in gap.questions], ['email'])
+        with self.assertRaises(AnswerError) as caught:
+            apply_answers(gap.draft, gap.questions, {'email': 'not-an-email'})
+        self.assertEqual(caught.exception.field, 'email')
+        nothing = QuotingModel(roles=[], freelance=False, padding=1)
         original = nothing.generate
         nothing.generate = lambda *a, **k: {**original(*a, **k), 'education': []}
-        with self.assertRaisesRegex(ExtractionError, 'at least one job'):
+        with self.assertRaisesRegex(ExtractionError, 'No work history or education'):
             source_profile(RESUME, nothing)
+
+    def test_complete_resume_needs_no_questions(self):
+        profile = source_profile(RESUME, QuotingModel(freelance=False))
+        self.assertEqual([e['company'] for e in profile['experience']], [r[0] for r in ROLES])
 
     def test_multi_company_resume_in_txt_docx_and_pdf(self):
         with tempfile.TemporaryDirectory() as temp:
             for path in documents(Path(temp)):
                 with self.subTest(format=path.suffix):
-                    notices = []
-                    profile = source_profile(read_resume_text(path), QuotingModel(), notices=notices)
-                    self.assertEqual([e['company'] for e in profile['experience']], [r[0] for r in ROLES])
-                    self.assertEqual([len(e['bullets']) for e in profile['experience']], [2, 2, 1])
-                    self.assertEqual(len(notices), 1)
+                    gap = self.needs_input(read_resume_text(path), QuotingModel())
+                    self.assertEqual([e['company'] for e in gap.draft['experience'][:3]], [r[0] for r in ROLES])
+                    self.assertEqual([len(e['bullets']) for e in gap.draft['experience']], [2, 2, 1, 1])
+                    self.assertEqual([q['id'] for q in gap.questions], ['experience.3.company'])
+                    profile = apply_answers(gap.draft, gap.questions, {'experience.3.company': 'Self-employed'})
+                    self.assertEqual(len(profile['experience']), 4)
 
     def test_malformed_model_output_is_rejected(self):
         class Broken:
@@ -254,13 +283,69 @@ class AutomationJobStateTests(unittest.TestCase):
             self.jobs._prepare(self.row())
             return reader.call_count
 
-    def test_missing_mandatory_facts_stop_with_a_clear_reason(self):
-        self.prepare(QuotingModel(email=''), source=NO_EMAIL)
+    def test_missing_detail_waits_for_an_answer_then_continues_without_redoing_work(self):
+        self.prepare(QuotingModel())
         row = self.row()
-        self.assertEqual((row['status'], row['stage']), ('blocked', 'Needs your input'))
-        self.assertIn('full name and email', row['error'])
+        self.assertEqual((row['status'], row['stage']), ('needs_input', 'Needs your input'))
+        self.assertIsNotNone(row['payload'], 'the submission is kept while waiting')
         listed = self.jobs.list('a' * 64)[0]
-        self.assertEqual(listed['status'], 'blocked')
+        self.assertEqual([q['id'] for q in listed['questions']], ['experience.3.company'])
+        self.assertNotIn('checkpoints', listed)
+        self.assertNotIn('Built payment APIs', json.dumps(listed), 'only the questions leave the server')
+        self.assertEqual(self.jobs.list('b' * 64), [], 'another account sees nothing')
+        with self.assertRaises(AnswerError):
+            self.jobs.answer('b' * 64, self.id, {'experience.3.company': 'Self-employed'})
+        with patch.object(self.jobs, 'start'):
+            with self.assertRaises(AnswerError) as caught:
+                self.jobs.answer('a' * 64, self.id, {'experience.3.company': ''})
+            self.assertEqual(caught.exception.field, 'experience.3.company')
+            self.assertEqual(self.row()['status'], 'needs_input', 'a rejected answer changes nothing')
+            self.jobs.answer('a' * 64, self.id, {'experience.3.company': 'Self-employed'})
+        self.assertEqual(self.row()['status'], 'queued')
+
+        class RankOnly:
+            def generate(self, prompt, schema=None, on_progress=None):
+                if 'DATA:' not in prompt:
+                    raise AssertionError('extraction must not run again')
+                return {}
+        reads = self.prepare(RankOnly())
+        self.assertEqual(reads, 0)
+        row = self.row()
+        self.assertEqual(row['status'], 'handed_off')
+        listed = self.jobs.list('a' * 64)[0]
+        self.assertEqual(listed['notice'], ['Confirmed by you: Employer for Freelance Developer (Mar 2018 - Dec 2018).'])
+
+    def test_answer_route_is_owner_scoped_and_reports_the_field(self):
+        import hashlib
+        from urllib.error import HTTPError
+        from urllib.request import Request, urlopen
+        from resume_dashboard import handler
+        self.prepare(QuotingModel())
+        server = ThreadingHTTPServer(('127.0.0.1', 0), handler(self.workspace, '', 't'))
+        origin = f'http://127.0.0.1:{server.server_port}'
+        server.RequestHandlerClass = handler(self.workspace, origin, 't', automation_first=True)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        owner = hashlib.sha256((origin + '\0loopback').encode()).hexdigest()
+        with closing(self.jobs.connection()) as db, db:
+            db.execute('UPDATE automation SET owner=?', (owner,))
+
+        def post(body, token='t'):
+            request = Request(origin + '/api/automation/answer', data=json.dumps(body).encode(), method='POST',
+                              headers={'Origin': origin, 'X-Dashboard-Token': token, 'Content-Type': 'application/json'})
+            try:
+                with urlopen(request, timeout=10) as response:
+                    return response.status, json.load(response)
+            except HTTPError as error:
+                return error.code, json.load(error)
+        self.assertEqual(post({'id': self.id, 'answers': {}}, token='wrong')[0], 403)
+        status, body = post({'id': self.id, 'answers': {'experience.3.company': ''}})
+        self.assertEqual((status, body['field']), (400, 'experience.3.company'))
+        self.assertEqual(post({'id': 'c' * 64, 'answers': {}})[0], 400)
+        with patch('automation_jobs.AutomationJobs.start'):
+            status, body = post({'id': self.id, 'answers': {'experience.3.company': 'Self-employed'}})
+        self.assertEqual((status, body['status']), (200, 'queued'))
 
     def test_temporary_failure_keeps_completed_work_and_retries(self):
         class Overflowing:
@@ -271,12 +356,18 @@ class AutomationJobStateTests(unittest.TestCase):
         self.assertEqual((row['status'], row['stage'], row['attempts']), ('retrying', 'Retrying automatically', 1))
         self.assertIsNotNone(row['payload'])
         self.assertIn('source', json.loads(row['checkpoints']))
-        reads = self.prepare(QuotingModel())
+        reads = self.prepare(QuotingModel(freelance=False))
         self.assertEqual(reads, 0, 'the source document must not be read again')
+        self.assertEqual(self.row()['status'], 'handed_off')
+
+    def test_unreadable_resume_stops_with_a_clear_reason(self):
+        nothing = QuotingModel(roles=[], freelance=False, padding=1)
+        original = nothing.generate
+        nothing.generate = lambda *a, **k: {**original(*a, **k), 'education': []}
+        self.prepare(nothing)
         row = self.row()
-        self.assertEqual(row['status'], 'handed_off')
-        listed = self.jobs.list('a' * 64)[0]
-        self.assertEqual(listed['notice'], ['Omitted work entry "Freelance Developer": the resume does not state its employer.'])
+        self.assertEqual((row['status'], row['stage']), ('blocked', 'Needs your input'))
+        self.assertIn('No work history or education', row['error'])
 
 
 def browser_or_skip(test):
@@ -328,11 +419,96 @@ class HistoryStatusTests(unittest.TestCase):
                         blocked = page.locator('#auto-job-list li[data-status="blocked"]')
                         retrying = page.locator('#auto-job-list li[data-status="retrying"]')
                         self.assertEqual(blocked.locator('strong').inner_text(), 'Needs attention')
-                        self.assertIn('experience[1].company', blocked.inner_text())
+                        self.assertIn('Work entry 2 has no employer', blocked.inner_text())
+                        self.assertNotIn('experience[1]', page.locator('body').inner_text())
+                        # The panel follows the job still running, never the stopped job's error.
+                        self.assertIn('Retrying automatically', page.locator('#auto-status').inner_text())
+                        self.assertNotIn('Work entry', page.locator('#auto-status').inner_text())
                         self.assertNotIn('%', blocked.inner_text())
                         self.assertNotIn('Extracting', blocked.inner_text())
                         self.assertIn('Retrying automatically at', retrying.inner_text())
                         self.assertIn('No action needed', retrying.inner_text())
+            finally:
+                browser.close()
+                playwright.stop()
+                server.shutdown()
+                server.server_close()
+
+
+class NeedsInputPageTests(unittest.TestCase):
+    """Editable fields for missing details; errors once, next to the field; nothing stale on a fresh form."""
+
+    def test_fresh_form_questions_and_field_errors(self):
+        import hashlib
+        import time
+        sys.path.insert(0, str(ROOT / 'dashboard'))
+        from automation_jobs import AutomationJobs
+        from resume_bot.pipeline import CODE
+        from resume_bot.storage import write_json
+        from resume_dashboard import Workspace, handler
+        with tempfile.TemporaryDirectory() as temp:
+            workspace = Workspace(Path(temp), code_root=ROOT)
+            write_json(workspace.inbox / '.resume-bot-health.json', {'last_scan': time.time(), 'code': CODE})
+            jobs = AutomationJobs(workspace)
+            server = ThreadingHTTPServer(('127.0.0.1', 0), handler(workspace, '', 't'))
+            origin = f'http://127.0.0.1:{server.server_port}'
+            server.RequestHandlerClass = handler(workspace, origin, 't', automation_first=True)
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            owner = hashlib.sha256((origin + '\0loopback').encode()).hexdigest()
+            gap = None
+            try:
+                source_profile(RESUME, QuotingModel())
+            except NeedsInput as error:
+                gap = error
+            now = time.time()
+            with closing(jobs.connection()) as db, db:
+                db.execute("INSERT INTO automation(owner,id,payload,status,stage,percent,created,updated,error,checkpoints) "
+                           "VALUES (?,?,?, 'needs_input','Needs your input',25,?,?,?,?)",
+                           (owner, 'd' * 64, json.dumps({'role': 'Backend Engineer', 'consent': CONSENT_VERSION}),
+                            now, now, str(gap), json.dumps({'draft': gap.draft, 'questions': gap.questions})))
+                db.execute("INSERT INTO automation(owner,id,status,stage,percent,created,updated,error) VALUES "
+                           "(?,?,'blocked','Extracting source facts with Ollama (15 fields)',25,?,?,?)",
+                           (owner, 'e' * 64, now - 60, now - 60, 'experience[1].company: missing required information'))
+            playwright, browser = browser_or_skip(self)
+            try:
+                page = browser.new_page()
+                with patch('automation_jobs.AutomationJobs.start'):
+                    page.goto(origin)
+                    waiting = page.locator('#auto-job-list li[data-status="needs_input"]')
+                    waiting.wait_for()
+                    self.assertTrue(page.locator('#auto-status').is_hidden(), 'no earlier job on a fresh form')
+                    field = waiting.get_by_label('Employer for Freelance Developer (Mar 2018 - Dec 2018)')
+                    self.assertEqual(field.input_value(), '')
+                    self.assertIn('does not state the employer', waiting.inner_text())
+                    waiting.get_by_role('button', name='Continue').click()
+                    errors = waiting.locator('.field-error')
+                    self.assertEqual(errors.count(), 1)
+                    self.assertEqual(errors.inner_text(), 'Enter this detail to continue.')
+                    self.assertEqual(page.get_by_text('Enter this detail to continue.').count(), 1)
+                    self.assertEqual(field.get_attribute('aria-invalid'), 'true')
+                    field.fill('Self-employed')
+                    self.assertEqual(errors.count(), 0, 'the error clears as soon as the field is edited')
+                    page.wait_for_timeout(2000)  # a background refresh must not wipe what was typed
+                    self.assertEqual(field.input_value(), 'Self-employed')
+                    with page.expect_response(lambda r: r.url.endswith('/api/automation/answer')) as answered:
+                        waiting.get_by_role('button', name='Continue').click()
+                    self.assertEqual(answered.value.status, 200)
+                    with closing(jobs.connection()) as db:
+                        self.assertEqual(db.execute("SELECT status FROM automation WHERE id=?", ('d' * 64,)).fetchone()[0], 'queued')
+                    # A submission error appears once, next to the field it concerns.
+                    page.get_by_label('Target role').fill('!!')
+                    page.locator('#auto-file').set_input_files({'name': 'resume.txt', 'mimeType': 'text/plain',
+                                                                'buffer': RESUME.encode()})
+                    page.locator('#auto-consent').check()
+                    page.get_by_role('button', name='Create verified resume').click()
+                    role_error = page.locator('label:has(input[name="role"]) + .field-error')
+                    role_error.wait_for()
+                    self.assertIn('target role', role_error.inner_text().lower())
+                    self.assertEqual(page.locator('.field-error').count(), 1)
+                    self.assertEqual(page.get_by_text(role_error.inner_text(), exact=True).count(), 1, 'shown once')
+                    self.assertNotIn('target role', page.locator('#auto-status').inner_text().lower())
+                    page.get_by_label('Target role').fill('Backend Engineer')
+                    self.assertEqual(page.locator('.field-error').count(), 0)
             finally:
                 browser.close()
                 playwright.stop()
