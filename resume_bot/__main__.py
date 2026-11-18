@@ -71,7 +71,7 @@ def watch(a, ai, sleep=None):
         try:
             return scan(a.inbox,a.output,ai=ai,polish_enabled=not a.no_polish,
                         overleaf=a.overleaf,browser_profile=a.browser_profile,
-                        once=a.once,interval=a.interval,max_pages=a.max_pages)
+                        once=a.once,interval=a.interval,max_pages=a.max_pages,automate=True)
         except sqlite3.OperationalError as exc:
             if 'locked' not in str(exc).lower() or a.once:
                 raise

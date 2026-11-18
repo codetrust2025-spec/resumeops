@@ -45,6 +45,8 @@ def release(name):
     if (folder / 'ai-builder.html').is_file():
         files += ('ai-builder.html', 'ai-builder.js', 'ai-builder.css', 'recovery.js',
                   'auth.js', 'auth-renewed.js', 'durable_imports.py')
+    if (folder / 'automation.html').is_file():
+        files += ('automation.js', 'automation.css', 'automation_jobs.py')
     missing = [file for file in files
                if not (folder / file).is_file() or not (folder / file).stat().st_size]
     if missing:
@@ -60,6 +62,11 @@ def fetch(port, path, host=None):
 def health(port, config):
     mime, homepage = fetch(port, '/')
     ai_homepage = b'id="ai-form"' in homepage
+    if b'/automation.js' in homepage:
+        for route, content_type in (('/automation.js', 'text/javascript'), ('/automation.css', 'text/css')):
+            actual, body = fetch(port, route)
+            if actual != content_type or not body:
+                raise RuntimeError(f'{route}: missing automation asset')
     if mime != 'text/html' or (not ai_homepage and b'id="candidate"' not in homepage):
         raise RuntimeError('/: missing expected builder')
     assets = [
@@ -124,6 +131,14 @@ def spawn(name, port, config, output):
     env.pop('RESUMEOPS_AI_FIRST', None)
     if config.get('ai_first') is True:
         env['RESUMEOPS_AI_FIRST'] = '1'
+    env.pop('RESUMEOPS_AUTOMATION_FIRST', None)
+    if config.get('automation_first') is True:
+        env['RESUMEOPS_AUTOMATION_FIRST'] = '1'
+    operators = config.get('operator_accounts', [])
+    if not isinstance(operators, list) or any(not isinstance(email, str) or '@' not in email for email in operators):
+        raise RuntimeError('operator_accounts must be a list of authorized email identities')
+    if operators:
+        env['RESUMEOPS_OPERATOR_ACCOUNTS'] = ','.join(operators)
     return subprocess.Popen([
         sys.executable, '-u', str(folder / 'resume_dashboard.py'), '--root', str(project),
         '--port', str(port), '--model', config['model'], '--web-url', config['web_url'],

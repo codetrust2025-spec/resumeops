@@ -29,7 +29,7 @@ def normalize_request(payload):
     if set(payload) != {'profile', 'target'} or not isinstance(payload['target'], dict):
         raise ProfileError('Expected a candidate profile and target')
     target = payload['target']
-    if set(target) - {'role', 'keywords', 'template', 'experience_years', 'approved', 'role_title'}:
+    if set(target) - {'role', 'keywords', 'template', 'experience_years', 'approved', 'role_title', 'automation_owner', 'automation_id'}:
         raise ProfileError('Unknown target option')
     if 'approved' in target and target['approved'] is not True:
         raise ProfileError('Approval marker must be true when present')
@@ -58,6 +58,13 @@ def normalize_request(payload):
     if target.get('approved') is True:
         # Set only by the dashboard after the candidate approved every line; render verbatim.
         normalized['approved'] = True
+    private = ('automation_owner', 'automation_id')
+    if any(key in target for key in private):
+        if not normalized.get('approved') or any(
+                not isinstance(target.get(key), str) or not re.fullmatch(r'[0-9a-f]{64}', target[key])
+                for key in private):
+            raise ProfileError('Invalid private automation request')
+        normalized.update({key: target[key] for key in private})
     return validate_profile(payload['profile']), normalized
 
 
@@ -151,7 +158,9 @@ def matched_terms(terms, text):
 
 def analyze(profile, target, keywords=None, today=None):
     keywords = role_keywords(target) if keywords is None else keywords
-    evidence = [profile['headline'], profile['summary'], *profile['skills'], *profile['certifications']]
+    # An automation headline names the requested role. It is an objective, not a skill claim.
+    headline_evidence = [] if target.get('automation_owner') else [profile['headline']]
+    evidence = [*headline_evidence, profile['summary'], *profile['skills'], *profile['certifications']]
     evidence.extend(profile.get('competencies', []))
     evidence.extend(profile.get('projects', []))
     evidence.extend(profile.get('achievements', []))

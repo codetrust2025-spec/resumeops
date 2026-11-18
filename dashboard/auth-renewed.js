@@ -7,3 +7,4 @@ const destination = new URLSearchParams(location.search).get('return');
 if (destination === 'builder') location.replace('/');
 if (destination === 'ai-builder') location.replace('/ai-builder');
 if (destination === 'workflow') location.replace('/workflow');
+if (destination === 'automated') location.replace('/automated');

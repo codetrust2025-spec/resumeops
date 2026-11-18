@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock
 from durable_imports import DurableImports, ImportCapacity, ImportConflict
+from automation_jobs import AutomationCapacity, AutomationJobs, REQUEST_LIMIT
 from urllib.parse import parse_qs, urlsplit
 from zipfile import BadZipFile, ZipFile
 
@@ -58,6 +59,11 @@ def contained(path, directory):
     return path.resolve().is_relative_to(directory.resolve())
 
 
+def private_owner(key):
+    match = re.match(r'^private-([0-9a-f]{64})(?:/|-[0-9a-f]{64}\.json$)', key)
+    return match[1] if match else None
+
+
 class Workspace:
     def __init__(self, root, model="qwen2.5:7b", code_root=None):
         self.root = root.resolve()
@@ -65,6 +71,8 @@ class Workspace:
         self.inbox = self.root / 'inbox'
         self.output = self.root / 'output'
         self.logs = self.root / 'logs'
+        self.private_inbox = self.root / 'inbox-private'
+        self.private_output = self.root / 'output-private'
         self.approvals = self.root / 'approvals'
         self._result_cache = {}
         self._revision_lock = Lock()
@@ -123,6 +131,26 @@ class Workspace:
                     self.inbox / '.resume-bot-state.json').exists(),
                 'logs': [name for name in LOGS if (self.logs / name).is_file()
                          and contained(self.logs / name, self.logs)]}
+
+    def automation_ready(self):
+        from resume_bot.pipeline import CODE
+        health = read_json(self.inbox / '.resume-bot-health.json') or {}
+        checked = health.get('last_scan', 0)
+        return health.get('code') == CODE and time.time() - checked < 900
+
+    def read_automation_source(self, extension, data):
+        from resume_bot.ingest import read_resume_text
+        with tempfile.TemporaryDirectory(prefix='resumeops-source-') as temp:
+            path = Path(temp) / ('resume.' + extension)
+            path.write_bytes(data)
+            if extension == 'docx':
+                try:
+                    with ZipFile(path) as document:
+                        if document.getinfo('word/document.xml').file_size > 8 * MAX_INPUT:
+                            raise ValueError('The Word document text is too large.')
+                except (BadZipFile, KeyError) as exc:
+                    raise ValueError('The Word document could not be read.') from exc
+            return read_resume_text(path)
 
     def draft(self, extension, data, report=lambda stage, metrics=None: None):
         from resume_bot.ingest import extract_profile, read_resume_text
@@ -190,18 +218,26 @@ class Workspace:
             raise ValueError('Local document conversion failed. Try exporting the file as DOCX or text-based PDF.') from exc
 
     def enqueue(self, data, approval=None):
-        profile, target = self.normalize(json.loads(data.decode('utf-8-sig')))
+        document = json.loads(data.decode('utf-8-sig'))
+        if approval and approval.get('automation'):
+            document['target']['approved'] = True
+        profile, target = self.normalize(document)
         if target and target.get('approved') and approval is None:
             raise ValueError('Only the AI review can mark a resume as candidate-approved')
         if approval is not None:
             if not target:
                 raise ValueError('An approved resume needs a target role')
             target['approved'] = True
+        owner = target.get('automation_owner') if target else None
+        if owner and (not approval or not approval.get('automation') or approval['approved_by'] != owner
+                      or approval['operation'] != target['automation_id']):
+            raise ValueError('Private automation requires a matching evidence record')
         request = {'profile': profile, 'target': target} if target else profile
         payload = json.dumps(request, ensure_ascii=False, indent=2).encode('utf-8')
         slug = re.sub(r'[^a-z0-9]+', '-', profile['full_name'].lower()).strip('-')[:45] or 'candidate'
         digest = hashlib.sha256(payload).hexdigest()
-        target = self.inbox / f'{slug}-{digest}.json'
+        prefix = 'private-' + owner if owner else slug
+        target = (self.private_inbox if owner else self.inbox) / f'{prefix}-{digest}.json'
         if approval is not None:
             # The approval record is written before the job file is published.
             self.record_approval(target.name, payload, approval)
@@ -236,6 +272,8 @@ class Workspace:
                    'operation': approval['operation'], 'approved_by': approval['approved_by'],
                    'attested': True, 'claims': approval['claims'], 'project_names': approval.get('project_names', []),
                    'market_sources': approval.get('market_sources', [])}
+        if approval.get('automation'):
+            content['automation'] = approval['automation']
         identity = hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()[:32]
         record = {**content, 'record_id': identity,
                   'recorded_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
@@ -246,6 +284,16 @@ class Workspace:
     def approvals_for(self, job):
         from resume_bot.claim_audit import records_for
         return records_for(self.approvals, job)
+
+    def automation_state(self):
+        return read_json(self.private_inbox / '.resume-bot-state.json') or {}
+
+    def private_revision_key(self, output, owner):
+        if not output:
+            return ''
+        folder = Path(output)
+        key = folder.parent.name + '/' + folder.name
+        return key if private_owner(key) == owner and self.artifact(key, 'result.json') else ''
 
     def revision_key(self, output):
         # Pure path arithmetic: the watcher records absolute output paths, so no file is opened here.
@@ -347,6 +395,7 @@ class Workspace:
             target = {'role': ats['role'], 'template': ats['template']}
             ats = analyze(candidate, target, ats.get('matched', []) + ats.get('missing', []))
         return {'profile': candidate, 'ats': ats, 'tailoring': report.get('tailoring'),
+                'overleaf': report.get('overleaf'),
                 'experience': report.get('experience')}
 
     def keywords(self, role):
@@ -371,8 +420,9 @@ class Workspace:
     def artifact(self, key, name):
         if name not in ARTIFACTS or not re.fullmatch(r'[^/\\]+/[^/\\]+', key):
             return None
-        path = self.output / key / name
-        return path if contained(path, self.output) and path.is_file() else None
+        root = self.private_output if private_owner(key) else self.output
+        path = root / key / name
+        return path if contained(path, root) and path.is_file() else None
 
 
 RENEWED_PAGE = b'''<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -382,7 +432,7 @@ RENEWED_PAGE = b'''<!doctype html><html lang="en"><head><meta charset="utf-8">
 
 
 def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
-            web_origin=None, access_verifier=None, ai_first=False):
+            web_origin=None, access_verifier=None, ai_first=False, automation_first=False):
     host = urlsplit(origin).netloc
     phone_host = urlsplit(phone_origin).netloc if phone_origin else None
     web_host = urlsplit(web_origin).netloc if web_origin else None
@@ -421,6 +471,9 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
         return {**draft, 'claims': claims}
 
     durable = DurableImports(workspace.root, process_draft)
+    automation = AutomationJobs(workspace)
+    operators = {email.strip().casefold() for email in os.getenv('RESUMEOPS_OPERATOR_ACCOUNTS', '').split(',')
+                 if email.strip()}
 
     class DashboardHandler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -459,10 +512,12 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
         @staticmethod
         def resume_imports():
             durable.start()
+            automation.start()
 
         @staticmethod
         def stop_imports():
             durable.stop()
+            automation.stop()
 
         def session_owner(self, request_origin):
             if request_origin == web_origin:
@@ -480,6 +535,19 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             expected = self.headers.get('X-Resume-Owner')
             return expected is None or secrets.compare_digest(expected.encode('utf-8'),
                                                                (self.session_owner(request_origin) or '').encode('utf-8'))
+
+        def is_operator(self, request_origin):
+            if request_origin == origin:
+                return True
+            if request_origin == phone_origin:
+                return True  # request_origin already verified the configured Tailscale operator
+            claims = access_verifier.claims(self.headers.get('Cf-Access-Jwt-Assertion')) or {}
+            return str(claims.get('email', '')).strip().casefold() in operators
+
+        def can_read_job(self, key, request_origin):
+            owner = private_owner(key)
+            return (owner == self.session_owner(request_origin) if owner
+                    else self.is_operator(request_origin))
 
         def do_GET(self):
             request_origin = self.request_origin()
@@ -523,16 +591,37 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                     return self.send_json(workspace.keywords(query.get('role', [''])[0]))
                 except ValueError as error:
                     return self.send_json({'error': str(error)}, 400)
+            if url.path == '/api/automation':
+                owner = self.session_owner(request_origin)
+                if not owner:
+                    return self.send_json({'error': 'Sign in to access your resumes.'}, 403)
+                operation = query.get('id', [None])[0]
+                return self.send_json({'jobs': automation.list(owner, operation),
+                                       'ready': workspace.automation_ready()})
             if url.path == '/api/revision':
-                revision = workspace.revision(query.get('key', [''])[0])
+                key = query.get('key', [''])[0]
+                revision = workspace.revision(key) if self.can_read_job(key, request_origin) else None
                 if revision:
                     return self.send_json(revision)
                 return self.send_json({'error': 'Resume revision unavailable.'}, 404)
             if url.path == '/api/status':
                 # Server time lets browsers compute elapsed time without trusting their own clock.
-                return self.send_json({**workspace.status(), 'now': time.time()})
+                status = workspace.status()
+                if not self.is_operator(request_origin):
+                    status.update(logs=[], jobs=[], revisions=[], worker={}, alert=False)
+                if request_origin != origin:
+                    status['logs'] = []
+                for field, key in (('jobs', 'name'), ('revisions', 'key')):
+                    status[field] = [item for item in status[field]
+                                     if self.can_read_job(item[key], request_origin)]
+                return self.send_json({**status, 'now': time.time()})
             if url.path == '/api/artifact':
-                path = workspace.artifact(query.get('key', [''])[0], query.get('name', [''])[0])
+                key = query.get('key', [''])[0]
+                name = query.get('name', [''])[0]
+                allowed = self.can_read_job(key, request_origin)
+                if private_owner(key):
+                    allowed = allowed and name in {'resume.pdf', 'main.tex', 'overleaf.pdf'}
+                path = workspace.artifact(key, name) if allowed else None
                 if path:
                     mime = 'application/pdf' if path.suffix == '.pdf' else (
                         mimetypes.guess_type(path)[0] or 'application/octet-stream')
@@ -541,12 +630,16 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             if url.path == '/api/log':
                 name = query.get('name', [''])[0]
                 path = workspace.logs / name
-                if name in LOGS and contained(path, workspace.logs) and path.is_file():
+                if request_origin == origin and name in LOGS and contained(path, workspace.logs) and path.is_file():
                     with path.open('rb') as stream:
                         stream.seek(max(0, path.stat().st_size - 65536))
                         data = stream.read()
                     return self.send_content(data.decode('utf-8-sig', errors='replace').encode('utf-8'), 'text/plain; charset=utf-8')
-            assets = {'/': ('ai-builder.html' if ai_first else 'index.html', 'text/html'),
+            homepage = 'automation.html' if automation_first else 'ai-builder.html' if ai_first else 'index.html'
+            assets = {'/': (homepage, 'text/html'),
+                      '/automated': ('automation.html', 'text/html'),
+                      '/automation.js': ('automation.js', 'text/javascript'),
+                      '/automation.css': ('automation.css', 'text/css'),
                       '/workflow': ('index.html', 'text/html'),
                       '/ai-builder': ('ai-builder.html', 'text/html'),
                       '/ai-builder.js': ('ai-builder.js', 'text/javascript'),
@@ -566,10 +659,33 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 name, mime = assets[url.path]
                 path = Path(__file__).with_name(name)
                 data = path.read_bytes()
-                if url.path in ('/', '/operations', '/ai-builder', '/workflow'):
+                if url.path in ('/', '/automated', '/operations', '/ai-builder', '/workflow'):
                     data = data.replace(b'__TOKEN__', token.encode('ascii'))
                 return self.send_content(data, mime + '; charset=utf-8')
             return self.send_json({'error': 'File unavailable.'}, 404)
+
+        def submit_automation(self, request_origin):
+            owner = self.session_owner(request_origin)
+            if not owner:
+                return self.reject_post('Sign in before submitting a candidate.')
+            if not workspace.automation_ready():
+                return self.send_json({'error': 'The resume watcher version is not ready. Retry shortly.'}, 503)
+            try:
+                size = int(self.headers.get('Content-Length', ''))
+                if not 0 < size <= REQUEST_LIMIT or self.headers.get_content_type() != 'application/json':
+                    return self.send_json({'error': 'Invalid or oversized resume submission.'}, 413)
+                self.connection.settimeout(45)
+                body = self.rfile.read(size)
+                if len(body) != size:
+                    return self.send_json({'error': 'Upload was incomplete. Retry the same submission.'}, 400)
+                identifier = automation.enqueue(owner, json.loads(body))
+            except AutomationCapacity as exc:
+                return self.send_json({'error': str(exc)}, 429)
+            except (ValueError, UnicodeError) as exc:
+                return self.send_json({'error': str(exc)}, 400)
+            except OSError:
+                return self.send_json({'error': 'Upload interrupted. Retry the same submission.'}, 408)
+            return self.send_json({'id': identifier}, 202)
 
         def reject_post(self, message):
             # Closing a socket with unread request bytes can reset it before Windows clients see
@@ -585,12 +701,16 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
 
         def do_POST(self):
             request_origin = self.request_origin()
-            if (self.path not in ('/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry', '/api/ai-draft', '/api/ai-review', '/api/ai-queue') or request_origin is None
+            if (self.path not in ('/api/automation', '/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry', '/api/ai-draft', '/api/ai-review', '/api/ai-queue') or request_origin is None
                     or self.headers.get('Origin') != request_origin
                     or not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token)):
                 return self.reject_post('Request not authorized.')
             if not self.account_matches(request_origin):
                 return self.reject_post('Dashboard access denied for this session.')
+            if self.path == '/api/automation':
+                return self.submit_automation(request_origin)
+            if self.path in ('/api/queue', '/api/retry', '/api/ai-queue', '/api/keywords/update') and not self.is_operator(request_origin):
+                return self.reject_post('An operator account is required for this route.')
             drafting = self.path == '/api/draft'
             from resume_bot.ollama import OllamaError
             extension = self.headers.get('X-Resume-Extension', '').lower()
@@ -698,7 +818,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                     request = json.loads(data.decode('utf-8-sig'))
                     name = request.get('name', '') if isinstance(request, dict) else ''
                     job = next((item for item in workspace.status()['jobs'] if item['name'] == name), None)
-                    if not job or job['status'] != 'failed':
+                    if not job or job['status'] != 'failed' or not self.can_read_job(name, request_origin):
                         raise ValueError('Only a failed job can be retried')
                     request_retry(workspace.inbox, name)
                     return self.send_json({'name': name, 'retry': 'requested'})
@@ -779,6 +899,7 @@ def main():
     request_handler = handler(
         Workspace(args.root, args.model, args.code_root), origin, secrets.token_hex(32), phone_url, args.phone_user,
         web_origin=web_url, access_verifier=verifier, ai_first=args.ai_first or os.environ.get('RESUMEOPS_AI_FIRST') == '1',
+        automation_first=os.environ.get('RESUMEOPS_AUTOMATION_FIRST') == '1',
     )
     request_handler.resume_imports()
     server = ThreadingHTTPServer(('127.0.0.1', args.port), request_handler)

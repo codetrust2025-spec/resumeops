@@ -156,6 +156,10 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
                          and not claim_violations(original, record)), None)
         if not approval:
             raise BuildError('Candidate approval is missing or does not match this job.')
+        if target.get('automation_owner'):
+            from .automation import verified_automation
+            if not verified_automation(original, target, approval):
+                raise BuildError('Automated resume differs from the attested or source-verified facts.')
         polish_enabled = False
     uses_ai = polish_enabled or source.suffix != '.json'
     ai = (ai or Ollama()) if uses_ai else None
@@ -184,7 +188,10 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
         t.candidate = original['full_name']
         t.unmeasured('Candidate facts extracted and validated')
     t.enter('job', 'Creating job fingerprint')
-    folder = output_root / _slug(original['full_name']) / digest
+    owner = target.get('automation_owner') if target else None
+    if owner and not original_source.name.startswith('private-' + owner + '-'):
+        raise BuildError('Automation owner does not match the private inbox job.')
+    folder = output_root / ('private-' + owner if owner else _slug(original['full_name'])) / digest
     t.units_done(1, 2, 'Job fingerprint ' + digest + ' created')
     cached_result = (folder / 'result.json').exists()
     t.units_done(2, 2, 'Existing verified revision found' if cached_result else 'New revision; no earlier output')
@@ -278,7 +285,7 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
         pages = audit['pdf_checks'].get('pages')
         t.units_done(2, 2, f'Local PDF verified ({pages} page{"s" if pages != 1 else ""})')
         # Canonical LaTeX avoids new projects for identical resumes from other inboxes or models.
-        revision = hashlib.sha256(latex.encode('utf-8')).hexdigest()[:24]
+        revision = hashlib.sha256(((owner + '\0' if owner else '') + latex).encode('utf-8')).hexdigest()[:24]
         project_name = 'ResumeBot-' + revision
         report={'status':'built','candidate':profile['full_name'],'model':audit['ai_model'],
                 'source_sha256':audit['source_sha256'],'project_name':project_name,
@@ -374,15 +381,22 @@ def restart_requested(inbox):
 
 
 def scan(inbox, output_root, *, ai=None, polish_enabled=True, overleaf=False,
-         browser_profile=None, once=False, interval=30, max_pages=2):
+         browser_profile=None, once=False, interval=30, max_pages=2, automate=False):
     """Watch the inbox. A ``.resume-bot-restart`` file makes the watcher return between jobs
     (never during one) so its launcher restarts it with the code currently on disk."""
     inbox = Path(inbox).resolve()
+    output_root = Path(output_root).resolve()
+    private_inbox = inbox.with_name(inbox.name + '-private')
+    private_output = output_root.with_name(output_root.name + '-private')
     with workspace_lock(inbox, '.resume-bot-watch.sqlite3'):
         while True:
             known = _scan_once(inbox, output_root, ai=ai, polish_enabled=polish_enabled,
                                overleaf=overleaf, browser_profile=browser_profile,
                                max_pages=max_pages)
+            if automate and private_inbox.is_dir() and not restart_requested(inbox):
+                with workspace_lock(private_inbox, '.resume-bot-watch.sqlite3'):
+                    _scan_once(private_inbox, private_output, ai=ai, polish_enabled=False,
+                               overleaf=overleaf, browser_profile=browser_profile, max_pages=max_pages)
             if restart_requested(inbox):
                 (inbox / RESTART_FILE).unlink(missing_ok=True)
                 _write_health(inbox, known, restarting=True)
@@ -430,7 +444,8 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
             new_code = previous.get('code_version') != CODE_VERSION
             if previous.get('retryable') is False and not new_code:
                 continue  # deterministic: waits for new code, a changed file, or Retry now
-            if previous.get('retryable', True) and failures >= MAX_AUTO_ATTEMPTS and not new_code:
+            if (previous.get('retryable', True) and failures >= MAX_AUTO_ATTEMPTS
+                    and not previous.get('awaiting_sign_in') and not new_code):
                 continue  # transient retries are bounded
             if not new_code and time.time() - previous['last_attempt'] < _backoff(failures):
                 continue
@@ -493,7 +508,10 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
             now = time.time()
             retryable = not isinstance(exc, DETERMINISTIC) or isinstance(exc, (OSError,))
             detail = f'{type(exc).__name__}: {exc}'[:300]
-            stopped = not retryable or failures + 1 >= MAX_AUTO_ATTEMPTS
+            awaiting_sign_in = key.startswith('private-') and isinstance(exc, OverleafAuthError)
+            if awaiting_sign_in:
+                error = 'Overleaf sign-in required on the RTX laptop. The job will retry automatically.'
+            stopped = not retryable or (failures + 1 >= MAX_AUTO_ATTEMPTS and not awaiting_sign_in)
             runtime = ai.runtime() if isinstance(exc, OllamaError) and hasattr(ai, 'runtime') else None
             if runtime:
                 LAST_RUNTIME.update(runtime, checked=time.time())
@@ -501,6 +519,7 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
                       'error_detail': detail, 'ollama_runtime': runtime,
                       'failures': failures + 1, 'attempt': failures + 1, **activity,
                       'failed_stage': activity.get('stage_key', ''), 'retryable': retryable,
+                      'awaiting_sign_in': awaiting_sign_in,
                       'code_version': CODE_VERSION,
                       'next_retry': None if stopped else now + _backoff(failures + 1)}
             print(f'FAILED resume processing ({type(exc).__name__}); see local inbox state', flush=True)
