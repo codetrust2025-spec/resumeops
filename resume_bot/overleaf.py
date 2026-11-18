@@ -85,6 +85,19 @@ def _compile_and_download(page, destination):
 OVERLEAF_STEP_COUNT = 6
 
 
+# Overleaf shows promotional modals (for example a regional discount offer) over the dashboard.
+# They intercept every click until dismissed. Only dialogs that offer one of these decline buttons
+# are dismissed, by that button; an offer is never accepted, and the upload dialog (which has none
+# of these buttons) is never touched.
+DECLINE = re.compile(r'^(maybe later|not now|no thanks|no, thanks|remind me later|dismiss)$', re.I)
+
+
+def dismiss_interruptions(page):
+    """Register a handler that clears promotional modals whenever one blocks an action."""
+    blocking = page.locator('[role="dialog"], dialog').filter(has=page.get_by_role('button', name=DECLINE))
+    page.add_locator_handler(blocking, lambda dialog: dialog.get_by_role('button', name=DECLINE).first.click())
+
+
 def import_zip(zip_path, project_name, browser_profile, *, pdf_path,
                saved_url=None, headless=True, timeout_ms=90000, on_step=lambda done, label: None):
     """``on_step(done, current)``: steps finished out of OVERLEAF_STEP_COUNT and the running step.
@@ -111,6 +124,7 @@ def import_zip(zip_path, project_name, browser_profile, *, pdf_path,
                 try:
                     page = context.pages[0] if context.pages else context.new_page()
                     page.set_default_timeout(timeout_ms)
+                    dismiss_interruptions(page)
                     status = 'exists'
                     if saved_url:
                         if not _editor_url(saved_url):
@@ -155,7 +169,9 @@ def import_zip(zip_path, project_name, browser_profile, *, pdf_path,
         except OverleafError:
             raise
         except PlaywrightError as exc:
-            raise OverleafError('Overleaf browser step failed; check session, editor, or upload recovery') from exc
+            # Keep the browser's own first line (timeout, intercepted click, ...) for diagnosis.
+            reason = ' '.join(str(exc).split())[:240]
+            raise OverleafError(f'Overleaf browser step failed; check session, editor, or upload recovery ({reason})') from exc
 
 
 def login_setup(browser_profile):

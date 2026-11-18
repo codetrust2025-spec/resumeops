@@ -150,9 +150,19 @@ class AutomationContract(unittest.TestCase):
             self.assertIsNone(final['payload'])
             self.assertEqual(len(list(workspace.private_inbox.glob('private-*.json'))), 1)
 
-    def test_rejects_cross_employer_title(self):
+    def test_cross_employer_title_is_omitted_never_invented(self):
         facts = make_facts()
         facts['experience'][0]['position'] = 'Principal Engineer'
+        notices = []
+        with patch('resume_bot.automation.extract_profile', return_value=facts):
+            profile = source_profile(SOURCE, object(), notices=notices)
+        self.assertEqual(profile['experience'], [])
+        self.assertNotIn('Principal Engineer', json.dumps(profile))
+        self.assertEqual(len(notices), 1)
+        self.assertIn('do not appear together', notices[0])
+        facts = make_facts()
+        facts['experience'][0]['position'] = 'Principal Engineer'
+        facts['education'] = []
         with patch('resume_bot.automation.extract_profile', return_value=facts):
             with self.assertRaisesRegex(ValueError, 'job title'):
                 source_profile(SOURCE, object())

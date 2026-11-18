@@ -65,6 +65,10 @@ class AutomationJobs:
                 percent INTEGER NOT NULL DEFAULT 5, created REAL NOT NULL, updated REAL NOT NULL,
                 attempts INTEGER NOT NULL DEFAULT 0, next_retry REAL NOT NULL DEFAULT 0,
                 job TEXT, error TEXT, PRIMARY KEY(owner,id))''')
+            # Notices: entries omitted because the source does not support them. Added in place;
+            # earlier releases select columns by name, so rollback is unaffected.
+            if 'notice' not in {row[1] for row in db.execute('PRAGMA table_info(automation)')}:
+                db.execute('ALTER TABLE automation ADD COLUMN notice TEXT')
 
     def connection(self):
         db = sqlite3.connect(self.path, timeout=5)
@@ -123,12 +127,17 @@ class AutomationJobs:
         return current
 
     def list(self, owner, identity=None):
-        fields = 'id, status, stage, percent, attempts, next_retry, error, created, updated, job'
+        fields = 'id, status, stage, percent, attempts, next_retry, error, created, updated, job, notice'
         with closing(self.connection()) as db:
             rows = db.execute(f'SELECT {fields} FROM automation WHERE owner=? AND (? IS NULL OR id=?) ORDER BY created DESC LIMIT 50',
                               (owner, identity, identity)).fetchall()
         state = self.workspace.automation_state()
-        return [self._status(row, state, owner) for row in rows]
+        jobs = []
+        for row in rows:
+            job = self._status(row, state, owner)
+            job['notice'] = json.loads(job.get('notice') or '[]')
+            jobs.append(job)
+        return jobs
 
     def start(self):
         with self.lock:
@@ -214,8 +223,10 @@ class AutomationJobs:
                 source = checkpoint('source', extract())
             facts = checkpoints.get('facts')
             if facts is None:
-                facts = checkpoint('facts', source if isinstance(source, dict) else
-                                   source_profile(source, model, extraction_progress))
+                notices = []
+                facts = source if isinstance(source, dict) else source_profile(source, model, extraction_progress, notices)
+                checkpoint('notices', notices)
+                facts = checkpoint('facts', facts)
             progress(27, 'Candidate facts validated')
             role = request['role']
             years = request.get('years', inferred_years(facts))
@@ -242,22 +253,29 @@ class AutomationJobs:
             packet['target']['automation_owner'] = job['owner']
             packet['target']['automation_id'] = job['id']
             match = self.workspace.enqueue(json.dumps(packet).encode(), approval=approval)
+            notices = checkpoints.get('notices') or []
             with closing(self.connection()) as db, db:
                 db.execute("UPDATE automation SET status='handed_off',stage='Waiting for the resume watcher',percent=55,"
-                           "payload=NULL,checkpoints='{}',error=NULL,updated=?,job=? WHERE owner=? AND id=?",
-                           (updated(), match['name'], *key))
-        except (OllamaError, OSError, sqlite3.Error) as error:
+                           "payload=NULL,checkpoints='{}',error=NULL,notice=?,updated=?,job=? WHERE owner=? AND id=?",
+                           (json.dumps(notices) if notices else None, updated(), match['name'], *key))
+        except (OllamaError, OSError, sqlite3.Error):
+            # Temporary: keep the submission and every checkpoint, so the retry resumes where it stopped.
             count = job['attempts'] + 1
             available = count < RETRY_LIMIT
             with closing(self.connection()) as db, db:
-                db.execute("UPDATE automation SET status=?,error=?,attempts=?,next_retry=?,updated=? WHERE owner=? AND id=?",
-                           ('retrying' if available else 'blocked', 'Ollama or local storage needs attention.',
+                db.execute("UPDATE automation SET status=?,stage=?,error=?,attempts=?,next_retry=?,updated=? WHERE owner=? AND id=?",
+                           ('retrying' if available else 'blocked',
+                            'Retrying automatically' if available else 'Needs operator attention',
+                            'A temporary Ollama or storage problem interrupted preparation.' if available else
+                            'Ollama or local storage needs attention.',
                             count, updated() + min(3600, 30 * 2 ** count) if available else 0, updated(), *key))
         except ValueError as error:
+            # The resume itself lacks mandatory facts: say exactly which, and stop. Never stay "in progress".
             with closing(self.connection()) as db, db:
-                db.execute("UPDATE automation SET status='blocked',error=?,payload=NULL,checkpoints='{}',updated=? WHERE owner=? AND id=?",
-                           (str(error), updated(), *key))
+                db.execute("UPDATE automation SET status='blocked',stage='Needs your input',error=?,payload=NULL,"
+                           "checkpoints='{}',updated=? WHERE owner=? AND id=?", (str(error), updated(), *key))
         except Exception:
             with closing(self.connection()) as db, db:
-                db.execute("UPDATE automation SET status='blocked',error=?,payload=NULL,checkpoints='{}',updated=? WHERE owner=? AND id=?",
+                db.execute("UPDATE automation SET status='blocked',stage='Needs operator attention',error=?,payload=NULL,"
+                           "checkpoints='{}',updated=? WHERE owner=? AND id=?",
                            ('Unexpected preparation failure. Contact the ResumeOps operator.', updated(), *key))

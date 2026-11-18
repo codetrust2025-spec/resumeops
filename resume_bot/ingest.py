@@ -274,6 +274,20 @@ def repair(out, source, name_hint=''):
     return out
 
 
+EXPERIENCE_FIELDS = ('company', 'position', 'start', 'end', 'location')
+EDUCATION_FIELDS = ('institution', 'degree', 'start', 'end', 'details')
+
+
+def _placeholder(item, fields):
+    """An entry in which every field and bullet is empty. Models pad arrays with these; they carry
+    no claim, so they are dropped instead of being reported as missing information."""
+    def empty(field):
+        if isinstance(field, dict):
+            field = field.get('value')
+        return field is None or (isinstance(field, str) and not field.strip())
+    return all(empty(item.get(key)) for key in fields) and all(empty(b) for b in item.get('bullets') or [])
+
+
 def extract_profile(source, ai, *, for_review=False, on_progress=None):
     """The model must quote source spans for every fact. All claims get substring validation."""
     prompt = '''Return ONLY a JSON object describing this candidate's actual resume, NOT an improved version.
@@ -326,16 +340,20 @@ INPUT:
     for item in data.get('experience',[]):
         if not isinstance(item,dict) or not isinstance(item.get('bullets',[]),list):
             raise ExtractionError('Invalid experience')
+        if _placeholder(item, EXPERIENCE_FIELDS):
+            continue
         entry={k:read_field(item.get(k,{}),k in ('company','position','start'))
-               for k in ('company','position','start','end','location')}
+               for k in EXPERIENCE_FIELDS}
         entry['bullets']=[value for v in item.get('bullets',[]) if (value := read_field(v, True))]
         out['experience'].append(entry)
     out['education']=[]
     for item in data.get('education',[]):
         if not isinstance(item,dict):
             raise ExtractionError('Invalid education')
+        if _placeholder(item, EDUCATION_FIELDS):
+            continue
         out['education'].append({k:read_field(item.get(k,{}),k in ('institution','degree'))
-                                 for k in ('institution','degree','start','end','details')})
+                                 for k in EDUCATION_FIELDS})
     hint = (data.get('full_name') or {}).get('value', '') if isinstance(data.get('full_name'), dict) else ''
     repair(out, source, hint if isinstance(hint, str) else '')
     if for_review:
