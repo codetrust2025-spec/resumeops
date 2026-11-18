@@ -129,15 +129,41 @@ class AutomationJobs:
     def list(self, owner, identity=None):
         fields = 'id, status, stage, percent, attempts, next_retry, error, created, updated, job, notice'
         with closing(self.connection()) as db:
-            rows = db.execute(f'SELECT {fields} FROM automation WHERE owner=? AND (? IS NULL OR id=?) ORDER BY created DESC LIMIT 50',
+            rows = db.execute(f"SELECT {fields}, CASE status WHEN 'needs_input' THEN checkpoints END AS waiting "
+                              'FROM automation WHERE owner=? AND (? IS NULL OR id=?) ORDER BY created DESC LIMIT 50',
                               (owner, identity, identity)).fetchall()
         state = self.workspace.automation_state()
         jobs = []
         for row in rows:
             job = self._status(row, state, owner)
             job['notice'] = json.loads(job.get('notice') or '[]')
+            waiting = json.loads(job.pop('waiting') or '{}')  # only the questions leave the server
+            if job['status'] == 'needs_input':
+                job['questions'] = [{key: question[key] for key in ('id', 'field', 'label', 'explanation', 'value')}
+                                    for question in waiting.get('questions', [])]
             jobs.append(job)
         return jobs
+
+    def answer(self, owner, identifier, answers):
+        """Apply the candidate's answers to a job that needs input, then continue it where it stopped."""
+        from resume_bot.automation import AnswerError, apply_answers
+
+        with closing(self.connection()) as db, db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT status, checkpoints FROM automation WHERE owner=? AND id=?',
+                             (owner, identifier)).fetchone()
+            if not row or row['status'] != 'needs_input':
+                raise AnswerError('This resume is not waiting for your answers.')
+            checkpoints = json.loads(row['checkpoints'])
+            questions = checkpoints.pop('questions')
+            facts = apply_answers(checkpoints.pop('draft'), questions, answers)
+            checkpoints['facts'] = facts
+            confirmed = [f'Confirmed by you: {question["label"]}.' for question in questions]
+            db.execute("UPDATE automation SET status='queued',stage='Answers saved; continuing',error=NULL,"
+                       'next_retry=0,checkpoints=?,notice=?,updated=? WHERE owner=? AND id=?',
+                       (json.dumps(checkpoints), json.dumps(confirmed), time.time(), owner, identifier))
+        self.start()
+        self.wake.set()
 
     def start(self):
         with self.lock:
@@ -182,7 +208,8 @@ class AutomationJobs:
                 self.wake.clear()
 
     def _prepare(self, job):
-        from resume_bot.automation import inferred_years, role_intelligence, source_profile, tailor_facts, verified_request
+        from resume_bot.automation import (NeedsInput, inferred_years, role_intelligence, source_profile, tailor_facts,
+                                           verified_request)
         from resume_bot.ollama import Ollama, OllamaError
 
         key = (job['owner'], job['id'])
@@ -223,10 +250,8 @@ class AutomationJobs:
                 source = checkpoint('source', extract())
             facts = checkpoints.get('facts')
             if facts is None:
-                notices = []
-                facts = source if isinstance(source, dict) else source_profile(source, model, extraction_progress, notices)
-                checkpoint('notices', notices)
-                facts = checkpoint('facts', facts)
+                facts = checkpoint('facts', source if isinstance(source, dict) else
+                                   source_profile(source, model, extraction_progress))
             progress(27, 'Candidate facts validated')
             role = request['role']
             years = request.get('years', inferred_years(facts))
@@ -253,11 +278,16 @@ class AutomationJobs:
             packet['target']['automation_owner'] = job['owner']
             packet['target']['automation_id'] = job['id']
             match = self.workspace.enqueue(json.dumps(packet).encode(), approval=approval)
-            notices = checkpoints.get('notices') or []
             with closing(self.connection()) as db, db:
                 db.execute("UPDATE automation SET status='handed_off',stage='Waiting for the resume watcher',percent=55,"
-                           "payload=NULL,checkpoints='{}',error=NULL,notice=?,updated=?,job=? WHERE owner=? AND id=?",
-                           (json.dumps(notices) if notices else None, updated(), match['name'], *key))
+                           "payload=NULL,checkpoints='{}',error=NULL,updated=?,job=? WHERE owner=? AND id=?",
+                           (updated(), match['name'], *key))
+        except NeedsInput as gap:
+            # Keep the submission and everything already done; ask only for what the resume lacks.
+            checkpoints.update(draft=gap.draft, questions=gap.questions)
+            with closing(self.connection()) as db, db:
+                db.execute("UPDATE automation SET status='needs_input',stage='Needs your input',error=?,checkpoints=?,"
+                           'updated=? WHERE owner=? AND id=?', (str(gap), json.dumps(checkpoints), updated(), *key))
         except (OllamaError, OSError, sqlite3.Error):
             # Temporary: keep the submission and every checkpoint, so the retry resumes where it stopped.
             count = job['attempts'] + 1

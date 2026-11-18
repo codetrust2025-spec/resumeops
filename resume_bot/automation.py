@@ -37,75 +37,113 @@ def select_target(title):
     return ' '.join(title.split())
 
 
-FIELD_NAMES = {'company': 'employer', 'position': 'job title', 'start': 'start date',
+FIELD_NAMES = {'full_name': 'full name', 'email': 'email address', 'company': 'employer',
+               'position': 'job title', 'start': 'start date', 'end': 'end date',
                'institution': 'institution', 'degree': 'degree'}
+ANSWER_LIMIT = 250
+
+
+class NeedsInput(ValueError):
+    """The resume does not state, or does not clearly tie to its entry, a fact the resume needs.
+    Nothing is guessed: every gap is a question the candidate answers in an editable field."""
+
+    def __init__(self, draft, questions):
+        self.draft, self.questions = draft, questions
+        count = len(questions)
+        super().__init__(f'{count} detail{"s" if count != 1 else ""} from your resume '
+                         f'need{"s" if count == 1 else ""} your confirmation.')
+
+
+class AnswerError(ValueError):
+    """An answer cannot be used; ``field`` names the question it belongs to (or None)."""
+
+    def __init__(self, message, field=None):
+        super().__init__(message)
+        self.field = field
+
+
+def _describe(entry, section):
+    title = entry.get('position') or entry.get('degree') or ''
+    place = entry.get('company') or entry.get('institution') or ''
+    dates = ' - '.join(value for value in (entry.get('start'), entry.get('end')) if value)
+    words = [title or ('a role' if section == 'experience' else 'a qualification')]
+    if place and phrase(place) != phrase(title):
+        words.append('at ' + place)
+    if dates:
+        words.append(f'({dates})')
+    return ' '.join(words)
 
 
 def source_profile(source, ai, on_progress=None, notices=None):
-    """Verified facts from a resume. An entry the source does not fully support is omitted, never
-    completed or guessed, and described in ``notices``. Missing mandatory facts raise ValueError."""
-    notices = [] if notices is None else notices
+    """Verified facts from a resume, keeping every entry it lists.
+
+    A fact the resume does not state, or does not tie to its entry, is never completed or guessed.
+    It becomes a question (raised as NeedsInput with the draft), answered by the candidate in an
+    editable field; ``apply_answers`` then finishes the profile. ``notices`` is accepted for
+    callers of the earlier version; entries are no longer omitted."""
     draft = extract_profile(source, ai, for_review=True, on_progress=on_progress)
-    if not draft.get('full_name') or not draft.get('email'):
-        raise ExtractionError("The resume must state the candidate's full name and email address.")
     lines = [phrase(line) for line in source.splitlines() if line.strip()]
+    questions = []
 
-    def omit(kind, entry, reason):
-        title = entry.get('position') or entry.get('degree') or ''
-        place = entry.get('company') or entry.get('institution') or ''
-        label = ' at '.join(value for value in (title, place if phrase(place) != phrase(title) else '') if value)
-        notices.append(f'Omitted {kind} "{label or "without a title"}": {reason}.')
+    def ask(section, index, field, explanation, entry=None, suggest=False):
+        holder = draft if entry is None else entry
+        name = FIELD_NAMES[field]
+        label = name.capitalize() if entry is None else f'{name.capitalize()} for {_describe(entry, section)}'
+        questions.append({'id': field if entry is None else f'{section}.{index}.{field}', 'section': section,
+                          'entry': index, 'field': field, 'label': label, 'explanation': explanation,
+                          'value': (holder.get(field) or '') if suggest else ''})
 
-    def missing(entry, keys):
-        absent = [FIELD_NAMES[key] for key in keys if not (entry.get(key) or '').strip()]
-        return 'the resume does not state its ' + ' or '.join(absent) if absent else None
-
-    candidates, anchors = [], []
-    for job in draft['experience']:
-        reason = missing(job, ('company', 'position', 'start'))
-        if not reason and phrase(job['company']) == phrase(job['position']):
-            # The model filled the employer with the job title ("Freelance Developer"): no employer is stated.
-            reason = 'the resume does not state its employer'
-        if not reason:
-            employer, title = phrase(job['company']), phrase(job['position'])
-            employers = [i for i, line in enumerate(lines) if employer in line]
-            titles = [i for i, line in enumerate(lines) if title in line]
-            pairs = [(abs(a-b), min(a,b)) for a in employers for b in titles if abs(a-b) <= 2]
-            if not pairs:
-                reason = 'that employer and job title do not appear together in the resume'
-            elif min(pairs)[1] in anchors:
-                reason = 'it repeats the employer and job title of another entry'
-        if reason:
-            omit('work entry', job, reason)
+    for field in ('full_name', 'email'):
+        if not (draft.get(field) or '').strip():
+            ask('profile', None, field, f"The resume does not state the candidate's {FIELD_NAMES[field]}.")
+    anchors = {}
+    for index, job in enumerate(draft['experience']):
+        if job.get('company') and phrase(job['company']) == phrase(job.get('position') or ''):
+            job['company'] = ''  # the model copied the job title into the employer: none is stated
+        absent = [field for field in ('company', 'position', 'start') if not (job.get(field) or '').strip()]
+        for field in absent:
+            ask('experience', index, field, f'The resume does not state the {FIELD_NAMES[field]} for this role.', job)
+        if absent:
             continue
-        anchors.append(min(pairs)[1])
-        candidates.append(job)
-    experience = []
-    for start, job in zip(anchors, candidates):
-        end = min((other for other in anchors if other > start), default=len(lines))
+        employer, title = phrase(job['company']), phrase(job['position'])
+        employers = [i for i, line in enumerate(lines) if employer in line]
+        titles = [i for i, line in enumerate(lines) if title in line]
+        pairs = [(abs(a-b), min(a,b)) for a in employers for b in titles if abs(a-b) <= 2]
+        if not pairs or min(pairs)[1] in anchors.values():
+            why = ('The resume shows this employer and job title in different places.' if not pairs else
+                   'Two roles were read from the same line of the resume.')
+            for field in ('company', 'position'):
+                ask('experience', index, field, why + ' Confirm or correct it.', job, suggest=True)
+            continue
+        anchors[index] = min(pairs)[1]
+    starts = sorted(anchors.values())
+    for index, start in anchors.items():
+        job = draft['experience'][index]
+        end = min((other for other in starts if other > start), default=len(lines))
         block = ' '.join(lines[start:end])
-        dates = [phrase(job[key]) for key in ('start', 'end') if job[key]]
-        if any(date not in block for date in dates):
-            omit('work entry', job, 'its dates are not written with that role')
-            continue
+        for field in ('start', 'end'):
+            if job.get(field) and phrase(job[field]) not in block:
+                ask('experience', index, field,
+                    f'The resume does not show this {FIELD_NAMES[field]} with the role. Confirm or correct it.',
+                    job, suggest=True)
         job['bullets'] = [bullet for bullet in job['bullets'] if phrase(bullet) in block]
-        experience.append(job)
-    education = []
-    for entry in draft['education']:
-        reason = missing(entry, ('institution', 'degree'))
-        if not reason:
-            school, degree = phrase(entry['institution']), phrase(entry['degree'])
-            if not any(school in ' '.join(lines[max(0, i-2):i+3]) for i, line in enumerate(lines) if degree in line):
-                reason = 'that degree and institution do not appear together in the resume'
-        if reason:
-            omit('education entry', entry, reason)
+    for index, entry in enumerate(draft['education']):
+        absent = [field for field in ('institution', 'degree') if not (entry.get(field) or '').strip()]
+        for field in absent:
+            ask('education', index, field,
+                f'The resume does not state the {FIELD_NAMES[field]} for this qualification.', entry)
+        if absent:
             continue
-        education.append(entry)
-    if not experience and not education:
-        raise ExtractionError('The resume must show at least one job with its employer, job title and start date, '
-                              'or one qualification with its degree and institution.')
-    draft['experience'], draft['education'] = experience, education
-    profile = validate_profile(draft)
+        school, degree = phrase(entry['institution']), phrase(entry['degree'])
+        if not any(school in ' '.join(lines[max(0, i-2):i+3]) for i, line in enumerate(lines) if degree in line):
+            for field in ('institution', 'degree'):
+                ask('education', index, field,
+                    'The resume shows this degree and institution in different places. Confirm or correct it.',
+                    entry, suggest=True)
+    if not draft['experience'] and not draft['education']:
+        raise ExtractionError('No work history or education could be read from this resume. '
+                              'Choose "Enter details" to type them, or upload a different file.')
+
     # A term found in a target description or a future plan is not candidate evidence.
     # Require affirmative list entries in the appropriate source section.
     def from_section(values, heading, *, split=False):
@@ -115,11 +153,44 @@ def source_profile(source, ai, on_progress=None, notices=None):
         return [value for value in values if phrase(value) in listed and not re.search(
             r'\b(?:pursuing|planned|unearned|in progress|not earned|not completed|learning)\b', value, re.I)]
 
-    profile['skills'] = from_section(profile['skills'], r'(?:technical )?skills', split=True)
-    profile['certifications'] = from_section(profile['certifications'], r'certifications?')
-    if 'projects' in profile:
-        profile['projects'] = from_section(profile['projects'], r'(?:completed )?projects')
-    return validate_profile(profile)
+    draft['skills'] = from_section(draft.get('skills', []), r'(?:technical )?skills', split=True)
+    draft['certifications'] = from_section(draft.get('certifications', []), r'certifications?')
+    if draft.get('projects'):
+        draft['projects'] = from_section(draft['projects'], r'(?:completed )?projects')
+    if questions:
+        raise NeedsInput(draft, questions)
+    return validate_profile(draft)
+
+
+def apply_answers(draft, questions, answers):
+    """Finish a NeedsInput draft with the candidate's answers (their own attested facts)."""
+    if not isinstance(answers, dict):
+        raise AnswerError('Answer each question.')
+    known = {question['id']: question for question in questions}
+    for unknown in set(answers) - set(known):
+        raise AnswerError('That question is not part of this resume.', unknown)
+    for qid, question in known.items():
+        name = FIELD_NAMES[question['field']]
+        value = answers.get(qid)
+        value = ' '.join(value.split()) if isinstance(value, str) else ''
+        if not value:
+            raise AnswerError(f'Enter the {name}.', qid)
+        if len(value) > ANSWER_LIMIT:
+            raise AnswerError(f'Keep the {name} under {ANSWER_LIMIT} characters.', qid)
+        if question['field'] == 'email' and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', value):
+            raise AnswerError('Enter a valid email address.', qid)
+        target = draft if question['entry'] is None else draft[question['section']][question['entry']]
+        target[question['field']] = value
+    try:
+        return validate_profile(draft)
+    except ValueError as exc:
+        match = re.match(r'(experience|education)\[(\d+)\](?:\.(\w+))?', str(exc))
+        field = None
+        if match:
+            field = next((qid for qid in known if qid.startswith(f'{match[1]}.{match[2]}.')
+                          and (not match[3] or qid.endswith('.' + match[3]))), None)
+        raise AnswerError(str(exc).replace('experience[', 'Work entry [').replace('education[', 'Education entry ['),
+                          field) from exc
 
 
 def phrase(text):

@@ -150,22 +150,21 @@ class AutomationContract(unittest.TestCase):
             self.assertIsNone(final['payload'])
             self.assertEqual(len(list(workspace.private_inbox.glob('private-*.json'))), 1)
 
-    def test_cross_employer_title_is_omitted_never_invented(self):
+    def test_cross_employer_title_is_confirmed_never_assumed(self):
+        from resume_bot.automation import NeedsInput, apply_answers
         facts = make_facts()
         facts['experience'][0]['position'] = 'Principal Engineer'
-        notices = []
         with patch('resume_bot.automation.extract_profile', return_value=facts):
-            profile = source_profile(SOURCE, object(), notices=notices)
-        self.assertEqual(profile['experience'], [])
-        self.assertNotIn('Principal Engineer', json.dumps(profile))
-        self.assertEqual(len(notices), 1)
-        self.assertIn('do not appear together', notices[0])
-        facts = make_facts()
-        facts['experience'][0]['position'] = 'Principal Engineer'
-        facts['education'] = []
-        with patch('resume_bot.automation.extract_profile', return_value=facts):
-            with self.assertRaisesRegex(ValueError, 'job title'):
+            with self.assertRaises(NeedsInput) as caught:
                 source_profile(SOURCE, object())
+        gap = caught.exception
+        self.assertEqual([(q['id'], q['value']) for q in gap.questions],
+                         [('experience.0.company', 'Example Studio'), ('experience.0.position', 'Principal Engineer')])
+        self.assertIn('different places', gap.questions[0]['explanation'])
+        profile = apply_answers(gap.draft, gap.questions, {'experience.0.company': 'Example Studio',
+                                                           'experience.0.position': 'UI Developer'})
+        self.assertEqual(profile['experience'][0]['position'], 'UI Developer')
+        self.assertNotIn('Principal Engineer', json.dumps(profile))
 
 
 def staging_documents(root):
