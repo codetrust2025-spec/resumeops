@@ -14,12 +14,23 @@ class OllamaLimitError(OllamaError):
     """The model used its whole token or time budget. An identical request cannot do better."""
 
 
+class OllamaBudgetError(OllamaLimitError):
+    """The output was cut by the token cap or the context window. When the context fills, Ollama
+    silently discards the oldest tokens (the instructions and the source) and keeps generating,
+    so the answer is unreliable even though the request "succeeded". A larger budget can help."""
+
+
 # A runaway JSON generation streams forever: every chunk resets the socket timeout, and once the
 # context fills, Ollama shifts it and keeps generating without the instructions. Each request is
 # therefore capped in tokens and, while streaming, in wall-clock time, so one request cannot hold
 # the single Ollama slot that every other job is queued behind.
-MAX_TOKENS = 3072
+MAX_TOKENS = 4096
 STREAM_DEADLINE = 600
+# Ollama's default window (4096) cannot hold a resume plus its quoted extraction. Every request
+# asks for an explicit window; one budget error retries once in a window twice as large.
+NUM_CTX = 8192
+MAX_NUM_CTX = 16384
+CHARS_PER_TOKEN = 3  # conservative for English and JSON; real prompts tokenize to more chars per token
 
 
 class _TopLevelJsonFields:
@@ -72,14 +83,36 @@ class _TopLevelJsonFields:
 
 
 class Ollama:
-    def __init__(self, model=None, url=None, timeout=240, max_tokens=MAX_TOKENS, deadline=STREAM_DEADLINE):
+    def __init__(self, model=None, url=None, timeout=240, max_tokens=MAX_TOKENS, deadline=STREAM_DEADLINE,
+                 num_ctx=None):
         self.model = model or os.environ.get('OLLAMA_MODEL','qwen2.5:7b')
         self.url = (url or os.environ.get('OLLAMA_URL','http://127.0.0.1:11434')).rstrip('/')
         self.timeout = timeout
         self.max_tokens = max_tokens
         self.deadline = deadline
+        self.num_ctx = int(num_ctx or os.environ.get('OLLAMA_NUM_CTX') or NUM_CTX)
+
+    def budget(self, prompt):
+        """(num_ctx, num_predict) that leave room for the prompt plus the whole answer."""
+        prompt_tokens = len(prompt) // CHARS_PER_TOKEN + 64
+        num_ctx = self.num_ctx
+        while prompt_tokens + self.max_tokens > num_ctx and num_ctx < MAX_NUM_CTX:
+            num_ctx = min(MAX_NUM_CTX, num_ctx * 2)
+        return num_ctx, min(self.max_tokens, max(256, num_ctx - prompt_tokens))
 
     def generate(self, prompt, schema=None, on_progress=None):
+        try:
+            return self._generate_once(prompt, schema, on_progress)
+        except OllamaBudgetError:
+            if self.num_ctx >= MAX_NUM_CTX:
+                raise
+            # Recover the incomplete answer once, in a larger window. The cut answer is discarded,
+            # never merged, because text generated after a context shift is not grounded.
+            larger = Ollama(self.model, self.url, self.timeout, self.max_tokens * 2, self.deadline,
+                            min(MAX_NUM_CTX, self.num_ctx * 2))
+            return larger._generate_once(prompt, schema, on_progress)
+
+    def _generate_once(self, prompt, schema=None, on_progress=None):
         if on_progress is None:
             return self._generate(prompt, schema, None)
         try:
@@ -104,13 +137,22 @@ class Ollama:
         prompt_eval_count, load_duration) when the stream ends. Nothing is estimated here.
         """
         streaming = on_progress is not None
+        num_ctx, num_predict = self.budget(prompt)
         payload = {
             'model':self.model,
             'prompt':prompt,
             'format':schema if schema is not None else 'json',
             'stream':streaming,
-            'options':{'temperature':0, 'num_predict':self.max_tokens},
+            'options':{'temperature':0, 'num_ctx':num_ctx, 'num_predict':num_predict},
         }
+
+        def check_budget(item):
+            if item.get('done_reason') == 'length':
+                raise OllamaBudgetError(f'Ollama output reached the {num_predict}-token limit')
+            # prompt_eval_count omits cached prompt tokens, so never count fewer than a lower bound.
+            used = max(int(item.get('prompt_eval_count') or 0), len(prompt) // 4) + int(item.get('eval_count') or 0)
+            if used >= num_ctx:
+                raise OllamaBudgetError(f'Ollama context window of {num_ctx} tokens overflowed; output discarded')
         req = Request(self.url + '/api/generate',
                       data=json.dumps(payload).encode('utf8'),
                       headers={'Content-Type':'application/json'},method='POST')
@@ -120,8 +162,7 @@ class Ollama:
                 if not streaming:
                     body = json.load(resp)
                     text = body['response']
-                    if body.get('done_reason') == 'length':
-                        raise OllamaLimitError(f'Ollama output reached the {self.max_tokens}-token limit')
+                    check_budget(body)
                 else:
                     on_progress({'phase': 'waiting', 'chars': 0, 'chunks': 0, 'elapsed': 0.0})
                     parts, chunks, final = [], 0, {}
@@ -139,8 +180,7 @@ class Ollama:
                             emitted += len(piece)
                             fields.feed(piece)
                         if item.get('done'):
-                            if item.get('done_reason') == 'length':
-                                raise OllamaLimitError(f'Ollama output reached the {self.max_tokens}-token limit')
+                            check_budget(item)
                             final = {key: item[key] for key in (
                                 'eval_count', 'eval_duration', 'prompt_eval_count', 'load_duration',
                                 'total_duration') if key in item}

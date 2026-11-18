@@ -103,11 +103,12 @@ async function body() {
 }
 
 function progress(stage, value, error = '') {
-  observedPercent = value;
+  // A null value means the job has stopped: no percentage that could suggest it is still running.
+  if (value !== null) observedPercent = value;
   byId('auto-status').hidden = false;
   byId('auto-stage').textContent = stage;
-  byId('auto-progress').value = value;
-  byId('auto-percent').textContent = value + '%';
+  byId('auto-progress').value = value ?? 0;
+  byId('auto-percent').textContent = value === null ? '' : value + '%';
   byId('auto-error').textContent = error;
 }
 
@@ -177,20 +178,40 @@ function links(job) {
   return box;
 }
 
+// A stopped job must never read as "still working": it shows no stage or percentage, only the reason.
+function headline(job) {
+  return job.status === 'blocked' ? 'Needs attention' : job.stage;
+}
+
+function detail(job) {
+  if (job.status === 'retrying') {
+    const at = job.next_retry ? new Date(job.next_retry * 1000).toLocaleTimeString() : 'shortly';
+    return (job.error ? job.error + ' ' : '') + 'Retrying automatically at ' + at + '. No action needed.';
+  }
+  if (job.status === 'blocked') return job.error || 'This submission stopped.';
+  return job.status === 'complete' ? '' : (job.error || '');
+}
+
 async function refresh() {
   const response = await ResumeAuth.call('/api/automation');
   if (!response.ok) throw new Error('Could not refresh your resumes.');
   const {jobs} = await response.json();
   byId('auto-empty').hidden = jobs.length > 0;
   const current = jobs.find(job => job.id === tracked) || jobs[0];
-  if (current && !pending) progress(current.stage, current.percent, current.error || '');
+  if (current && !pending) {
+    progress(headline(current), current.status === 'blocked' ? null : current.percent, detail(current));
+  }
   const list = byId('auto-job-list');
   const snapshot = JSON.stringify(jobs);
   if (list.dataset.snapshot === snapshot) return;
   list.dataset.snapshot = snapshot;
   list.replaceChildren(...jobs.map(job => {
     const item = element('li');
-    item.append(element('strong', job.stage + ' · ' + job.percent + '%'));
+    item.dataset.status = job.status;
+    item.append(element('strong', job.status === 'blocked' ? headline(job) : job.stage + ' · ' + job.percent + '%'));
+    const text = detail(job);
+    if (text) item.append(element('span', text));
+    for (const notice of job.notice || []) item.append(element('span', notice));
     if (job.status === 'complete') {
       if (job.ats) item.append(element('span', 'ATS readiness ' + job.ats.ats_readiness + '/100'));
       item.append(links(job));

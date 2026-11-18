@@ -37,32 +37,75 @@ def select_target(title):
     return ' '.join(title.split())
 
 
-def source_profile(source, ai, on_progress=None):
-    profile = validate_profile(extract_profile(source, ai, for_review=True, on_progress=on_progress))
+FIELD_NAMES = {'company': 'employer', 'position': 'job title', 'start': 'start date',
+               'institution': 'institution', 'degree': 'degree'}
+
+
+def source_profile(source, ai, on_progress=None, notices=None):
+    """Verified facts from a resume. An entry the source does not fully support is omitted, never
+    completed or guessed, and described in ``notices``. Missing mandatory facts raise ValueError."""
+    notices = [] if notices is None else notices
+    draft = extract_profile(source, ai, for_review=True, on_progress=on_progress)
+    if not draft.get('full_name') or not draft.get('email'):
+        raise ExtractionError("The resume must state the candidate's full name and email address.")
     lines = [phrase(line) for line in source.splitlines() if line.strip()]
-    anchors = []
-    for job in profile['experience']:
-        employer, title = phrase(job['company']), phrase(job['position'])
-        employers = [i for i, line in enumerate(lines) if employer in line]
-        titles = [i for i, line in enumerate(lines) if title in line]
-        pairs = [(abs(a-b), min(a,b)) for a in employers for b in titles if abs(a-b) <= 2]
-        if not pairs:
-            raise ExtractionError('Employer and job title need to appear together in the source resume.')
+
+    def omit(kind, entry, reason):
+        title = entry.get('position') or entry.get('degree') or ''
+        place = entry.get('company') or entry.get('institution') or ''
+        label = ' at '.join(value for value in (title, place if phrase(place) != phrase(title) else '') if value)
+        notices.append(f'Omitted {kind} "{label or "without a title"}": {reason}.')
+
+    def missing(entry, keys):
+        absent = [FIELD_NAMES[key] for key in keys if not (entry.get(key) or '').strip()]
+        return 'the resume does not state its ' + ' or '.join(absent) if absent else None
+
+    candidates, anchors = [], []
+    for job in draft['experience']:
+        reason = missing(job, ('company', 'position', 'start'))
+        if not reason and phrase(job['company']) == phrase(job['position']):
+            # The model filled the employer with the job title ("Freelance Developer"): no employer is stated.
+            reason = 'the resume does not state its employer'
+        if not reason:
+            employer, title = phrase(job['company']), phrase(job['position'])
+            employers = [i for i, line in enumerate(lines) if employer in line]
+            titles = [i for i, line in enumerate(lines) if title in line]
+            pairs = [(abs(a-b), min(a,b)) for a in employers for b in titles if abs(a-b) <= 2]
+            if not pairs:
+                reason = 'that employer and job title do not appear together in the resume'
+            elif min(pairs)[1] in anchors:
+                reason = 'it repeats the employer and job title of another entry'
+        if reason:
+            omit('work entry', job, reason)
+            continue
         anchors.append(min(pairs)[1])
-    if len(set(anchors)) != len(anchors):
-        raise ExtractionError('List each employer and job title in a separate work history entry.')
-    for start, job in zip(anchors, profile['experience']):
+        candidates.append(job)
+    experience = []
+    for start, job in zip(anchors, candidates):
         end = min((other for other in anchors if other > start), default=len(lines))
         block = ' '.join(lines[start:end])
         dates = [phrase(job[key]) for key in ('start', 'end') if job[key]]
         if any(date not in block for date in dates):
-            raise ExtractionError('Employment dates could not be tied to the corresponding role.')
+            omit('work entry', job, 'its dates are not written with that role')
+            continue
         job['bullets'] = [bullet for bullet in job['bullets'] if phrase(bullet) in block]
-    for entry in profile['education']:
-        school, degree = phrase(entry['institution']), phrase(entry['degree'])
-        if not any(school in ' '.join(lines[max(0, i-2):i+3])
-                   for i, line in enumerate(lines) if degree in line):
-            raise ExtractionError('Degree and institution need to appear together in the source resume.')
+        experience.append(job)
+    education = []
+    for entry in draft['education']:
+        reason = missing(entry, ('institution', 'degree'))
+        if not reason:
+            school, degree = phrase(entry['institution']), phrase(entry['degree'])
+            if not any(school in ' '.join(lines[max(0, i-2):i+3]) for i, line in enumerate(lines) if degree in line):
+                reason = 'that degree and institution do not appear together in the resume'
+        if reason:
+            omit('education entry', entry, reason)
+            continue
+        education.append(entry)
+    if not experience and not education:
+        raise ExtractionError('The resume must show at least one job with its employer, job title and start date, '
+                              'or one qualification with its degree and institution.')
+    draft['experience'], draft['education'] = experience, education
+    profile = validate_profile(draft)
     # A term found in a target description or a future plan is not candidate evidence.
     # Require affirmative list entries in the appropriate source section.
     def from_section(values, heading, *, split=False):

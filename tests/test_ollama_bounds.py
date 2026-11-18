@@ -80,20 +80,22 @@ class OllamaBoundsTests(unittest.TestCase):
         self.assertTrue(FakeOllama.disconnected.wait(5), 'the connection must close so Ollama frees its slot')
 
     def test_token_limit_is_an_error_in_both_modes(self):
+        # A cut answer is retried once with twice the budget, then reported; never accepted.
         FakeOllama.mode = 'length'
         client = Ollama('qwen2.5:7b', self.url, timeout=5, max_tokens=64)
         with self.assertRaises(OllamaLimitError):
             client.generate('p', on_progress=lambda m: None)
         with self.assertRaises(OllamaLimitError):
             client.generate('p')
-        self.assertEqual(len(FakeOllama.requests), 2)
-        self.assertTrue(all(r['options']['num_predict'] == 64 for r in FakeOllama.requests))
+        self.assertEqual(len(FakeOllama.requests), 4)
+        self.assertEqual([r['options']['num_predict'] for r in FakeOllama.requests], [64, 128, 64, 128])
+        self.assertEqual([r['options']['num_ctx'] for r in FakeOllama.requests], [8192, 16384, 8192, 16384])
 
     def test_every_request_is_token_capped_by_default(self):
         FakeOllama.mode = 'length'
         with self.assertRaises(OllamaLimitError):
             Ollama('qwen2.5:7b', self.url, timeout=5).generate('p')
-        self.assertEqual(FakeOllama.requests[0]['options'], {'temperature': 0, 'num_predict': 3072})
+        self.assertEqual(FakeOllama.requests[0]['options'], {'temperature': 0, 'num_ctx': 8192, 'num_predict': 4096})
 
 
 class RecordingModel:
