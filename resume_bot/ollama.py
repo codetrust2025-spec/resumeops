@@ -10,6 +10,18 @@ class OllamaError(RuntimeError):
     pass
 
 
+class OllamaLimitError(OllamaError):
+    """The model used its whole token or time budget. An identical request cannot do better."""
+
+
+# A runaway JSON generation streams forever: every chunk resets the socket timeout, and once the
+# context fills, Ollama shifts it and keeps generating without the instructions. Each request is
+# therefore capped in tokens and, while streaming, in wall-clock time, so one request cannot hold
+# the single Ollama slot that every other job is queued behind.
+MAX_TOKENS = 3072
+STREAM_DEADLINE = 600
+
+
 class _TopLevelJsonFields:
     """Count complete top-level JSON members in streamed output.
 
@@ -60,16 +72,20 @@ class _TopLevelJsonFields:
 
 
 class Ollama:
-    def __init__(self, model=None, url=None, timeout=240):
+    def __init__(self, model=None, url=None, timeout=240, max_tokens=MAX_TOKENS, deadline=STREAM_DEADLINE):
         self.model = model or os.environ.get('OLLAMA_MODEL','qwen2.5:7b')
         self.url = (url or os.environ.get('OLLAMA_URL','http://127.0.0.1:11434')).rstrip('/')
         self.timeout = timeout
+        self.max_tokens = max_tokens
+        self.deadline = deadline
 
     def generate(self, prompt, schema=None, on_progress=None):
         if on_progress is None:
             return self._generate(prompt, schema, None)
         try:
             return self._generate(prompt, schema, on_progress)
+        except OllamaLimitError:
+            raise  # temperature 0: repeating the same request would exhaust the same budget
         except OllamaError as exc:
             if 'unreachable' in str(exc) and 'refused' in str(exc).lower():
                 raise  # the service is down; a second request cannot help
@@ -93,7 +109,7 @@ class Ollama:
             'prompt':prompt,
             'format':schema if schema is not None else 'json',
             'stream':streaming,
-            'options':{'temperature':0},
+            'options':{'temperature':0, 'num_predict':self.max_tokens},
         }
         req = Request(self.url + '/api/generate',
                       data=json.dumps(payload).encode('utf8'),
@@ -102,7 +118,10 @@ class Ollama:
         try:
             with urlopen(req, timeout=self.timeout) as resp:
                 if not streaming:
-                    text = json.load(resp)['response']
+                    body = json.load(resp)
+                    text = body['response']
+                    if body.get('done_reason') == 'length':
+                        raise OllamaLimitError(f'Ollama output reached the {self.max_tokens}-token limit')
                 else:
                     on_progress({'phase': 'waiting', 'chars': 0, 'chunks': 0, 'elapsed': 0.0})
                     parts, chunks, final = [], 0, {}
@@ -120,10 +139,16 @@ class Ollama:
                             emitted += len(piece)
                             fields.feed(piece)
                         if item.get('done'):
+                            if item.get('done_reason') == 'length':
+                                raise OllamaLimitError(f'Ollama output reached the {self.max_tokens}-token limit')
                             final = {key: item[key] for key in (
                                 'eval_count', 'eval_duration', 'prompt_eval_count', 'load_duration',
                                 'total_duration') if key in item}
                             break
+                        if time.monotonic() - started > self.deadline:
+                            # Leaving the with-block closes the connection, which makes Ollama
+                            # abort the generation and free its slot.
+                            raise OllamaLimitError(f'Ollama generation exceeded {self.deadline} seconds')
                         on_progress({'phase': 'generating', 'chars': emitted,
                                      'chunks': chunks, 'fields_emitted': fields.count,
                                      'elapsed': time.monotonic() - started})
