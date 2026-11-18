@@ -64,8 +64,10 @@
         status.textContent = 'Saving your work before signing in...';
         try {
           if (owner) await checkpoint();
-          const destination = document.body.hasAttribute('data-ai-builder') ? 'ai-builder' :
-            root.location.pathname === '/workflow' ? 'workflow' : 'builder';
+          const path = root.location.pathname;
+          const destination = path === '/automated' ? 'automated' :
+            document.body.hasAttribute('data-ai-builder') ? 'ai-builder' :
+            path === '/workflow' ? 'workflow' : 'builder';
           root.location.assign('/auth/renewed?return=' + destination);
         } catch {
           status.textContent = 'Could not save your work. Allow pop-ups and try again.';

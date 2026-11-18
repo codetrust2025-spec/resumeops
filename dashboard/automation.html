@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="dashboard-token" content="__TOKEN__">
+<title>Create a verified resume | ResumeOps</title>
+<link rel="stylesheet" href="/builder.css">
+<link rel="stylesheet" href="/automation.css">
+<script defer src="/auth.js"></script>
+<script defer src="/recovery.js"></script>
+<script defer src="/automation.js"></script>
+</head>
+<body>
+<header class="auto-nav"><div class="width"><strong>ResumeOps</strong><a href="#auto-jobs">My resumes</a></div></header>
+<main class="width auto-main">
+  <h1>Create a verified resume</h1>
+  <p>Choose a target role and submit your facts once. ResumeOps prepares the PDF, LaTeX, and Overleaf project.</p>
+  <section id="auto-status" class="auto-card" hidden aria-live="polite">
+    <strong id="auto-stage"></strong>
+    <div class="auto-progress"><progress id="auto-progress" max="100" value="0" aria-label="Verified processing progress"></progress><span id="auto-percent">0%</span></div>
+    <p id="auto-error" role="alert"></p>
+  </section>
+  <form id="ai-form" class="auto-card">
+    <label>Target role<input name="role" maxlength="100" required placeholder="e.g. Azure Data Engineer"></label>
+    <fieldset class="auto-choice">
+      <legend>Candidate evidence</legend>
+      <label><input type="radio" name="method" value="upload" checked> Upload resume</label>
+      <label><input type="radio" name="method" value="manual"> Enter details</label>
+    </fieldset>
+    <label id="auto-upload">Resume file <span>PDF, DOCX or TXT, up to 12 MB</span>
+      <input type="file" id="auto-file" accept=".pdf,.docx,.txt" required>
+    </label>
+    <fieldset id="auto-manual" hidden disabled>
+      <legend>Candidate details</legend>
+      <div class="auto-grid" id="auto-basics"></div>
+      <details><summary>Contact and profiles</summary><div class="auto-grid" id="auto-optional"></div></details>
+      <div id="auto-lists"></div>
+    </fieldset>
+    <label class="auto-consent"><input id="auto-consent" type="checkbox" required>
+      I confirm these details are accurate and authorize ResumeOps to create and publish this resume in its Overleaf account.</label>
+    <button id="auto-submit" type="submit" class="primary">Create verified resume</button>
+  </form>
+  <section id="auto-jobs" class="auto-card">
+    <h2>My resumes</h2>
+    <p id="auto-empty">No submissions yet.</p>
+    <ul id="auto-job-list"></ul>
+  </section>
+</main>
+</body>
+</html>
