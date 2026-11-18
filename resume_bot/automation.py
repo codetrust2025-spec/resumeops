@@ -82,6 +82,16 @@ FIELD_NAMES = {'full_name': 'full name', 'email': 'email address', 'company': 'e
                'position': 'job title', 'start': 'start date', 'end': 'end date',
                'institution': 'institution', 'degree': 'degree'}
 ANSWER_LIMIT = 250
+# Said under each question, so the answer goes in the right field.
+FIELD_HINTS = {'company': ' Enter the company name.', 'position': ' Enter the job title.',
+               'institution': ' Enter the college or university name.',
+               'degree': ' Enter the degree name, for example B.Tech or MCA.',
+               'start': ' For example Jan 2022.', 'end': ' For example Mar 2024, or Present.'}
+NAMED_FIELDS = {'company': 'Enter the company name in words, not a number.',
+                'position': 'Enter the job title in words, not a number.',
+                'institution': 'Enter the college or university name, not a number or year.',
+                'degree': 'Enter the degree name, for example B.Tech, not the year.',
+                'full_name': 'Enter the full name in words.'}
 
 
 class NeedsInput(ValueError):
@@ -107,6 +117,8 @@ def _describe(entry, section):
     title = entry.get('position') or entry.get('degree') or ''
     place = entry.get('company') or entry.get('institution') or ''
     dates = ' - '.join(value for value in (entry.get('start'), entry.get('end')) if value)
+    if section == 'education' and dates and not entry.get('start'):
+        dates = 'completed ' + dates  # "(2022)" alone read as a request for the year
     words = [title or ('a role' if section == 'experience' else 'a qualification')]
     if place and phrase(place) != phrase(title):
         words.append('at ' + place)
@@ -133,6 +145,7 @@ def source_profile(source, ai, on_progress=None, notices=None):
     def ask(section, index, field, explanation, entry=None, suggest=False):
         holder = draft if entry is None else entry
         name = FIELD_NAMES[field]
+        explanation = explanation + FIELD_HINTS.get(field, '')
         label = name.capitalize() if entry is None else f'{name.capitalize()} for {_describe(entry, section)}'
         questions.append({'id': field if entry is None else f'{section}.{index}.{field}', 'section': section,
                           'entry': index, 'field': field, 'label': label, 'explanation': explanation,
@@ -277,6 +290,9 @@ def apply_answers(draft, questions, answers):
             raise AnswerError(f'Keep the {name} under {ANSWER_LIMIT} characters.', qid)
         if question['field'] == 'email' and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', value):
             raise AnswerError('Enter a valid email address.', qid)
+        if question['field'] in NAMED_FIELDS and not re.search(r'[^\W\d_]', value):
+            # A year typed into "Degree" would print as the degree; names are written in words.
+            raise AnswerError(NAMED_FIELDS[question['field']], qid)
         target = draft if question['entry'] is None else draft[question['section']][question['entry']]
         target[question['field']] = value
     try:

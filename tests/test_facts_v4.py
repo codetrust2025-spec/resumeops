@@ -13,7 +13,7 @@ from unittest.mock import patch
 from xml.sax.saxutils import escape
 from zipfile import ZipFile
 
-from resume_bot.automation import (CONSENT_VERSION, EXTRACTION_VERSION, NeedsInput, apply_answers,
+from resume_bot.automation import (CONSENT_VERSION, EXTRACTION_VERSION, AnswerError, NeedsInput, apply_answers,
                                    source_profile)
 from resume_bot.generate import composed_summary, same_track, summary_problems, write_summary
 from resume_bot.ingest import form_fields, read_resume_text
@@ -151,6 +151,25 @@ class FormResumeTests(unittest.TestCase):
             source_profile(source, model)
         self.assertEqual(sorted(q['id'] for q in raised.exception.questions),
                          ['education.0.institution', 'experience.0.company'])
+
+
+    def test_a_year_typed_as_the_degree_is_rejected_next_to_that_field(self):
+        rows = [row for row in ROWS if not row[0].endswith(('Highest Qualification', 'College Name'))]
+        source = read_resume_text(form_docx(Path(self.temp.name) / 'nodegree.docx', rows))
+        with self.assertRaises(NeedsInput) as raised:
+            source_profile(source, JoinedCellModel(blank=('institution', 'degree')))
+        questions = {q['id']: q for q in raised.exception.questions}
+        degree = questions['education.0.degree']
+        self.assertIn('(completed 2022)', degree['label'], 'the year is shown as context, not asked for')
+        self.assertIn('for example B.Tech', degree['explanation'])
+        with self.assertRaises(AnswerError) as wrong:
+            apply_answers(raised.exception.draft, raised.exception.questions,
+                          {'education.0.degree': '2022', 'education.0.institution': 'Example Institute of Technology'})
+        self.assertEqual(wrong.exception.field, 'education.0.degree')
+        self.assertIn('not the year', str(wrong.exception))
+        profile = apply_answers(raised.exception.draft, raised.exception.questions,
+                                {'education.0.degree': 'B.Tech', 'education.0.institution': 'Example Institute of Technology'})
+        self.assertEqual(profile['education'][0]['degree'], 'B.Tech')
 
 
 class SummaryAttributionTests(unittest.TestCase):
