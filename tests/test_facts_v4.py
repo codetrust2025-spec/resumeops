@@ -114,6 +114,27 @@ class FormResumeTests(unittest.TestCase):
     def test_joined_cell_evidence_no_longer_loses_company_institution_or_degree(self):
         self.assert_complete(source_profile(self.source, JoinedCellModel()))
 
+    def test_dates_and_locations_still_need_verbatim_evidence(self):
+        class Loose(JoinedCellModel):
+            """Puts the header address on the job and the passing year on both ends, as qwen2.5 did."""
+            def generate(self, prompt, schema=None, on_progress=None):
+                data = super().generate(prompt, schema, on_progress)
+                data['experience'][0]['location'] = quote('Pune', 'Location: Pune')
+                data['education'][0]['start'] = quote('2022', 'Passed out: 2022')
+                return data
+        profile = source_profile(self.source, Loose())
+        self.assertEqual(profile['experience'][0]['location'], '', 'a header address is not a job location')
+        self.assertEqual((profile['education'][0]['start'], profile['education'][0]['end']), ('', '2022'))
+
+    def test_one_stated_year_is_not_both_ends_of_a_span(self):
+        class Doubled(JoinedCellModel):
+            def generate(self, prompt, schema=None, on_progress=None):
+                data = super().generate(prompt, schema, on_progress)
+                data['education'][0]['start'] = quote('2022')  # verbatim, but stated once as the passing year
+                return data
+        profile = source_profile(self.source, Doubled())
+        self.assertEqual((profile['education'][0]['start'], profile['education'][0]['end']), ('', '2022'))
+
     def test_labelled_rows_fill_what_the_model_left_empty(self):
         self.assert_complete(source_profile(self.source, JoinedCellModel(blank=('company', 'institution', 'degree', 'skills'))))
 

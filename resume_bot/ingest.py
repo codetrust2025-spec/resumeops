@@ -307,6 +307,12 @@ def repair(out, source, name_hint=''):
     lines = _lines(source)
     head = lines[:6]
     _repair_form(out, source)
+    # One stated date is never both ends of a span ("2022 - 2022" for a stated passing year of 2022).
+    for section, keep in (('education', 'end'), ('experience', 'start')):
+        for entry in out[section]:
+            stated = _norm(entry.get('start'))
+            if entry.get('start') and stated == _norm(entry.get('end')) and _norm(source).count(stated) < 2:
+                entry['start' if keep == 'end' else 'end'] = ''
     # An email cell often carries a note ("asha@example.com (personal address)"): keep the address only.
     if out['email'] and not EMAIL.fullmatch(out['email']):
         match = EMAIL.search(out['email'])
@@ -426,9 +432,13 @@ INPUT:
     else:
         data = generate(ai, prompt, on_progress=on_progress)
 
-    def read_field(field, required=False):
+    def read_field(field, required=False, lenient=False):
+        # Only fields that are tied back to their entry afterwards (employer with title, institution with
+        # degree) may keep a verbatim value whose quoted context is not verbatim. Dates, locations and the
+        # rest keep the strict check: a header address or a lone year must not become a job location or a
+        # start date.
         try:
-            return _get(field, source, required and not for_review, lenient=for_review)
+            return _get(field, source, required and not for_review, lenient=for_review and lenient)
         except ExtractionError:
             if not for_review:
                 raise
@@ -448,7 +458,7 @@ INPUT:
             raise ExtractionError('Invalid experience')
         if _placeholder(item, EXPERIENCE_FIELDS):
             continue
-        entry={k:read_field(item.get(k,{}),k in ('company','position','start'))
+        entry={k:read_field(item.get(k,{}),k in ('company','position','start'), k in ('company','position'))
                for k in EXPERIENCE_FIELDS}
         entry['bullets']=[value for v in item.get('bullets',[]) if (value := read_field(v, True))]
         out['experience'].append(entry)
@@ -458,7 +468,7 @@ INPUT:
             raise ExtractionError('Invalid education')
         if _placeholder(item, EDUCATION_FIELDS):
             continue
-        out['education'].append({k:read_field(item.get(k,{}),k in ('institution','degree'))
+        out['education'].append({k:read_field(item.get(k,{}),k in ('institution','degree'), k in ('institution','degree'))
                                  for k in EDUCATION_FIELDS})
     hint = (data.get('full_name') or {}).get('value', '') if isinstance(data.get('full_name'), dict) else ''
     repair(out, source, hint if isinstance(hint, str) else '')
