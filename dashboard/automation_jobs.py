@@ -281,6 +281,7 @@ class AutomationJobs:
     def _consume(self):
         with closing(self.connection()) as db, db:
             db.execute("UPDATE automation SET status='queued' WHERE status='processing'")
+        self._recheck_stale_questions()
         while not self.stopping.is_set():
             if not self.workspace.automation_ready():
                 self.stopping.wait(3)
@@ -297,9 +298,28 @@ class AutomationJobs:
                 self.wake.wait(3)
                 self.wake.clear()
 
+    def _recheck_stale_questions(self):
+        """A job waiting on questions that an older extraction asked is read again from its original
+        upload: an extraction fix must not leave a user answering for facts the resume already states.
+        Unanswered jobs only; the candidate's answers and confirmed choices are never discarded."""
+        from resume_bot.automation import EXTRACTION_VERSION
+
+        with closing(self.connection()) as db, db:
+            rows = db.execute("SELECT owner, id, checkpoints FROM automation WHERE status='needs_input'").fetchall()
+            for row in rows:
+                checkpoints = json.loads(row['checkpoints'] or '{}')
+                if ('questions' not in checkpoints or not isinstance(checkpoints.get('source'), str)
+                        or checkpoints.get('extraction') == EXTRACTION_VERSION):
+                    continue
+                for key in ('questions', 'draft', 'extraction'):
+                    checkpoints.pop(key, None)
+                db.execute("UPDATE automation SET status='queued',stage='Reading the resume again with improved extraction',"
+                           'error=NULL,next_retry=0,checkpoints=?,updated=? WHERE owner=? AND id=?',
+                           (json.dumps(checkpoints), time.time(), row['owner'], row['id']))
+
     def _prepare(self, job):
-        from resume_bot.automation import (NeedsInput, inferred_years, role_intelligence, source_profile, tailor_role,
-                                           verified_request)
+        from resume_bot.automation import (EXTRACTION_VERSION, NeedsInput, inferred_years, role_intelligence,
+                                           source_profile, tailor_role, verified_request)
         from resume_bot.generate import propose_projects, split_project
         from resume_bot.ollama import Ollama, OllamaError
 
@@ -410,7 +430,7 @@ class AutomationJobs:
                            (updated(), match['name'], json.dumps(final_facts), *key))
         except NeedsInput as gap:
             # Keep the submission and everything already done; ask only for what the resume lacks.
-            checkpoints.update(draft=gap.draft, questions=gap.questions)
+            checkpoints.update(draft=gap.draft, questions=gap.questions, extraction=EXTRACTION_VERSION)
             with closing(self.connection()) as db, db:
                 db.execute("UPDATE automation SET status='needs_input',stage='Needs your input',error=?,checkpoints=?,"
                            'updated=? WHERE owner=? AND id=?', (str(gap), json.dumps(checkpoints), updated(), *key))

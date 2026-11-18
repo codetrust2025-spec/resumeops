@@ -49,7 +49,7 @@ def _norm(text):
     return re.sub(r'\s+', ' ', str(text)).strip().casefold()
 
 
-def _get(field, source, required=False):
+def _get(field, source, required=False, lenient=False):
     if not isinstance(field,dict):
         raise ExtractionError('AI field lacks quoted source evidence')
     value = field.get('value','')
@@ -62,7 +62,14 @@ def _get(field, source, required=False):
     if not value:
         return ''
     # Require the value itself to occur verbatim in the source, avoiding inferred experience and skills.
-    if _norm(value) not in _norm(source) or _norm(evidence) not in _norm(source):
+    if _norm(value) not in _norm(source):
+        raise ExtractionError(f'Unverified extracted value: {value[:60]}')
+    if lenient:
+        # Review mode: a verbatim value is kept even when its quoted context is not verbatim. Table and
+        # form layouts make the model join cells ("Company Name: Example Pvt Ltd"), and dropping the value
+        # lost real facts. Every entry is tied to its own lines again later (automation.source_profile).
+        return value
+    if _norm(evidence) not in _norm(source):
         raise ExtractionError(f'Unverified extracted value: {value[:60]}')
     if _norm(value) not in _norm(evidence):
         raise ExtractionError(f'Evidence does not support value: {value[:60]}')
@@ -200,11 +207,110 @@ def _split_list(value):
     return [part for part in parts if part]
 
 
+# Form-style resumes (often a two-column Word table) state facts as labelled rows:
+# "5. Company Name" | "Example Works Pvt Ltd". Only these known labels are read; a label never matches
+# a sentence, and a preferred or target role is not a past job.
+FORM_LABELS = [(key, re.compile(pattern, re.I)) for key, pattern in (
+    ('full_name', r"(?:full |candidate(?:'s)? )?name"),
+    ('email', r'e-?mail(?: id| address)?'),
+    ('phone', r'(?:phone|mobile|contact)(?: number| no\.?)?'),
+    ('company', r'(?:current |present |last |previous )?(?:company|employer|organi[sz]ation)(?: name)?'),
+    ('position', r'(?:current |present |job |last )?(?:designation|job title|position)'),
+    ('period', r'(?:employment |work(?:ing)? |service |job |experience )?(?:period|duration|tenure|dates?)|working since|'
+               r'date of joining|joining date'),
+    ('degree', r'(?:highest |educational |education )?(?:qualification|degree)(?: name)?'),
+    ('institution', r'(?:college|university|institute|institution|school)(?: name)?'),
+    ('education_end', r'(?:education |degree )?(?:completion|passing|passed[- ]?out|pass[- ]?out|graduation)(?: year)?|'
+                      r'year of (?:passing|graduation|completion)|education (?:completion |passing |passed[- ]?out )?year'),
+    ('skills', r'(?:(?:primary|key|core|main|technical|it|professional)\s+)*skills(?: set)?|technolog(?:y|ies)|'
+               r'tech(?:nical)? stack'),
+)]
+FORM_ROW = re.compile(r'\s*(?:\d{1,2}[.)]\s*)?([A-Za-z][A-Za-z \'./&-]{1,48}?)\s*:?\s*')
+FORM_INLINE = re.compile(r'\s*(?:\d{1,2}[.)]\s*)?([A-Za-z][A-Za-z \'./&-]{1,48}?)\s*:\s*(\S.*)')
+
+
+def _form_label(text):
+    text = ' '.join(text.split())
+    return next((key for key, pattern in FORM_LABELS if pattern.fullmatch(text)), None)
+
+
+def form_fields(source):
+    """{key: (verbatim value, line index)} for known labelled rows; the first row of each label wins."""
+    lines = _lines(source)
+    found = {}
+    for index, line in enumerate(lines):
+        inline = FORM_INLINE.fullmatch(line)
+        key = _form_label(inline.group(1)) if inline else None
+        if key:
+            found.setdefault(key, (inline.group(2).strip(), index))
+            continue
+        row = FORM_ROW.fullmatch(line)
+        key = _form_label(row.group(1)) if row else None
+        if not key or index + 1 >= len(lines):
+            continue
+        value = lines[index + 1]
+        following = FORM_ROW.fullmatch(value)
+        if (following and _form_label(following.group(1))) or SECTIONS.match(value.rstrip(':')):
+            continue  # an empty row: never take the next label or heading as the value
+        found.setdefault(key, (value, index + 1))
+    return found
+
+
+def _repair_form(out, source):
+    """Fill fields the model left empty from labelled rows, copying the row values verbatim."""
+    form = {key: value for key, (value, _) in form_fields(source).items()}
+    if not form:
+        return
+    if not out['full_name'] and form.get('full_name') and _looks_like_name(form['full_name']):
+        out['full_name'] = form['full_name']
+    if not out['email'] and form.get('email') and EMAIL.search(form['email']):
+        out['email'] = EMAIL.search(form['email']).group(0)
+    if not out['phone'] and form.get('phone') and PHONE.search(form['phone']):
+        out['phone'] = PHONE.search(form['phone']).group(0).strip()
+    company, position = form.get('company', ''), form.get('position', '')
+    start = end = ''
+    if form.get('period'):
+        parts = re.split(r'\s+(?:-|\u2013|\u2014|to|till)\s+|\s*[\u2013\u2014]\s*|(?<=\d)-(?=\d|[A-Z])', form['period'], maxsplit=1)
+        start, end = (parts + [''])[:2]
+    if company and position:
+        jobs = out['experience']
+        match = [job for job in jobs if _norm(job.get('position')) == _norm(position)
+                 or _norm(job.get('company')) == _norm(company)]
+        if not jobs:
+            jobs.append({'company': '', 'position': '', 'start': '', 'end': '', 'location': '', 'bullets': []})
+            match = jobs
+        elif len(jobs) == 1:
+            match = jobs
+        for job in match[:1]:
+            for key, value in (('company', company), ('position', position), ('start', start), ('end', end)):
+                if not job.get(key) and value:
+                    job[key] = value.strip()
+    degree, school = form.get('degree', ''), form.get('institution', '')
+    if degree or school:
+        schools = out['education']
+        if not schools:
+            schools.append({'institution': '', 'degree': '', 'start': '', 'end': '', 'details': ''})
+        if len(schools) == 1:
+            year = form.get('education_end', '')
+            for key, value in (('institution', school), ('degree', degree),
+                               ('end', year if re.fullmatch(r'(?:[A-Za-z]{3,9}\.? )?\d{4}', year) else '')):
+                if not schools[0].get(key) and value:
+                    schools[0][key] = value
+    if form.get('skills'):
+        known = {skill.casefold() for skill in out['skills']}
+        out['skills'] += [skill for skill in _split_list(form['skills']) if skill.casefold() not in known]
+
+
 def repair(out, source, name_hint=''):
     """Deterministic, verbatim-only fixes for common model slips. Every value set here is copied
     from the source text (or moved between fields) and is never invented."""
     lines = _lines(source)
     head = lines[:6]
+    _repair_form(out, source)
+    # An email cell often carries a note ("asha@example.com (personal address)"): keep the address only.
+    if out['email'] and not EMAIL.fullmatch(out['email']):
+        match = EMAIL.search(out['email'])
+        out['email'] = match.group(0) if match else ''
     # Name: the model sometimes leaves it empty or puts it in the headline.
     if out['full_name'] and out['headline'] and _norm(out['headline']) == _norm(out['full_name']):
         out['headline'] = ''
@@ -322,7 +428,7 @@ INPUT:
 
     def read_field(field, required=False):
         try:
-            return _get(field, source, required and not for_review)
+            return _get(field, source, required and not for_review, lenient=for_review)
         except ExtractionError:
             if not for_review:
                 raise

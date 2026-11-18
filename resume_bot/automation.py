@@ -1,15 +1,19 @@
 """Conservative one-submit tailoring: the model ranks evidence, never writes candidate facts."""
+import copy
 import json
 import re
 from collections import Counter
 from .ai_review import role_intelligence
-from .ingest import ExtractionError, _section, extract_profile
+from .ingest import ExtractionError, _section, _split_list, extract_profile, form_fields
 from .ollama import generate
-from .profile import validate_profile
+from .profile import ProfileError, validate_profile
 from .workflow import dated_months, matched_terms, normalize_request, valid_role_title
 
 
 CONSENT_VERSION = 'resumeops-auto-1'
+# Bumped whenever reading facts from a resume improves: a job still waiting on questions from an older
+# version is read again automatically (dashboard automation_jobs), so a fixed defect never strands a user.
+EXTRACTION_VERSION = 'facts-v4'
 
 
 SCRATCH_TEXT = {'skills': ('Technical skills', 1500), 'certifications': ('Certifications', 1500),
@@ -121,6 +125,10 @@ def source_profile(source, ai, on_progress=None, notices=None):
     draft = extract_profile(source, ai, for_review=True, on_progress=on_progress)
     lines = [phrase(line) for line in source.splitlines() if line.strip()]
     questions = []
+    # Labelled form rows ("Company Name" | value) tie their values together by label, not by distance.
+    form = form_fields(source)
+    labelled = lambda key: phrase(form[key][0]) if key in form else None
+    form_tied = set()
 
     def ask(section, index, field, explanation, entry=None, suggest=False):
         holder = draft if entry is None else entry
@@ -133,6 +141,9 @@ def source_profile(source, ai, on_progress=None, notices=None):
     for field in ('full_name', 'email'):
         if not (draft.get(field) or '').strip():
             ask('profile', None, field, f"The resume does not state the candidate's {FIELD_NAMES[field]}.")
+    if (draft.get('email') or '').strip() and not EMAIL_FORMAT.fullmatch(draft['email'].strip()):
+        ask('profile', None, 'email', 'The email address in the resume could not be read clearly. Confirm or correct it.',
+            suggest=True)
     anchors = {}
     for index, job in enumerate(draft['experience']):
         if job.get('company') and phrase(job['company']) == phrase(job.get('position') or ''):
@@ -143,6 +154,10 @@ def source_profile(source, ai, on_progress=None, notices=None):
         if absent:
             continue
         employer, title = phrase(job['company']), phrase(job['position'])
+        if employer == labelled('company') and title == labelled('position'):
+            anchors[index] = min(form['company'][1], form['position'][1])
+            form_tied.add(index)
+            continue
         employers = [i for i, line in enumerate(lines) if employer in line]
         titles = [i for i, line in enumerate(lines) if title in line]
         pairs = [(abs(a-b), min(a,b)) for a in employers for b in titles if abs(a-b) <= 2]
@@ -159,7 +174,8 @@ def source_profile(source, ai, on_progress=None, notices=None):
         end = min((other for other in starts if other > start), default=len(lines))
         block = ' '.join(lines[start:end])
         for field in ('start', 'end'):
-            if job.get(field) and phrase(job[field]) not in block:
+            if job.get(field) and phrase(job[field]) not in block and not (
+                    index in form_tied and phrase(job[field]) in (labelled('period') or '')):
                 ask('experience', index, field,
                     f'The resume does not show this {FIELD_NAMES[field]} with the role. Confirm or correct it.',
                     job, suggest=True)
@@ -175,6 +191,8 @@ def source_profile(source, ai, on_progress=None, notices=None):
         if absent:
             continue
         school, degree = phrase(entry['institution']), phrase(entry['degree'])
+        if school == labelled('institution') and degree in (labelled('degree') or ''):
+            continue  # one labelled form row pair
         if not any(school in ' '.join(lines[max(0, i-2):i+3]) for i, line in enumerate(lines) if degree in line):
             for field in ('institution', 'degree'):
                 ask('education', index, field,
@@ -186,20 +204,60 @@ def source_profile(source, ai, on_progress=None, notices=None):
 
     # A term found in a target description or a future plan is not candidate evidence.
     # Require affirmative list entries in the appropriate source section.
-    def from_section(values, heading, *, split=False):
+    def from_section(values, heading, *, split=False, labelled_row=None):
         listed = [phrase(line).lstrip('•-* ') for line in _section(source, heading)]
         if split:
             listed = [part.strip() for line in listed for part in re.split(r'[,;|]', line)]
+        if labelled_row in form:  # the same list written in a labelled form row
+            listed += [phrase(part) for part in _split_list(form[labelled_row][0])]
         return [value for value in values if phrase(value) in listed and not re.search(
             r'\b(?:pursuing|planned|unearned|in progress|not earned|not completed|learning)\b', value, re.I)]
 
-    draft['skills'] = from_section(draft.get('skills', []), r'(?:technical )?skills', split=True)
+    draft['skills'] = from_section(draft.get('skills', []), r'(?:technical )?skills', split=True, labelled_row='skills')
     draft['certifications'] = from_section(draft.get('certifications', []), r'certifications?')
     if draft.get('projects'):
         draft['projects'] = from_section(draft['projects'], r'(?:completed )?projects')
+    _ask_what_validation_rejects(draft, questions, ask)
     if questions:
         raise NeedsInput(draft, questions)
     return validate_profile(draft)
+
+
+EMAIL_FORMAT = re.compile(r'[^\s@]+@[^\s@]+\.[^\s@]+')
+
+
+def _ask_what_validation_rejects(draft, questions, ask):
+    """Run the final profile check now, with the open questions answered by placeholders. Whatever it
+    would still reject becomes an editable question here, so answering never ends in an error that names
+    no field (such as "Invalid email address" for an email nobody was asked about)."""
+    asked = {question['id'] for question in questions}
+    for _ in range(4):
+        trial = copy.deepcopy(draft)
+        for question in questions:
+            target = trial if question['entry'] is None else trial[question['section']][question['entry']]
+            target[question['field']] = 'reader@example.com' if question['field'] == 'email' else 'Answer'
+        try:
+            validate_profile(trial)
+            return
+        except ProfileError as exc:
+            message = str(exc)
+        found = re.match(r'(experience|education)\[(\d+)\](?:\.(\w+))?', message)
+        if message == 'Invalid email address' and 'email' not in asked:
+            ask('profile', None, 'email', 'The email address in the resume could not be read clearly. '
+                'Confirm or correct it.', suggest=True)
+        elif found and 'end before start' in message:
+            section, index = found[1], int(found[2])
+            for field in ('start', 'end'):
+                if f'{section}.{index}.{field}' not in asked:
+                    ask(section, index, field, 'The dates for this entry are out of order in the resume. '
+                        'Confirm or correct them.', draft[section][index], suggest=True)
+        elif found and found[3] in FIELD_NAMES and f'{found[1]}.{found[2]}.{found[3]}' not in asked:
+            section, index = found[1], int(found[2])
+            ask(section, index, found[3], f'The resume does not state the {FIELD_NAMES[found[3]]} clearly. '
+                'Confirm or correct it.', draft[section][index], suggest=True)
+        else:
+            return  # not something the candidate can answer; the job reports it plainly
+        asked = {question['id'] for question in questions}
 
 
 def apply_answers(draft, questions, answers):
