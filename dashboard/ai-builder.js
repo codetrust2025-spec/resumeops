@@ -423,6 +423,13 @@ async function init() {
   ai('ai-form').addEventListener('input',() => {
     updateCounts(); save().catch(error => status(error.message));
   });
+  ai('ai-form').addEventListener('invalid', event => {
+    const section = event.target.closest('details:not([open])');
+    if (!section) return;
+    section.open = true;
+    // Let the browser focus the newly visible control during native validation.
+    event.target.getBoundingClientRect();
+  }, true);
   ai('ai-form').addEventListener('submit',handle(async () => {
     state.draft={id:newId(),candidate:intake(),import_id:state.importId};
     delete state.approval;
