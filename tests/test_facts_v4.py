@@ -255,6 +255,19 @@ class SummaryAttributionTests(unittest.TestCase):
         self.assertNotIn('Transitioned', text)
         self.assertIn('moving into a DevOps Engineer role', text)
 
+    def test_a_character_from_the_facts_is_allowed_in_a_composed_summary(self):
+        # Production: a skill with an em dash was copied into the composed summary, and the builder's
+        # plain-character rule rejected the resume on every retry.
+        profile = json.loads(json.dumps(self.PROFILE))
+        profile['skills'] = ['Python', 'Django — REST Framework', 'Kubernetes']
+        composed = composed_summary(profile, 'Python Backend Developer', 7, ['Python', 'Django'])
+        self.assertIn('—', composed)
+        self.assertEqual(summary_problems(composed, profile, 'Python Backend Developer', 7), [])
+        written = ('Python Backend Developer with 7 years of experience building payment APIs in Python and '
+                   'PostgreSQL — and maintaining REST services in Django.')
+        self.assertIn('use plain characters only', summary_problems(written, self.PROFILE, 'Python Backend Developer', 7),
+                      'a character the facts do not contain is still rejected')
+
     def test_job_families_recognise_same_track_titles(self):
         def profile(title):
             return {'experience': [{'position': title}]}

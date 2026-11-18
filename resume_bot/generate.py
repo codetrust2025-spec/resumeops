@@ -212,7 +212,10 @@ def summary_problems(text, profile, role_title, years):
         problems.append(f'start with the role, for example "{role_title} with ... years of experience"')
     if AI_TELLS.search(text):
         problems.append(f'write in resume style without pronouns or filler such as "{AI_TELLS.search(text).group(0)}"')
-    if plain(text) != ' '.join(text.split()):
+    # Generated text uses plain characters. A character the verified facts already contain (an em dash in a
+    # skill or degree, copied into a composed summary) typesets exactly as it does in those facts.
+    facts_text = _evidence(profile)
+    if any(plain(ch) != ch and not ch.isspace() and ch not in facts_text for ch in set(text)):
         problems.append('use plain characters only')
     if METRIC.search(text):
         problems.append('do not state metrics or quantities')
