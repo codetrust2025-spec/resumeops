@@ -722,8 +722,12 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                     return self.send_json({'error': 'Invalid request.'}, 413)
                 request = json.loads(self.rfile.read(size))
                 identifier = request.get('id') if isinstance(request, dict) else None
+                if action == 'delete' and request == {'all': True}:
+                    return self.send_json({'removed': automation.hide_history(owner)})
                 if not isinstance(identifier, str) or not re.fullmatch(r'[0-9a-f]{64}', identifier):
                     return self.send_json({'error': 'Invalid resume identifier.'}, 400)
+                if action == 'delete':
+                    return self.send_json({'removed': automation.hide_history(owner, identifier)})
                 if action == 'answer':
                     automation.answer(owner, identifier, request.get('answers'))
                 elif action == 'projects':
@@ -772,7 +776,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
         def do_POST(self):
             request_origin = self.request_origin()
             if (self.path not in ('/api/automation', '/api/automation/answer', '/api/automation/projects',
-                                  '/api/automation/regenerate', '/api/roles', '/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry', '/api/ai-draft', '/api/ai-review', '/api/ai-queue') or request_origin is None
+                                  '/api/automation/regenerate', '/api/automation/delete', '/api/roles', '/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry', '/api/ai-draft', '/api/ai-review', '/api/ai-queue') or request_origin is None
                     or self.headers.get('Origin') != request_origin
                     or not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token)):
                 return self.reject_post('Request not authorized.')
@@ -780,7 +784,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return self.reject_post('Dashboard access denied for this session.')
             if self.path == '/api/automation':
                 return self.submit_automation(request_origin)
-            if self.path in ('/api/automation/answer', '/api/automation/projects', '/api/automation/regenerate'):
+            if self.path in ('/api/automation/answer', '/api/automation/projects', '/api/automation/regenerate', '/api/automation/delete'):
                 return self.automation_action(request_origin, self.path.rsplit('/', 1)[1])
             if self.path == '/api/roles':
                 if not self.is_operator(request_origin):
