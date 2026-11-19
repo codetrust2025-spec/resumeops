@@ -230,7 +230,11 @@ class RegenerationTests(unittest.TestCase):
         self.assertEqual([q['id'] for q in job['questions']], ['skills'], 'one question: the role skills')
         self.assertEqual(job['questions'][0]['value'], 'Python, SQL, BigQuery, Dataflow, Pub/Sub, Cloud Storage')
         self.assertNotIn('Data Analyst', job['questions'][0]['value'])
+        self.assertEqual(job['error'], 'AI drafted skill suggestions for GCP Data Engineer. Keep only what is true for '
+                                       'you and edit anything. Then confirm once.', 'only what was drafted is named')
         self.jobs.answer(OWNER, new, {'skills': 'Python, SQL, BigQuery'})
+        self.assertIn('Reviewed and confirmed by you (AI draft): Skills for GCP Data Engineer.',
+                      json.loads(self.row(new)['notice']))
         enqueue = self.prepare(new)
         self.assertEqual(self.row(new)['status'], 'handed_off', self.row(new)['error'])
         packet, approval = json.loads(enqueue.call_args.args[0]), enqueue.call_args.kwargs['approval']
