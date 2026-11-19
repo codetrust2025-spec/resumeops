@@ -83,6 +83,9 @@ FIELD_NAMES = {'full_name': 'full name', 'email': 'email address', 'phone': 'pho
                'position': 'job title', 'start': 'start date', 'end': 'end date',
                'institution': 'institution', 'degree': 'degree'}
 ANSWER_LIMIT = 250
+# Work lines and skills arrive as AI drafts the candidate keeps, edits or clears: several lines, and optional
+# (an empty answer lists the job without lines, or the resume without a skills section).
+DRAFTED_FIELDS = {'bullets': (6, 240, 1500), 'skills': (20, 60, 1500)}  # max items, item length, total
 # Said under each question, so the answer goes in the right field.
 FIELD_HINTS = {'phone': ' Include the country code, for example +91 98765 43210.',
                'email': ' Correct it so recruiters can reach you.',
@@ -330,6 +333,10 @@ def apply_answers(draft, questions, answers):
         raise AnswerError('That question is not part of this resume.', unknown)
     for qid, question in known.items():
         name = FIELD_NAMES[question['field']]
+        if question['field'] in DRAFTED_FIELDS:
+            target = draft if question['entry'] is None else draft[question['section']][question['entry']]
+            target[question['field']] = _drafted_answer(answers.get(qid), question['field'], qid)
+            continue
         value = answers.get(qid)
         value = ' '.join(value.split()) if isinstance(value, str) else ''
         if not value:
@@ -344,9 +351,7 @@ def apply_answers(draft, questions, answers):
             # A year typed into "Degree" would print as the degree; names are written in words.
             raise AnswerError(NAMED_FIELDS[question['field']], qid)
         target = draft if question['entry'] is None else draft[question['section']][question['entry']]
-        if question['field'] == 'bullets':
-            target['bullets'] = [value]
-        elif question['field'] in ('skills', 'certifications'):
+        if question['field'] == 'certifications':
             target[question['field']] = _form_lines(value, FIELD_NAMES[question['field']], ANSWER_LIMIT, commas=True)
         else:
             target[question['field']] = value
@@ -360,6 +365,25 @@ def apply_answers(draft, questions, answers):
                           and (not match[3] or qid.endswith('.' + match[3]))), None)
         raise AnswerError(str(exc).replace('experience[', 'Work entry [').replace('education[', 'Education entry ['),
                           field) from exc
+
+
+def _drafted_answer(value, field, qid):
+    """The candidate's confirmed work lines (one per line) or skills (comma or line separated); may be empty."""
+    from .generate import clean_bullet, plain
+    if value is None:
+        value = ''
+    if not isinstance(value, str):
+        raise AnswerError('Enter text for this answer.', qid)
+    most, longest, total = DRAFTED_FIELDS[field]
+    if len(value) > total:
+        raise AnswerError(f'Keep the {FIELD_NAMES[field]} under {total} characters.', qid)
+    parts = value.splitlines() if field == 'bullets' else re.split(r'[\n,;]', value)
+    items = list(dict.fromkeys(item for item in (clean_bullet(plain(part)) for part in parts) if item))
+    if len(items) > most:
+        raise AnswerError(f'Use at most {most} {"lines" if field == "bullets" else "skills"}.', qid)
+    if any(len(item) > longest for item in items):
+        raise AnswerError(f'Keep each {"line" if field == "bullets" else "skill"} under {longest} characters.', qid)
+    return items
 
 
 def phrase(text):

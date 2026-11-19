@@ -355,7 +355,8 @@ class AutomationJobs:
             job['regenerable'] = bool(job.get('regenerable')) and job['status'] == 'complete'
             waiting = json.loads(job.pop('waiting') or '{}')  # only the questions and proposals leave the server
             if job['status'] == 'needs_input':
-                job['questions'] = [{key: question[key] for key in ('id', 'field', 'label', 'explanation', 'value')}
+                job['questions'] = [{key: question.get(key) for key in ('id', 'field', 'label', 'explanation', 'value',
+                                                                        'drafted')}
                                     for question in waiting.get('questions', [])]
                 job['proposals'] = waiting.get('proposals', [])
             jobs.append(job)
@@ -501,11 +502,54 @@ class AutomationJobs:
                 if entry.name.startswith(TRASH) and entry.is_dir(follow_symlinks=False):
                     _remove_tree(entry.path)
 
-    def decide_projects(self, owner, identifier, decisions):
-        """Apply the candidate's decision on each suggested project. Only projects they confirm, as
-        they edited them, become resume content; the rest are dropped. Then the job continues."""
+    @staticmethod
+    def _draft_question(facts, index, lines, label):
+        """The work question for one job: the AI draft for the role pre-filled, or an empty field."""
+        entry = facts['experience'][index]
+        place = ' at ' + entry['company'] if entry.get('company') else ''
+        return {'id': f'experience.{index}.bullets', 'section': 'experience', 'entry': index, 'field': 'bullets',
+                'drafted': bool(lines), 'value': '\n'.join(lines or []),
+                'label': f'Work as {entry["position"]}{place}' + (' (AI draft)' if lines else ''),
+                'explanation': (f'AI drafted these {label} lines from your job title and dates. Keep only what you '
+                                'actually did; edit or delete any line. Leave it empty to list this job without details.'
+                                if lines else 'In your own simple words, what did you do? One line each. Leave it empty '
+                                'to list this job without details.')}
+
+    @staticmethod
+    def _project_choices(checkpoints, notes, decisions):
+        """Apply the candidate's decision on each suggested project. Only projects they confirm, as they
+        edited them, become resume content; the rest are dropped."""
         from resume_bot.automation import AnswerError
         from resume_bot.generate import confirmed_project
+
+        proposals = checkpoints['proposals']
+        if not isinstance(decisions, list) or len(decisions) != len(proposals):
+            raise AnswerError('Choose include or skip for every suggested project.')
+        confirmed = []
+        for index, (proposal, decision) in enumerate(zip(proposals, decisions)):
+            if not isinstance(decision, dict) or decision.get('include') not in (True, False):
+                raise AnswerError('Choose include or skip for this project.', f'project.{index}')
+            if not decision['include']:
+                notes.append(f'Not included: suggested project "{proposal["name"]}".')
+                continue
+            stack = decision.get('stack', proposal['stack'])
+            bullets = decision.get('bullets', proposal['bullets'])
+            stack = [s for s in re.split(r'[,\n]', stack)] if isinstance(stack, str) else stack
+            bullets = [b for b in bullets.split('\n')] if isinstance(bullets, str) else bullets
+            if not isinstance(stack, list) or not isinstance(bullets, list):
+                raise AnswerError('Project details are invalid.', f'project.{index}')
+            try:
+                project = confirmed_project(decision.get('name', proposal['name']), stack, bullets)
+            except ValueError as exc:
+                raise AnswerError(str(exc), f'project.{index}') from exc
+            confirmed.append(project)
+            notes.append(f'Confirmed by you: project "{project.split(" - ")[0]}".')
+        checkpoints.pop('proposals')
+        checkpoints.update(projects_reviewed=True, confirmed_projects=confirmed)
+
+    def decide_projects(self, owner, identifier, decisions):
+        """Project decisions alone (no other question pending). Then the job continues."""
+        from resume_bot.automation import AnswerError
 
         with closing(self.connection()) as db, db:
             db.execute('BEGIN IMMEDIATE')
@@ -514,30 +558,10 @@ class AutomationJobs:
             checkpoints = json.loads(row['checkpoints']) if row else {}
             if not row or row['status'] != 'needs_input' or 'proposals' not in checkpoints:
                 raise AnswerError('This resume is not waiting for project decisions.')
-            proposals = checkpoints['proposals']
-            if not isinstance(decisions, list) or len(decisions) != len(proposals):
-                raise AnswerError('Choose include or skip for every suggested project.')
-            confirmed, notes = [], json.loads(row['notice'] or '[]')
-            for index, (proposal, decision) in enumerate(zip(proposals, decisions)):
-                if not isinstance(decision, dict) or decision.get('include') not in (True, False):
-                    raise AnswerError('Choose include or skip for this project.', f'project.{index}')
-                if not decision['include']:
-                    notes.append(f'Not included: suggested project "{proposal["name"]}".')
-                    continue
-                stack = decision.get('stack', proposal['stack'])
-                bullets = decision.get('bullets', proposal['bullets'])
-                stack = [s for s in re.split(r'[,\n]', stack)] if isinstance(stack, str) else stack
-                bullets = [b for b in bullets.split('\n')] if isinstance(bullets, str) else bullets
-                if not isinstance(stack, list) or not isinstance(bullets, list):
-                    raise AnswerError('Project details are invalid.', f'project.{index}')
-                try:
-                    project = confirmed_project(decision.get('name', proposal['name']), stack, bullets)
-                except ValueError as exc:
-                    raise AnswerError(str(exc), f'project.{index}') from exc
-                confirmed.append(project)
-                notes.append(f'Confirmed by you: project "{project.split(" - ")[0]}".')
-            checkpoints.pop('proposals')
-            checkpoints.update(projects_reviewed=True, confirmed_projects=confirmed)
+            if checkpoints.get('questions'):
+                raise AnswerError('Confirm the drafted details together with the projects.')
+            notes = json.loads(row['notice'] or '[]')
+            self._project_choices(checkpoints, notes, decisions)
             db.execute("UPDATE automation SET status='queued',stage='Project choices saved; continuing',percent=max(percent,62),"
                        'error=NULL,next_retry=0,checkpoints=?,notice=?,updated=? WHERE owner=? AND id=?',
                        (json.dumps(checkpoints), json.dumps(notes), time.time(), owner, identifier))
@@ -558,7 +582,8 @@ class AutomationJobs:
             new_id = hashlib.sha256(json.dumps({'from': identifier, 'role': role.casefold()}).encode()).hexdigest()
             if not db.execute('SELECT 1 FROM automation WHERE owner=? AND id=?', (owner, new_id)).fetchone():
                 payload = json.dumps({'consent': CONSENT_VERSION, 'role': role, 'regenerated_from': identifier})
-                checkpoints = json.dumps({'source': facts, 'facts': facts, 'projects_reviewed': bool(facts.get('projects'))})
+                checkpoints = json.dumps({'source': facts, 'facts': facts, 'projects_reviewed': bool(facts.get('projects')),
+                                          'drafts_reviewed': True})  # the finished resume's facts were confirmed
                 now = time.time()
                 db.execute('INSERT INTO automation(owner,id,payload,checkpoints,created,updated,role,candidate,percent,stage) '
                            "VALUES (?,?,?,?,?,?,?,?,30,'Verified facts reused from an earlier resume')",
@@ -567,17 +592,21 @@ class AutomationJobs:
         self.wake.set()
         return new_id
 
-    def answer(self, owner, identifier, answers):
-        """Apply the candidate's answers to a job that needs input, then continue it where it stopped."""
+    def answer(self, owner, identifier, answers, decisions=None):
+        """Apply the candidate's answers to a job that needs input, then continue it where it stopped. When the
+        same review also holds project suggestions, their decisions come with the answers (one confirmation)."""
         from resume_bot.automation import AnswerError, apply_answers
 
         with closing(self.connection()) as db, db:
             db.execute('BEGIN IMMEDIATE')
-            row = db.execute('SELECT status, checkpoints FROM automation WHERE owner=? AND id=?',
+            row = db.execute('SELECT status, checkpoints, notice FROM automation WHERE owner=? AND id=?',
                              (owner, identifier)).fetchone()
             if not row or row['status'] != 'needs_input':
                 raise AnswerError('This resume is not waiting for your answers.')
             checkpoints = json.loads(row['checkpoints'])
+            project_notes = []
+            if 'proposals' in checkpoints and checkpoints.get('questions'):
+                self._project_choices(checkpoints, project_notes, decisions)
             if checkpoints.get('document_intake'):
                 note = answers.get('source_text') if isinstance(answers, dict) else None
                 if not isinstance(note, str) or not 20 <= len(note.strip()) <= 7500:
@@ -602,10 +631,14 @@ class AutomationJobs:
                 questions = checkpoints.pop('questions')
                 facts = apply_answers(checkpoints.pop('draft'), questions, answers)
                 checkpoints['facts'] = facts
-                confirmed = [f'Confirmed by you: {question["label"]}.' for question in questions]
+                if any(question['field'] in ('bullets', 'skills') for question in questions):
+                    checkpoints['drafts_reviewed'] = True  # a job left without lines is not asked about again
+                confirmed = [('Reviewed and confirmed by you (AI draft): ' if question.get('drafted') else
+                              'Confirmed by you: ') + question['label'].replace(' (AI draft)', '') + '.'
+                             for question in questions]
             db.execute("UPDATE automation SET status='queued',stage='Answers saved; continuing',error=NULL,"
                        'next_retry=0,checkpoints=?,notice=?,updated=? WHERE owner=? AND id=?',
-                       (json.dumps(checkpoints), json.dumps(confirmed), time.time(), owner, identifier))
+                       (json.dumps(checkpoints), json.dumps(confirmed + project_notes), time.time(), owner, identifier))
         self.start()
         self.wake.set()
 
@@ -696,7 +729,7 @@ class AutomationJobs:
     def _prepare(self, job):
         from resume_bot.automation import (EXTRACTION_VERSION, NeedsInput, inferred_years, role_intelligence,
                                            source_profile, tailor_role, verified_request)
-        from resume_bot.generate import propose_projects, split_project
+        from resume_bot.generate import draft_role_content, propose_projects, split_project
         from resume_bot.ollama import Ollama, OllamaError
 
         key = (job['owner'], job['id'])
@@ -749,6 +782,9 @@ class AutomationJobs:
         def proposal_progress(metrics):
             progress(56 + min(3, metrics.get('chunks', 0) // 60), 'Project selection: proposing role-specific projects')
 
+        def draft_progress(metrics):
+            progress(28 + min(1, metrics.get('chunks', 0) // 200), 'AI drafting role-specific content for your review')
+
         try:
             source = checkpoints.get('source')
             if source is None and 'identity' in request:
@@ -787,40 +823,56 @@ class AutomationJobs:
                                                   evidence_documents='documents' in request))
             with closing(self.connection()) as db, db:
                 db.execute('UPDATE automation SET candidate=? WHERE owner=? AND id=?', (facts.get('full_name'), *key))
-            # Never publish an experienced candidate's empty job history or an unsubstantiated
-            # technical-skills section. A short factual answer is enough; AI handles presentation.
-            questions = []
-            for index, entry in enumerate(facts['experience']):
-                if not entry['bullets']:
-                    questions.append({'id': f'experience.{index}.bullets', 'section': 'experience',
-                                      'entry': index, 'field': 'bullets',
-                                      'label': 'Actual work at ' + entry['company'],
-                                      'explanation': 'In your own simple words, what did you do? '
-                                                     'Do not invent tools or results. ResumeOps handles formatting.',
-                                      'value': ''})
-            if not facts['skills']:
-                questions.append({'id': 'skills', 'section': 'profile', 'entry': None, 'field': 'skills',
-                                  'label': 'Tools and technologies you actually used',
-                                  'explanation': 'List only technologies you have truly used, separated by commas. '
-                                                 'AI will organize them for the target role.',
-                                  'value': ''})
-            if questions:
-                checkpoints.update(draft=facts, questions=questions)
-                with closing(self.connection()) as db, db:
-                    db.execute("UPDATE automation SET status='needs_input',stage='Confirming essential career facts',"
-                               "percent=30,error=?,checkpoints=?,updated=? WHERE owner=? AND id=?",
-                               ('A client-ready resume needs real work and technology evidence. '
-                                'Confirm these basic facts to continue.', json.dumps(checkpoints), updated(), *key))
-                return
-            progress(30, 'Candidate facts validated')
             role = request['role']
             years = request.get('years')
             if years is None:
                 years = inferred_years(facts)
             intelligence = checkpoints.get('role')
             if intelligence is None:
-                progress(33, f'Selected role analysis: {role}')
+                progress(26, f'Selected role analysis: {role}')
                 intelligence = checkpoint('role', role_intelligence(role, self.workspace.root))
+            target = {'role': intelligence['role'], 'keywords': intelligence['terms']}
+            # What the documents do not say (the work done in a job, the skills) is drafted by AI for the selected
+            # role and shown pre-filled with the project suggestions, for one confirmation. Drafts never become
+            # resume content unconfirmed; the candidate keeps, edits or clears every line.
+            missing = [index for index, entry in enumerate(facts['experience']) if not entry['bullets']]
+            if (missing or not facts['skills']) and not checkpoints.get('drafts_reviewed'):
+                progress(28, f'AI drafting {intelligence["label"]} content for your review')
+                work, skills = draft_role_content(facts, target, intelligence['label'], years, missing,
+                                                  not facts['skills'], model, draft_progress)
+                questions = [self._draft_question(facts, index, work.get(index), intelligence['label'])
+                             for index in missing]
+                if not facts['skills']:
+                    questions.append({
+                        'id': 'skills', 'section': 'profile', 'entry': None, 'field': 'skills', 'drafted': bool(skills),
+                        'label': f'Skills for {intelligence["label"]}' + (' (AI draft)' if skills else ''),
+                        'explanation': ('AI suggested these for the role. Keep only tools you have used; add or remove any.'
+                                        if skills else 'List the tools and technologies you have used, separated by commas.'),
+                        'value': ', '.join(skills)})
+                proposals = []
+                if not facts.get('projects') and not checkpoints.get('projects_reviewed'):
+                    proposals = checkpoints.get('proposals_made')
+                    if proposals is None:
+                        progress(29, 'Project selection: proposing role-specific projects')
+                        proposals = checkpoint('proposals_made', propose_projects(
+                            {**facts, 'skills': facts['skills'] or skills}, target, intelligence['label'], years,
+                            model, proposal_progress))
+                checkpoints.update(draft=facts, questions=questions)
+                if proposals:
+                    checkpoints['proposals'] = proposals
+                drafted = sum(1 for question in questions if question.get('drafted'))
+                message = (f'AI drafted {intelligence["label"]} content from your job titles and dates. Keep what you '
+                           'actually did, edit anything, then confirm once.' if drafted else
+                           'Add what you did in these jobs, or leave a job without details. Then confirm once.')
+                if proposals:
+                    message += ' Choose which suggested projects you have built.'
+                with closing(self.connection()) as db, db:
+                    db.execute("UPDATE automation SET status='needs_input',stage=?,percent=30,error=?,checkpoints=?,"
+                               'updated=? WHERE owner=? AND id=?',
+                               (f'Review AI drafts for {intelligence["label"]}', message, json.dumps(checkpoints),
+                                updated(), *key))
+                return
+            progress(30, 'Candidate facts validated')
             progress(40, 'Role keywords and skill areas prepared')
             with closing(self.connection()) as db, db:  # History label for a job submitted before roles were recorded
                 db.execute('UPDATE automation SET role=COALESCE(role,?) WHERE owner=? AND id=?', (intelligence['label'], *key))
