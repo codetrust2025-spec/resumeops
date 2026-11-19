@@ -472,6 +472,8 @@ Field guide:
 - portfolio: a personal website URL that is not LinkedIn or GitHub.
 - skills: ONE skill per item. Split lists like "Python, SQL, Docker" into separate items.
 - projects: one item per project line from a Projects section.
+- certifications: include an earned certificate or course-completion credential explicitly awarded to the candidate,
+  including standalone certificate scans. Quote its credential title exactly. Leave planned or unearned credentials out.
 Schema:
 {"full_name":field,"headline":field,"email":field,"phone":field,"location":field,
  "linkedin":field,"github":field,"portfolio":field,"current_company":field,"summary":field,

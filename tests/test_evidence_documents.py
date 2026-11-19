@@ -168,3 +168,19 @@ $g.Dispose();$f.Dispose();$b.Dispose()'''
             with self.assertRaises(NeedsInput) as caught:
                 source_profile('Sample Candidate\nPlanned certification: Cloud Basics', object(), evidence_documents=True)
         self.assertEqual(caught.exception.draft['certifications'], [])
+
+    def test_missing_scanned_credential_becomes_a_confirmation_before_publication(self):
+        from resume_bot.automation import apply_answers
+        draft = {'full_name': 'Sample Candidate', 'phone': '+91 9000000000', 'email': '',
+                 'experience': [], 'education': [{'institution': 'Example College', 'degree': 'Diploma',
+                                                  'start': '', 'end': '2024', 'details': ''}],
+                 'skills': ['Python'], 'certifications': [], 'projects': []}
+        source = ('Sample Candidate\nEducation\nDiploma, Example College, 2024\nSkills\nPython\n'
+                  'Certificate of Completion\nSample Candidate\nPython Fundamentals')
+        with patch('resume_bot.automation.extract_profile', return_value=draft):
+            with self.assertRaises(NeedsInput) as caught:
+                source_profile(source, object(), evidence_documents=True)
+        self.assertEqual([q['field'] for q in caught.exception.questions], ['certifications'])
+        confirmed = apply_answers(caught.exception.draft, caught.exception.questions,
+                                  {'certifications': 'Python Fundamentals'})
+        self.assertEqual(confirmed['certifications'], ['Python Fundamentals'])
