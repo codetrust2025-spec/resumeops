@@ -256,6 +256,12 @@ def form_fields(source):
     return found
 
 
+def _states_span(source, value):
+    """True when the resume writes `value` as both ends of a range ("Jan 2019 - Jan 2019", "2019 to 2019")."""
+    same = r'\s+'.join(map(re.escape, value.split()))
+    return bool(re.search(rf'(?<![\w]){same}\s*(?:-|–|—|to|till|until)\s*{same}(?![\w])', source, re.I))
+
+
 def _repair_form(out, source):
     """Fill fields the model left empty from labelled rows, copying the row values verbatim."""
     form = {key: value for key, (value, _) in form_fields(source).items()}
@@ -307,11 +313,13 @@ def repair(out, source, name_hint=''):
     lines = _lines(source)
     head = lines[:6]
     _repair_form(out, source)
-    # One stated date is never both ends of a span ("2022 - 2022" for a stated passing year of 2022).
+    # One stated date is never both ends of a span ("2019 - 2019" for "..., 2019"). The same value counts
+    # as a span only when the resume writes it as one; the year appearing elsewhere (in a job's dates) is
+    # not evidence of a span for this entry.
     for section, keep in (('education', 'end'), ('experience', 'start')):
         for entry in out[section]:
-            stated = _norm(entry.get('start'))
-            if entry.get('start') and stated == _norm(entry.get('end')) and _norm(source).count(stated) < 2:
+            stated = (entry.get('start') or '').strip()
+            if stated and _norm(stated) == _norm(entry.get('end')) and not _states_span(source, stated):
                 entry['start' if keep == 'end' else 'end'] = ''
     # An email cell often carries a note ("asha@example.com (personal address)"): keep the address only.
     if out['email'] and not EMAIL.fullmatch(out['email']):

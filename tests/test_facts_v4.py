@@ -4,6 +4,7 @@ employer and claim no unsupported quality, and jobs stranded by an older extract
 Every candidate here is fictional."""
 import base64
 import json
+import shutil
 import sys
 import tempfile
 import unittest
@@ -191,6 +192,57 @@ class FormResumeTests(unittest.TestCase):
         profile = apply_answers(raised.exception.draft, raised.exception.questions,
                                 {'education.0.degree': 'B.Tech', 'education.0.institution': 'Example Institute of Technology'})
         self.assertEqual(profile['education'][0]['degree'], 'B.Tech')
+
+
+class DateSpanTests(unittest.TestCase):
+    """Production (acceptance of d5f11f3): "..., 2019" printed as "2019 - 2019" because 2019 also appeared in
+    job dates elsewhere in the resume."""
+    SOURCE = ('Asha Example\nExample Cloud Pvt Ltd, Senior Backend Engineer, Jan 2022 - Present\n'
+              'Sample Analytics LLP, Backend Engineer, Jul 2019 - Dec 2021\n'
+              'Demo Retail Inc, Software Intern, Jan 2019 - Jun 2019\n'
+              'Education\nB.E. Computer Engineering, Example Institute of Technology, 2019\n')
+
+    def repaired(self, source, start, end):
+        from resume_bot.ingest import repair
+        out = {key: '' for key in ('full_name', 'headline', 'email', 'phone', 'location', 'linkedin', 'github',
+                                   'portfolio', 'current_company', 'summary')}
+        out.update(full_name='Asha Example', skills=[], certifications=[], projects=[], experience=[],
+                   education=[{'institution': 'Example Institute of Technology', 'degree': 'B.E. Computer Engineering',
+                               'start': start, 'end': end, 'details': ''}])
+        return repair(out, source)['education'][0]
+
+    def test_a_year_stated_once_for_the_degree_is_the_completion_year(self):
+        school = self.repaired(self.SOURCE, '2019', '2019')
+        self.assertEqual((school['start'], school['end']), ('', '2019'))
+
+    def test_a_range_the_resume_writes_is_kept(self):
+        source = self.SOURCE.replace('Technology, 2019', 'Technology, 2019 - 2019')
+        school = self.repaired(source, '2019', '2019')
+        self.assertEqual((school['start'], school['end']), ('2019', '2019'))
+        school = self.repaired(self.SOURCE.replace('Technology, 2019', 'Technology, 2015 - 2019'), '2015', '2019')
+        self.assertEqual((school['start'], school['end']), ('2015', '2019'))
+
+
+@unittest.skipUnless(all(shutil.which(t) for t in ('pdflatex', 'pdftotext')), 'needs pdfLaTeX and pdftotext')
+class EmDashPdfTests(unittest.TestCase):
+    def test_a_fact_with_an_em_dash_builds_and_passes_the_strict_pdf_check(self):
+        # Production: the summary copied "—" from the facts and the builder refused the resume on every retry.
+        from resume_bot.claim_audit import matches_pdf_text
+        from resume_bot.compile import compile_latex, verify_pdf
+        from resume_bot.latex import render
+        from resume_bot.profile import validate_profile
+        facts = json.loads(json.dumps(SummaryAttributionTests.PROFILE))
+        facts['skills'] = ['Python', 'Django — REST Framework', 'Kubernetes']
+        facts['education'][0]['degree'] = 'B.E. — Computer Engineering'
+        summary = composed_summary(facts, 'Python Backend Developer', 7, ['Python', 'Django'])
+        self.assertIn('—', summary)
+        self.assertEqual(summary_problems(summary, facts, 'Python Backend Developer', 7), [])
+        profile = validate_profile({**facts, 'headline': 'Python Backend Developer', 'summary': summary})
+        with tempfile.TemporaryDirectory() as temp:
+            (Path(temp) / 'main.tex').write_text(render(profile, years=7), encoding='utf-8')
+            pdf = compile_latex(Path(temp))
+            verify_pdf(pdf, profile, 2)
+            self.assertTrue(matches_pdf_text(read_resume_text(pdf), profile, 7))
 
 
 class SummaryAttributionTests(unittest.TestCase):
