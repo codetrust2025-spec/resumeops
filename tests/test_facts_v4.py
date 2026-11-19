@@ -194,6 +194,41 @@ class FormResumeTests(unittest.TestCase):
         self.assertEqual(profile['education'][0]['degree'], 'B.Tech')
 
 
+class JobLocationTests(unittest.TestCase):
+    """Production (acceptance of c4c7bfe): the model put the header address ("Pune, India") on every job and
+    quoted the header line, which is verbatim, as its evidence."""
+
+    def test_the_header_address_is_not_a_job_location(self):
+        sys.path.insert(0, str(ROOT / 'tests'))
+        from test_extraction_recovery import RESUME, QuotingModel
+
+        class HeaderLocation(QuotingModel):
+            def generate(self, prompt, schema=None, on_progress=None):
+                data = super().generate(prompt, schema, on_progress)
+                for job in data['experience']:
+                    if job['position']['value']:
+                        job['location'] = quote('Pune, India', 'asha.example@example.com, Pune, India')
+                return data
+        with self.assertRaises(NeedsInput) as raised:  # the freelance role states no employer
+            source_profile(RESUME, HeaderLocation())
+        self.assertEqual([job['location'] for job in raised.exception.draft['experience']], ['', '', '', ''])
+
+    def test_a_location_written_with_the_role_is_kept(self):
+        sys.path.insert(0, str(ROOT / 'tests'))
+        from test_extraction_recovery import RESUME, QuotingModel
+        source = RESUME.replace('Example Cloud Pvt Ltd, Senior Backend Engineer, Jan 2022 - Present',
+                                'Example Cloud Pvt Ltd, Senior Backend Engineer, Bengaluru, Jan 2022 - Present')
+
+        class StatedLocation(QuotingModel):
+            def generate(self, prompt, schema=None, on_progress=None):
+                data = super().generate(prompt, schema, on_progress)
+                data['experience'][0]['location'] = quote('Bengaluru')
+                return data
+        with self.assertRaises(NeedsInput) as raised:
+            source_profile(source, StatedLocation())
+        self.assertEqual(raised.exception.draft['experience'][0]['location'], 'Bengaluru')
+
+
 class DateSpanTests(unittest.TestCase):
     """Production (acceptance of d5f11f3): "..., 2019" printed as "2019 - 2019" because 2019 also appeared in
     job dates elsewhere in the resume."""

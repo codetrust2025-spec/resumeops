@@ -193,6 +193,15 @@ def source_profile(source, ai, on_progress=None, notices=None):
                     f'The resume does not show this {FIELD_NAMES[field]} with the role. Confirm or correct it.',
                     job, suggest=True)
         job['bullets'] = [bullet for bullet in job['bullets'] if phrase(bullet) in block]
+        if job.get('location') and phrase(job['location']) not in block:
+            job['location'] = ''  # e.g. the candidate's header address: not where this job was
+    for index, job in enumerate(draft['experience']):
+        # A role that could not be anchored keeps a location only when it sits beside that role's lines.
+        if index not in anchors and job.get('location'):
+            keys = [phrase(job.get(k) or '') for k in ('company', 'position')]
+            near = [' '.join(lines[i:i + 3]) for i, line in enumerate(lines) if any(k and k in line for k in keys)]
+            if not any(phrase(job['location']) in text for text in near):
+                job['location'] = ''
     from .generate import clean_bullet
     for job in draft['experience']:
         job['bullets'] = [clean_bullet(bullet) for bullet in job['bullets'] if clean_bullet(bullet)]
