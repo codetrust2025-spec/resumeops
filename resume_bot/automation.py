@@ -79,7 +79,7 @@ def select_target(title):
     return ' '.join(title.split())
 
 
-FIELD_NAMES = {'full_name': 'full name', 'email': 'email address', 'bullets': 'work activity', 'company': 'employer',
+FIELD_NAMES = {'full_name': 'full name', 'email': 'email address', 'bullets': 'work activity', 'skills': 'technical skills', 'company': 'employer',
                'position': 'job title', 'start': 'start date', 'end': 'end date',
                'institution': 'institution', 'degree': 'degree'}
 ANSWER_LIMIT = 250
@@ -306,7 +306,12 @@ def apply_answers(draft, questions, answers):
             # A year typed into "Degree" would print as the degree; names are written in words.
             raise AnswerError(NAMED_FIELDS[question['field']], qid)
         target = draft if question['entry'] is None else draft[question['section']][question['entry']]
-        target[question['field']] = [value] if question['field'] == 'bullets' else value
+        if question['field'] == 'bullets':
+            target['bullets'] = [value]
+        elif question['field'] == 'skills':
+            target['skills'] = _form_lines(value, 'Technical skills', ANSWER_LIMIT, commas=True)
+        else:
+            target[question['field']] = value
     try:
         return validate_profile(draft)
     except ValueError as exc:
