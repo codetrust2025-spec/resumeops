@@ -11,52 +11,85 @@
 <script defer src="/recovery.js"></script>
 <script defer src="/automation.js"></script>
 </head>
-<body>
-<header class="auto-nav"><div class="width"><strong>ResumeOps</strong><a href="#auto-jobs">My resumes</a></div></header>
-<main class="width auto-main">
-  <h1>Create a verified resume</h1>
-  <p>Start with your name, phone and target role. AI writes from real evidence; if essential work or education facts are missing, it asks before publication.</p>
-  <section id="auto-status" class="auto-card" hidden aria-live="polite">
-    <strong id="auto-stage"></strong>
-    <div class="auto-progress"><progress id="auto-progress" max="100" value="0" aria-label="Verified processing progress"></progress><span id="auto-percent">0%</span></div>
-    <p id="auto-error" role="alert"></p>
-  </section>
-  <form id="ai-form" class="auto-card">
-    <label>Target role (technology or job role)
-      <input name="role" id="auto-role" list="auto-role-options" maxlength="100" required autocomplete="off"
-             placeholder="Search roles, e.g. Java Backend Developer">
-      <span id="auto-role-hint" class="field-hint" aria-live="polite"></span>
-    </label>
-    <datalist id="auto-role-options"></datalist>
-    <label id="auto-custom-wrap" hidden>Custom role title
-      <input id="auto-custom-role" maxlength="100" placeholder="e.g. Kotlin Backend Developer">
-    </label>
-    <fieldset class="auto-choice">
-      <legend>Candidate evidence</legend>
-      <label><input type="radio" name="method" value="upload"> Upload existing resume</label>
-      <label><input type="radio" name="method" value="manual" checked> AI-first: name and phone</label>
-    </fieldset>
-    <label id="auto-upload">Resume file <span>PDF, DOCX or TXT, up to 12 MB</span>
-      <input type="file" id="auto-file" accept=".pdf,.docx,.txt" required>
-    </label>
-    <fieldset id="auto-manual" hidden disabled>
-      <legend>Candidate details</legend>
-      <div class="auto-grid" id="auto-basics"></div>
-      <label>Existing work or education facts (optional)
-        <textarea id="auto-background" name="background" rows="4" maxlength="7500"
-          placeholder="Paste real company, designation, dates, education or completed project facts. AI organizes them, never invents them."></textarea>
+<body class="auto-page">
+<header class="auto-nav"><div class="auto-bar"><strong>ResumeOps</strong><a href="#auto-jobs">My resumes</a></div></header>
+<main class="auto-dash">
+  <section class="auto-panel auto-create" aria-labelledby="auto-create-title">
+    <div class="auto-head">
+      <h1 id="auto-create-title">Create a verified resume</h1>
+      <p>Name, phone and target role. AI writes from real evidence and asks before publishing anything it cannot verify.</p>
+    </div>
+    <form id="ai-form" class="auto-card">
+      <label>Target role (technology or job role)
+        <input name="role" id="auto-role" list="auto-role-options" maxlength="100" required autocomplete="off"
+               placeholder="Search roles, e.g. Java Backend Developer">
+        <span id="auto-role-hint" class="field-hint" aria-live="polite"></span>
       </label>
-      <details><summary>Optional details and profiles</summary><div class="auto-grid" id="auto-optional"></div></details>
-      <div id="auto-lists"></div>
-    </fieldset>
-    <label class="auto-consent"><input id="auto-consent" type="checkbox" required>
-      I confirm my submitted facts are accurate. AI drafts from these facts; unverified career claims must not be published.</label>
-    <button id="auto-submit" type="submit" class="primary">Create verified resume</button>
-  </form>
-  <section id="auto-jobs" class="auto-card">
-    <h2>My resumes</h2>
-    <p id="auto-empty">No submissions yet.</p>
-    <ul id="auto-job-list"></ul>
+      <datalist id="auto-role-options"></datalist>
+      <label id="auto-custom-wrap" hidden>Custom role title
+        <input id="auto-custom-role" maxlength="100" placeholder="e.g. Kotlin Backend Developer">
+      </label>
+      <fieldset class="auto-choice">
+        <legend>Candidate evidence</legend>
+        <label><input type="radio" name="method" value="upload"> Upload existing resume</label>
+        <label><input type="radio" name="method" value="manual" checked> AI-first: name and phone</label>
+      </fieldset>
+      <label id="auto-upload">Resume file <span>PDF, DOCX or TXT, up to 12 MB</span>
+        <input type="file" id="auto-file" accept=".pdf,.docx,.txt" required>
+      </label>
+      <fieldset id="auto-manual" hidden disabled>
+        <legend>Candidate details</legend>
+        <div class="auto-grid" id="auto-basics"></div>
+        <label>Existing work or education facts (optional)
+          <textarea id="auto-background" name="background" rows="3" maxlength="7500"
+            placeholder="Paste real company, designation, dates, education or completed project facts. AI organizes them, never invents them."></textarea>
+        </label>
+        <div class="auto-accordions">
+          <details><summary>Optional details and profiles</summary><div class="auto-grid" id="auto-optional"></div></details>
+          <div id="auto-lists"></div>
+        </div>
+      </fieldset>
+      <label class="auto-consent"><input id="auto-consent" type="checkbox" required>
+        I confirm my submitted facts are accurate. AI drafts from these facts; unverified career claims must not be published.</label>
+      <button id="auto-submit" type="submit" class="primary">Create verified resume</button>
+    </form>
+  </section>
+  <section id="auto-jobs" class="auto-panel auto-history-panel" aria-labelledby="auto-jobs-title">
+    <div class="auto-history-head">
+      <h2 id="auto-jobs-title">My resumes</h2>
+      <span id="auto-count" class="auto-count" aria-live="polite"></span>
+    </div>
+    <section id="auto-status" class="auto-status" hidden aria-live="polite">
+      <strong id="auto-stage"></strong>
+      <div class="auto-progress"><progress id="auto-progress" max="100" value="0" aria-label="Verified processing progress"></progress><span id="auto-percent">0%</span></div>
+      <p id="auto-error" role="alert"></p>
+    </section>
+    <div class="auto-toolbar" role="search">
+      <label class="auto-search">Search resumes
+        <input type="search" id="auto-search" placeholder="Candidate or role" autocomplete="off">
+      </label>
+      <label>Filter by job role
+        <select id="auto-filter-role"><option value="">All roles</option></select>
+      </label>
+      <label>Filter by status
+        <select id="auto-filter-status">
+          <option value="">All statuses</option>
+          <option value="needs_input">Needs your input</option>
+          <option value="active">In progress</option>
+          <option value="complete">Complete</option>
+          <option value="blocked">Needs attention</option>
+        </select>
+      </label>
+    </div>
+    <div class="auto-history" id="auto-history">
+      <p id="auto-empty">No submissions yet.</p>
+      <ul id="auto-job-list"></ul>
+    </div>
+    <nav class="auto-pager" aria-label="Resume history pages">
+      <button type="button" id="auto-prev" class="secondary small" aria-label="Previous page">Previous</button>
+      <span id="auto-page" aria-live="polite"></span>
+      <button type="button" id="auto-next" class="secondary small" aria-label="Next page">Next</button>
+    </nav>
   </section>
 </main>
 </body>
