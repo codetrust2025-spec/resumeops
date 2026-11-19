@@ -281,6 +281,7 @@ def check(ai_first=False):
                     senior.get_by_label('Target role').fill('Principal Platform Engineer')
                     senior.get_by_label('Total years of experience').fill('9')
                     senior.get_by_label('Full name').fill('Senior Synthetic')
+                    senior.get_by_label('Phone').fill('+91 90000 00003')
                     senior.get_by_label('Email').fill('senior@example.com')
                     senior.locator('#ai-section-work_experience > summary').click()
                     senior.get_by_role('button', name='Add work experience').click()
