@@ -140,14 +140,20 @@ NON_SOFTWARE_TITLE = re.compile(r'\b(?:civil|mechanical|electrical|electronics|c
                                 r'production|maintenance|quality control|process|biomedical|mining|marine)\b', re.IGNORECASE)
 
 
+# Fundamentals every technical role lists; they never show that a candidate has a particular role's stack.
+FUNDAMENTALS = {'sql', 'html', 'css', 'git', 'bash', 'yaml', 'json', 'linux', 'rest apis', 'shell scripting'}
+LANGUAGES = {'python', 'java', 'javascript', 'typescript', 'go', 'golang', 'c#', 'c++', 'scala', 'kotlin', 'ruby', 'php'}
+
+
 def core_terms(target):
-    """The selected role's distinctive technologies: its catalog keywords that at most 3 roles share (BigQuery and
-    Dataflow for GCP Data Engineer, Spring Boot for Java Backend), not languages every role lists."""
-    from collections import Counter
-    load_roles()
-    keywords = role_entry(target).get('keywords') or target.get('keywords', [])
-    counts = Counter(k.casefold() for role in ROLES.values() for k in role.get('keywords', []))
-    core = [k for k in keywords[:15] if counts[k.casefold()] <= 3 and not matched_terms(GENERIC_TOOLS, k)]
+    """The selected role's own stack: its leading catalog technologies, without fundamentals (SQL, HTML, Git) and
+    without general languages unless the role is named after one (Python for Python Backend Developer, not for GCP
+    Data Engineer). React.js and Redux for React.js Developer; BigQuery and Dataflow for GCP Data Engineer."""
+    entry = role_entry(target)
+    keywords = entry.get('keywords') or target.get('keywords', [])
+    title = (entry.get('name') or '').casefold()
+    core = [k for k in keywords[:10] if k.casefold() not in FUNDAMENTALS
+            and (k.casefold() not in LANGUAGES or re.search(r'(?<!\w)' + re.escape(k.casefold()) + r'(?!\w)', title))]
     return core or list(keywords[:10])
 
 

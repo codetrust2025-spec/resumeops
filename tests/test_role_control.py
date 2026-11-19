@@ -155,6 +155,19 @@ class SelectedRoleControlsTheResumeTests(unittest.TestCase):
         self.assertNotIn('React.js', present_for_role(mixed, role('GCP Data Engineer'), 'GCP Data Engineer', [])[0]['skills'])
         self.assertNotIn('BigQuery', present_for_role(mixed, role('React.js Developer'), 'React.js Developer', [])[0]['skills'])
 
+    def test_role_skills_are_asked_for_only_when_the_roles_own_stack_is_missing(self):
+        # Production acceptance caught an earlier rule asking a React.js developer with React.js and Redux for skills.
+        for title, skills, asked in (
+                ('React.js Developer', ['React.js', 'Redux', 'TypeScript', 'REST APIs'], False),
+                ('Python Backend Developer', ['Python', 'SQL', 'Django', 'Kubernetes'], False),
+                ('DevOps Engineer', ['Python', 'Kubernetes'], False),
+                ('GCP Data Engineer', ['Python', 'SQL'], True),
+                ('GCP Data Engineer', [], True),
+                ('Java Backend Developer', ['REST APIs', 'Git', 'SQL'], True),
+                ('Angular Developer', ['TypeScript'], True)):
+            with self.subTest(role=title, skills=skills):
+                self.assertEqual(lacks_role_core(skills, role(title)), asked)
+
     def test_a_custom_role_with_few_terms_does_not_drop_the_candidates_skills(self):
         custom = {'role': 'custom', 'keywords': ['Python']}
         shown, _ = present_for_role(react_developer(), custom, 'Backend Engineer', [])
