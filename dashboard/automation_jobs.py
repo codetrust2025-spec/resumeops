@@ -662,7 +662,8 @@ class AutomationJobs:
                     db.execute('UPDATE automation SET origin=? WHERE owner=? AND id=?',
                                (json.dumps(origin), owner, identifier))
                 confirmed = [('Reviewed and confirmed by you (AI draft): ' if question.get('drafted') else
-                              'Confirmed by you: ') + question['label'].replace(' (AI draft)', '') + '.'
+                              'Confirmed by you: ') + re.sub(r' \((?:AI draft|with AI suggestions)\)$', '',
+                                                            question['label']) + '.'
                              for question in questions]
             db.execute("UPDATE automation SET status='queued',stage='Answers saved; continuing',error=NULL,"
                        'next_retry=0,checkpoints=?,notice=?,updated=? WHERE owner=? AND id=?',
@@ -909,10 +910,15 @@ class AutomationJobs:
                 checkpoints.update(draft=facts, questions=questions)
                 if proposals:
                     checkpoints['proposals'] = proposals
-                drafted = sum(1 for question in questions if question.get('drafted'))
-                message = (f'AI drafted {label} content: work lines from your job titles and dates, and skills the role '
-                           'needs. Keep only what is true for you, edit anything, then confirm once.' if drafted else
-                           'Add what you did in these jobs (or leave a job without details) and your skills. Then confirm once.')
+                # Say exactly what was drafted and what is asked: "work lines" only when work lines were drafted.
+                has = lambda field, drafted: any(q['field'] == field and bool(q.get('drafted')) == drafted for q in questions)
+                drafted = [text for field, text in (('bullets', 'work lines from your job titles and dates'),
+                                                    ('skills', 'skill suggestions')) if has(field, True)]
+                asked = [text for field, text in (('bullets', 'what you did in these jobs (or leave a job without '
+                                                              'details)'), ('skills', 'your skills')) if has(field, False)]
+                message = ' '.join(filter(None, [
+                    f'AI drafted {" and ".join(drafted)} for {label}. Keep only what is true for you and edit anything.'
+                    if drafted else '', 'Add ' + ' and '.join(asked) + '.' if asked else '', 'Then confirm once.']))
                 if proposals:
                     message += ' Choose which suggested projects you have built.'
                 with closing(self.connection()) as db, db:

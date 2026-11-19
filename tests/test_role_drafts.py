@@ -225,7 +225,9 @@ class ReviewOnceTests(unittest.TestCase):
         self.assertIn('React.js components', job['questions'][0]['value'])
         self.assertEqual(job['questions'][2]['value'], 'JavaScript, HTML, React.js, TypeScript, CSS')
         self.assertEqual([p['name'] for p in job['proposals']], ['Practice Catalogue', 'Practice Planner'])
-        self.assertIn('AI drafted Frontend Developer content', job['error'])
+        self.assertEqual(job['error'], 'AI drafted work lines from your job titles and dates and skill suggestions for '
+                                       'Frontend Developer. Keep only what is true for you and edit anything. Then '
+                                       'confirm once. Choose which suggested projects you have built.')
 
         with self.assertRaises(AnswerError):  # the projects are decided together with the drafts
             self.jobs.decide_projects(OWNER, self.id, [{'include': False}, {'include': False}])
