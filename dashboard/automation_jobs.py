@@ -447,6 +447,31 @@ class AutomationJobs:
                                    source_profile(source, model, extraction_progress))
             with closing(self.connection()) as db, db:
                 db.execute('UPDATE automation SET candidate=? WHERE owner=? AND id=?', (facts.get('full_name'), *key))
+            # Never publish an experienced candidate's empty job history or an unsubstantiated
+            # technical-skills section. A short factual answer is enough; AI handles presentation.
+            questions = []
+            for index, entry in enumerate(facts['experience']):
+                if not entry['bullets']:
+                    questions.append({'id': f'experience.{index}.bullets', 'section': 'experience',
+                                      'entry': index, 'field': 'bullets',
+                                      'label': 'Actual work at ' + entry['company'],
+                                      'explanation': 'In your own simple words, what did you do? '
+                                                     'Do not invent tools or results. ResumeOps handles formatting.',
+                                      'value': ''})
+            if not facts['skills']:
+                questions.append({'id': 'skills', 'section': 'profile', 'entry': None, 'field': 'skills',
+                                  'label': 'Tools and technologies you actually used',
+                                  'explanation': 'List only technologies you have truly used, separated by commas. '
+                                                 'AI will organize them for the target role.',
+                                  'value': ''})
+            if questions:
+                checkpoints.update(draft=facts, questions=questions)
+                with closing(self.connection()) as db, db:
+                    db.execute("UPDATE automation SET status='needs_input',stage='Confirming essential career facts',"
+                               "percent=30,error=?,checkpoints=?,updated=? WHERE owner=? AND id=?",
+                               ('A client-ready resume needs real work and technology evidence. '
+                                'Confirm these basic facts to continue.', json.dumps(checkpoints), updated(), *key))
+                return
             progress(30, 'Candidate facts validated')
             role = request['role']
             years = request.get('years')
