@@ -282,6 +282,7 @@ class AutomationJobs:
         with closing(self.connection()) as db, db:
             db.execute("UPDATE automation SET status='queued' WHERE status='processing'")
         self._recheck_stale_questions()
+        self._backfill_labels()
         while not self.stopping.is_set():
             if not self.workspace.automation_ready():
                 self.stopping.wait(3)
@@ -316,6 +317,27 @@ class AutomationJobs:
                 db.execute("UPDATE automation SET status='queued',stage='Reading the resume again with improved extraction',"
                            'error=NULL,next_retry=0,checkpoints=?,updated=? WHERE owner=? AND id=?',
                            (json.dumps(checkpoints), time.time(), row['owner'], row['id']))
+
+    def _backfill_labels(self):
+        """History labels (role, candidate) for jobs handed off before they were recorded, read from the job's
+        own verified build request. A request is used only when its owner and job id match the row."""
+        from resume_bot.workflow import load_roles, normalize_request, role_name
+
+        load_roles()
+        with closing(self.connection()) as db, db:
+            rows = db.execute('SELECT owner, id, job, role, candidate FROM automation '
+                              'WHERE job IS NOT NULL AND (role IS NULL OR candidate IS NULL)').fetchall()
+            for row in rows:
+                try:
+                    packet = json.loads((self.workspace.private_inbox / row['job']).read_text(encoding='utf-8'))
+                    profile, target = normalize_request(packet)
+                    if not target or target.get('automation_owner') != row['owner'] or target.get('automation_id') != row['id']:
+                        continue
+                    role, candidate = role_name(target), profile.get('full_name')
+                except (OSError, ValueError, KeyError, TypeError):
+                    continue
+                db.execute('UPDATE automation SET role=COALESCE(role,?), candidate=COALESCE(candidate,?) '
+                           'WHERE owner=? AND id=?', (role, candidate, row['owner'], row['id']))
 
     def _prepare(self, job):
         from resume_bot.automation import (EXTRACTION_VERSION, NeedsInput, inferred_years, role_intelligence,
@@ -380,6 +402,8 @@ class AutomationJobs:
                 progress(33, f'Selected role analysis: {role}')
                 intelligence = checkpoint('role', role_intelligence(role, self.workspace.root))
             progress(40, 'Role keywords and skill areas prepared')
+            with closing(self.connection()) as db, db:  # History label for a job submitted before roles were recorded
+                db.execute('UPDATE automation SET role=COALESCE(role,?) WHERE owner=? AND id=?', (intelligence['label'], *key))
             tailored = checkpoints.get('tailored')
             if tailored is None:
                 profile, how = tailor_role(facts, intelligence['label'], years, intelligence, model,

@@ -415,6 +415,27 @@ class StrandedJobTests(unittest.TestCase):
         self.assertEqual(facts['education'][0]['degree'], 'B.Tech in Information Technology')
         self.assertEqual(row['candidate'], 'Kiran Example')
 
+    def test_history_labels_are_backfilled_from_the_jobs_own_build_request(self):
+        # Production: a job submitted before roles were recorded finished with no role in History.
+        profile = {'full_name': 'Kiran Example', 'email': 'kiran.example@example.com', 'skills': ['React.js'],
+                   'experience': [{'company': 'Example Works Solutions Pvt Ltd', 'position': 'Frontend Developer',
+                                   'start': 'July 2023', 'end': 'Present', 'location': '', 'bullets': []}],
+                   'education': []}
+        rows = (('b' * 64, self.id, 'private-own.json', 'b' * 64), ('e' * 64, 'e' * 12, 'private-other.json', 'f' * 64))
+        self.workspace.private_inbox.mkdir(parents=True, exist_ok=True)
+        with closing(self.jobs.connection()) as db, db:
+            for owner, identifier, name, packet_owner in rows:
+                (self.workspace.private_inbox / name).write_text(json.dumps({'profile': profile, 'target': {
+                    'role': 'react-developer', 'keywords': [], 'template': 'standard', 'experience_years': 3,
+                    'approved': True, 'automation_owner': packet_owner, 'automation_id': identifier}}), encoding='utf-8')
+                db.execute("INSERT OR REPLACE INTO automation(owner,id,payload,status,stage,percent,created,updated,job) "
+                           "VALUES (?,?,NULL,'handed_off','Waiting for the resume builder',65,1,1,?)", (owner, identifier, name))
+        self.jobs._backfill_labels()
+        with closing(self.jobs.connection()) as db:
+            labels = {r['owner'][0]: (r['role'], r['candidate']) for r in db.execute('SELECT owner, role, candidate FROM automation')}
+        self.assertEqual(labels['b'], ('React.js Developer', 'Kiran Example'))
+        self.assertEqual(labels['e'], (None, None), 'a build request owned by someone else is never used')
+
     def test_questions_from_an_older_extraction_are_read_again(self):
         stale = {'source': read_resume_text(form_docx(Path(self.temp.name) / 'again.docx')),
                  'draft': {'experience': []}, 'questions': [{'id': 'experience.0.company'}]}
