@@ -262,6 +262,34 @@ def _states_span(source, value):
     return bool(re.search(rf'(?<![\w]){same}\s*(?:-|–|—|to|till|until)\s*{same}(?![\w])', source, re.I))
 
 
+ONGOING = re.compile(r'\b(?:present|current(?:ly)?|ongoing|pursuing|expected|onwards|till date|to date)\b', re.I)
+
+
+def _lone_year_completes(lines, entry, value):
+    """True when a qualification's own line(s) state `value` once and not as the start of a range or an
+    ongoing course ("B.E. ..., 2019"): that single date is the completion year. Only the lines naming this
+    institution or degree count, so a job range elsewhere ("Jul 2019 - Dec 2021") is never evidence."""
+    keys = [_norm(entry.get(key)) for key in ('institution', 'degree') if (entry.get(key) or '').strip()]
+    text = ' '.join(' '.join(lines[i:i + 2]) for i, line in enumerate(lines) if any(k in _norm(line) for k in keys))
+    date = r'\s+'.join(map(re.escape, value.split()))
+    return bool(text) and bool(re.search(rf'(?<!\w){date}(?!\w)', text, re.I)) and \
+        not re.search(rf'(?<!\w){date}\s*(?:-|–|—|to|till|until)\s*\w', text, re.I) and not ONGOING.search(text)
+
+
+ROLE_FILLER = {'a', 'an', 'the', 'at', 'in', 'as', 'for', 'with', 'and', 'of', 'from', 'to', 'till', 'until', 'present',
+               'current', 'currently', 'working', 'worked', 'work', 'role', 'position', 'designation', 'job',
+               'title', 'company', 'employer'}
+
+
+def _restates_role(bullet, job):
+    """True when a bullet only repeats its role's own title, employer, dates or location ("Frontend Developer",
+    "Working as a Frontend Developer in Pune"): it states no work activity."""
+    words = re.findall(r'\w+', str(bullet).casefold())
+    role = set(re.findall(r'\w+', ' '.join(str(job.get(key) or '') for key in
+                                           ('position', 'company', 'start', 'end', 'location')).casefold()))
+    return bool(words) and all(word in role or word in ROLE_FILLER for word in words)
+
+
 def _repair_form(out, source):
     """Fill fields the model left empty from labelled rows, copying the row values verbatim."""
     form = {key: value for key, (value, _) in form_fields(source).items()}
@@ -323,6 +351,16 @@ def repair(out, source, name_hint=''):
             stated = (entry.get('start') or '').strip()
             if stated and _norm(stated) == _norm(entry.get('end')) and not _states_span(source, stated):
                 entry['start' if keep == 'end' else 'end'] = ''
+    # A qualification's single stated year read as its start ("B.E. ..., 2019" -> start 2019, no end) is its
+    # completion year: the value moves, nothing is added (acceptance of adef0a9).
+    for entry in out['education']:
+        stated = (entry.get('start') or '').strip()
+        if stated and not (entry.get('end') or '').strip() and _lone_year_completes(lines, entry, stated):
+            entry['start'], entry['end'] = '', stated
+    # A bullet that only restates its role states no work activity. Kept, it hid the missing activity from the
+    # evidence gate, which never asked, and the resume printed the job title as the work (acceptance of 0093559).
+    for job in out['experience']:
+        job['bullets'] = [bullet for bullet in job.get('bullets') or [] if not _restates_role(bullet, job)]
     # An email cell often carries a note ("asha@example.com (personal address)"): keep the address only.
     # Email is optional, but a supplied one that cannot be read is kept as written, so the candidate is
     # asked to correct it (automation.source_profile); it is never silently dropped.

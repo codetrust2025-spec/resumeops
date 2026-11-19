@@ -639,8 +639,12 @@ function renderJobs(jobs) {
   byId('auto-empty').hidden = jobs.length > 0;
   byId('auto-delete-all').hidden = jobs.length === 0;
   byId('auto-count').textContent = jobs.length ? jobs.length + (jobs.length === 1 ? ' resume' : ' resumes') : '';
+  // Which rows this page holds, e.g. "Page 1 of 3 · 1–6 of 15" ("15 shown" read as if all 15 were on screen).
+  const first = page * PAGE_SIZE + 1;
+  const last = Math.min(shown.length, (page + 1) * PAGE_SIZE);
   byId('auto-page').textContent = !jobs.length ? '' : shown.length ?
-    'Page ' + (page + 1) + ' of ' + pages + ' · ' + shown.length + ' shown' : 'No resumes match the search or filters';
+    'Page ' + (page + 1) + ' of ' + pages + ' · ' + first + '–' + last + ' of ' + shown.length
+    : 'No resumes match the search or filters';
   byId('auto-prev').disabled = page === 0;
   byId('auto-next').disabled = page >= pages - 1;
 }
