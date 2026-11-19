@@ -79,7 +79,7 @@ def select_target(title):
     return ' '.join(title.split())
 
 
-FIELD_NAMES = {'full_name': 'full name', 'email': 'email address', 'phone': 'phone number', 'bullets': 'work activity', 'skills': 'technical skills', 'company': 'employer',
+FIELD_NAMES = {'full_name': 'full name', 'email': 'email address', 'phone': 'phone number', 'bullets': 'work activity', 'skills': 'technical skills', 'certifications': 'earned certificates', 'company': 'employer',
                'position': 'job title', 'start': 'start date', 'end': 'end date',
                'institution': 'institution', 'degree': 'degree'}
 ANSWER_LIMIT = 250
@@ -267,6 +267,11 @@ def source_profile(source, ai, on_progress=None, notices=None, identity=None, ev
                                  'explanation': 'Your documents provide partial evidence. Add your full name, phone, '
                                                 'actual education or work history, and relevant skills that are missing.',
                                  'value': ''}])
+    if evidence_documents and not draft['certifications'] and re.search(
+            r'\bcertificate\s+of\s+(?:completion|achievement)\b', source, re.I):
+        ask('profile', None, 'certifications',
+            'Your documents include a certificate, but its credential title could not be verified. '
+            'Enter the earned title exactly as printed. Separate multiple titles with commas.')
     _ask_what_validation_rejects(draft, questions, ask)
     if questions:
         raise NeedsInput(draft, questions)
@@ -341,8 +346,8 @@ def apply_answers(draft, questions, answers):
         target = draft if question['entry'] is None else draft[question['section']][question['entry']]
         if question['field'] == 'bullets':
             target['bullets'] = [value]
-        elif question['field'] == 'skills':
-            target['skills'] = _form_lines(value, 'Technical skills', ANSWER_LIMIT, commas=True)
+        elif question['field'] in ('skills', 'certifications'):
+            target[question['field']] = _form_lines(value, FIELD_NAMES[question['field']], ANSWER_LIMIT, commas=True)
         else:
             target[question['field']] = value
     try:
