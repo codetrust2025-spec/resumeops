@@ -15,7 +15,7 @@
 <header class="auto-nav"><div class="width"><strong>ResumeOps</strong><a href="#auto-jobs">My resumes</a></div></header>
 <main class="width auto-main">
   <h1>Create a verified resume</h1>
-  <p>Choose a target role and submit your facts once. ResumeOps prepares the PDF, LaTeX, and Overleaf project.</p>
+  <p>Start with your name, phone and target role. AI writes from real evidence; if essential work or education facts are missing, it asks before publication.</p>
   <section id="auto-status" class="auto-card" hidden aria-live="polite">
     <strong id="auto-stage"></strong>
     <div class="auto-progress"><progress id="auto-progress" max="100" value="0" aria-label="Verified processing progress"></progress><span id="auto-percent">0%</span></div>
@@ -33,8 +33,8 @@
     </label>
     <fieldset class="auto-choice">
       <legend>Candidate evidence</legend>
-      <label><input type="radio" name="method" value="upload" checked> Upload resume</label>
-      <label><input type="radio" name="method" value="manual"> Enter details</label>
+      <label><input type="radio" name="method" value="upload"> Upload existing resume</label>
+      <label><input type="radio" name="method" value="manual" checked> AI-first: name and phone</label>
     </fieldset>
     <label id="auto-upload">Resume file <span>PDF, DOCX or TXT, up to 12 MB</span>
       <input type="file" id="auto-file" accept=".pdf,.docx,.txt" required>
@@ -42,11 +42,15 @@
     <fieldset id="auto-manual" hidden disabled>
       <legend>Candidate details</legend>
       <div class="auto-grid" id="auto-basics"></div>
-      <details><summary>Contact and profiles</summary><div class="auto-grid" id="auto-optional"></div></details>
+      <label>Existing work or education facts (optional)
+        <textarea id="auto-background" name="background" rows="4" maxlength="7500"
+          placeholder="Paste real company, designation, dates, education or completed project facts. AI organizes them, never invents them."></textarea>
+      </label>
+      <details><summary>Optional details and profiles</summary><div class="auto-grid" id="auto-optional"></div></details>
       <div id="auto-lists"></div>
     </fieldset>
     <label class="auto-consent"><input id="auto-consent" type="checkbox" required>
-      I confirm these details are accurate and authorize ResumeOps to create and publish this resume in its Overleaf account.</label>
+      I confirm my submitted facts are accurate. AI drafts from these facts; unverified career claims must not be published.</label>
     <button id="auto-submit" type="submit" class="primary">Create verified resume</button>
   </form>
   <section id="auto-jobs" class="auto-card">

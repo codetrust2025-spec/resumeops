@@ -269,8 +269,10 @@ def _repair_form(out, source):
         return
     if not out['full_name'] and form.get('full_name') and _looks_like_name(form['full_name']):
         out['full_name'] = form['full_name']
-    if not out['email'] and form.get('email') and EMAIL.search(form['email']):
-        out['email'] = EMAIL.search(form['email']).group(0)
+    if not out['email'] and form.get('email'):
+        found = EMAIL.search(form['email'])
+        # An unreadable supplied address is kept as written so the candidate can correct it.
+        out['email'] = found.group(0) if found else ' '.join(form['email'].split())
     if not out['phone'] and form.get('phone') and PHONE.search(form['phone']):
         out['phone'] = PHONE.search(form['phone']).group(0).strip()
     company, position = form.get('company', ''), form.get('position', '')
@@ -322,9 +324,11 @@ def repair(out, source, name_hint=''):
             if stated and _norm(stated) == _norm(entry.get('end')) and not _states_span(source, stated):
                 entry['start' if keep == 'end' else 'end'] = ''
     # An email cell often carries a note ("asha@example.com (personal address)"): keep the address only.
+    # Email is optional, but a supplied one that cannot be read is kept as written, so the candidate is
+    # asked to correct it (automation.source_profile); it is never silently dropped.
     if out['email'] and not EMAIL.fullmatch(out['email']):
         match = EMAIL.search(out['email'])
-        out['email'] = match.group(0) if match else ''
+        out['email'] = match.group(0) if match else ' '.join(out['email'].split())
     # Name: the model sometimes leaves it empty or puts it in the headline.
     if out['full_name'] and out['headline'] and _norm(out['headline']) == _norm(out['full_name']):
         out['headline'] = ''
@@ -353,6 +357,9 @@ def repair(out, source, name_hint=''):
     if not out['phone']:
         match = PHONE.search(source)
         out['phone'] = match.group(0).strip() if match else ''
+    elif PHONE.search(out['phone']):
+        # Keep the number only: a cell note such as "(Mobile)" is not part of a client-ready header.
+        out['phone'] = PHONE.search(out['phone']).group(0).strip()
     urls = [url.rstrip('.') for url in URL.findall(source) if '@' not in url]
     for key, host in (('linkedin', 'linkedin.com'), ('github', 'github.com')):
         if not out[key]:

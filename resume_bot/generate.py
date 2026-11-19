@@ -182,7 +182,18 @@ def _families(title):
 
 
 def same_track(profile, role_title):
-    """True when a past job title is in the target role's family (or is the same title)."""
+    """A shared job family does not establish years in a named technology."""
+    documented_work = ' '.join((job.get('position', '') + ' ' + ' '.join(job.get('bullets', [])))
+                               for job in profile['experience'])
+    named_stacks = {
+        'angular': r'\bangular\b', 'react': r'\breact(?:\.js)?\b',
+        'node': r'\bnode(?:\.js)?\b', 'python': r'\bpython\b',
+        'java': r'\bjava\b(?!script)', 'django': r'\bdjango\b',
+        'spring': r'\bspring(?: boot)?\b',
+    }
+    for marker in named_stacks.values():
+        if re.search(marker, role_title, re.IGNORECASE) and not re.search(marker, documented_work, re.IGNORECASE):
+            return False
     target = _families(role_title)
     for job in profile['experience']:
         title = job.get('position') or ''
@@ -351,8 +362,41 @@ def _known_stack(items, profile, role):
     return out[:8]
 
 
+# Common libraries and protocols outside the role catalog that proposal bullets name.
+EXTRA_TOOLS = ['Formik', 'WebSocket', 'WebSockets', 'Socket.IO', 'GraphQL', 'Apollo', 'Axios', 'Next.js', 'Nuxt',
+               'Tailwind CSS', 'Tailwind', 'Bootstrap', 'Firebase', 'Supabase', 'Webpack', 'Vite', 'Storybook',
+               'Chart.js', 'D3.js', 'Recharts', 'Zustand', 'MobX', 'React Query', 'TanStack Query', 'Yup', 'Zod',
+               'Prisma', 'Sequelize', 'Mongoose', 'Hibernate', 'Stripe', 'Auth0', 'OAuth', 'JWT', 'Elasticsearch',
+               'RabbitMQ', 'gRPC', 'Nginx', 'Swagger', 'OpenAPI', 'Pandas', 'NumPy', 'Matplotlib', 'Streamlit']
+
+
+def named_tools():
+    """Named tools (not concepts such as "Unit Testing" or "Accessibility") the catalog and common libraries know."""
+    load_roles()
+    groups = [(name, items) for role in ROLES.values() for name, items in (role.get('groups') or {}).items()]
+    concepts = {item for name, items in groups if name == 'Concepts' for item in items}
+    tools = {item for name, items in groups if name != 'Concepts' for item in items}
+    return sorted((tools - concepts) | set(EXTRA_TOOLS))
+
+
+def tools_outside(text, allowed, tools=None):
+    """Named tools a sentence uses that are not among `allowed` (a stack and/or confirmed skills)."""
+    listed = ' '.join(allowed)
+    return [term for term in matched_terms(tools or named_tools(), text) if not matched_terms([term], listed)]
+
+
+# PostgreSQL and other databases persist password hashes; they are not password-hashing
+# algorithms. Catch this concrete category error before a proposal reaches candidate review.
+PASSWORD_HASH_DATABASE_MISMATCH = re.compile(
+    r'\b(?:hash(?:ed|ing)?|encrypt(?:ed|ing)?|salt(?:ed|ing)?)\s+'
+    r'(?:user\s+)?passwords?\s+(?:using|with|via|through)\s+'
+    r'(?:PostgreSQL|Postgres|MySQL|MariaDB|SQLite|MongoDB|Redis)\b', re.IGNORECASE)
+
+
 def proposal_problems(text):
     problems = []
+    if PASSWORD_HASH_DATABASE_MISMATCH.search(text):
+        problems.append('database incorrectly presented as a password-hashing tool')
     if METRIC.search(text):
         problems.append('metric')
     if PRODUCTION_CLAIM.search(text):
@@ -383,15 +427,27 @@ def propose_projects(profile, target, role_title, years, ai, on_progress=None):
     except Exception:
         return []
     proposals, names = [], set()
+    skills, tools = profile.get('skills', []), named_tools()
     items = data.get('projects') if isinstance(data, dict) else None
     for item in (items if isinstance(items, list) else [])[:3]:
         # Malformed model output is skipped, never trusted and never fatal to the job.
         if not isinstance(item, dict) or not isinstance(item.get('bullets'), list) or not isinstance(item.get('stack'), list):
             continue
         name = plain(item.get('name', ''))[:70]
-        bullets = [plain_words(clean_bullet(plain(b))) for b in item.get('bullets', [])]
-        bullets = [b for b in bullets if 5 <= len(b.split()) <= 35 and not proposal_problems(b)][:5]
         stack = _known_stack(item.get('stack', []), profile, role)
+        bullets = []
+        for bullet in (plain_words(clean_bullet(plain(b))) for b in item.get('bullets', [])):
+            if not 5 <= len(bullet.split()) <= 35 or proposal_problems(bullet):
+                continue
+            # A bullet may name only tools in this project's stack or the candidate's confirmed skills
+            # ("onboarding flow with Formik" is invented when the candidate never listed Formik).
+            if tools_outside(bullet, stack + skills, tools):
+                continue
+            for term in tools_outside(bullet, stack, tools):  # a confirmed skill it uses joins the reviewed stack
+                if len(stack) < 8:
+                    stack.append(next((s for s in skills if matched_terms([term], s)), term))
+            bullets.append(bullet)
+        bullets = bullets[:5]
         texts = [plain(item.get(k, '')) for k in ('problem', 'architecture', 'responsibilities')]
         # Descriptions are review context (never printed): only invented metrics or production claims disqualify.
         context_problems = any(METRIC.search(t) or PRODUCTION_CLAIM.search(t) for t in texts)

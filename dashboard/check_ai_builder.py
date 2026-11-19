@@ -179,10 +179,11 @@ def check(ai_first=False):
                     second.close()
 
                     fixture = {'profile': {'full_name': 'AI First Synthetic', 'email': 'ai-first@example.com',
+                                           'phone': '+91 90000 00001',
                                            'education': [{'degree': 'B.Tech, Computer Science',
                                                           'institution': 'Imported University',
                                                           'start': '2022', 'end': ''}]},
-                               'source': 'AI First Synthetic, ai-first@example.com\nSkills: Python'}
+                               'source': 'AI First Synthetic, ai-first@example.com, +91 90000 00001\nSkills: Python'}
                     access['armed'] = False
                     with patch.object(workspace, 'draft', return_value=fixture):
                         page.locator('#ai-file').set_input_files({'name': 'synthetic.txt', 'mimeType': 'text/plain',
@@ -194,7 +195,7 @@ def check(ai_first=False):
                     expect(page.locator('#ai-upload-options')).not_to_have_attribute('open', '')
                     expect(page.locator('#ai-section-education > summary')).to_contain_text('(1)')
                     expect(page.get_by_label('Full name')).to_have_value('AI First Synthetic')
-                    expect(page.get_by_label('Phone')).to_have_value('')
+                    expect(page.get_by_label('Phone')).to_have_value('+91 90000 00001')
                     # A lone year extracted as the start date is the graduation year.
                     expect(page.locator('#ai-education [name=graduation_year]')).to_have_value('2022')
                     # Degree and branch arrive as one verbatim span and are split into their own fields.
@@ -208,6 +209,9 @@ def check(ai_first=False):
                     page.get_by_label('Target role').fill('Full Stack Developer')
                     page.get_by_label('Total years of experience').fill('0')
                     page.get_by_label('Full name').fill('AI First Synthetic')
+                    page.locator('#ai-contact > summary').click()
+                    expect(page.locator('#ai-contact')).to_have_attribute('open', '')
+                    page.get_by_label('Phone').fill('+91 90000 00002')
                     page.get_by_label('Email').fill('ai-first@example.com')
                     page.get_by_role('button', name='Add education').click()
                     page.get_by_label('Degree', exact=True).fill('BSc')
@@ -279,6 +283,9 @@ def check(ai_first=False):
                     senior.get_by_label('Target role').fill('Principal Platform Engineer')
                     senior.get_by_label('Total years of experience').fill('9')
                     senior.get_by_label('Full name').fill('Senior Synthetic')
+                    senior.locator('#ai-contact > summary').click()
+                    expect(senior.locator('#ai-contact')).to_have_attribute('open', '')
+                    senior.get_by_label('Phone').fill('+91 90000 00003')
                     senior.get_by_label('Email').fill('senior@example.com')
                     senior.locator('#ai-section-work_experience > summary').click()
                     senior.get_by_role('button', name='Add work experience').click()

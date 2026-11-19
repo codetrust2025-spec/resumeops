@@ -40,10 +40,14 @@ def validate_profile(data):
     extra = set(data) - accepted
     if extra:
         raise ProfileError('Unknown fields: ' + ', '.join(sorted(extra)))
-    out = {key: _string(data.get(key, ''), key, key in ('full_name', 'email'))
+    out = {key: _string(data.get(key, ''), key, key == 'full_name')
            for key in ('full_name', 'headline', 'email', 'phone', 'location', 'linkedin', 'github', 'summary')}
-    if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', out['email']):
+    if out['email'] and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', out['email']):
         raise ProfileError('Invalid email address')
+    # Legacy stored profiles may use email as their contact method. New candidate
+    # intake endpoints enforce phone explicitly before a profile reaches this validator.
+    if not out['email'] and not out['phone']:
+        raise ProfileError('A phone number or email address is required')
     for k in ('skills', 'experience', 'education', 'certifications'):
         if not isinstance(data.get(k, []), list):
             raise ProfileError(f'{k}: expected array')

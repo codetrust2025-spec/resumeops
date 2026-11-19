@@ -185,11 +185,17 @@ class ProjectTests(unittest.TestCase):
                 'bullets': ['Designed REST endpoints for creating and tracking orders.', 'Cut response time by 40% with caching.',
                             'Mapped entities with Spring Data JPA and PostgreSQL.', 'Wrote JUnit 5 tests for the service layer.']}
         metric_only = {**good, 'name': 'Bad', 'bullets': ['Served 10,000 users in production.'] * 3}
+        bad_security = {**good, 'name': 'Bad Security Design', 'bullets': [
+            'Hashed user passwords using PostgreSQL and Spring Boot for account authentication.',
+            'Designed REST endpoints for account registration and login workflows.',
+            'Wrote JUnit 5 tests for authentication and account service behavior.']}
         projects = propose_projects(facts(), {'role': 'java-backend-developer'}, 'Java Backend Developer', 3,
-                                    self.Proposer({'projects': [good, metric_only, 'not an object']}))
+                                    self.Proposer({'projects': [good, metric_only, bad_security, 'not an object']}))
         self.assertEqual([p['name'] for p in projects], ['Order Service'])
         self.assertNotIn('Quantum DB', projects[0]['stack'])
         self.assertFalse(any('40%' in b for b in projects[0]['bullets']))
+        self.assertFalse(any('Bad Security Design' == p['name'] for p in projects),
+                         'a database must not be presented as a password-hashing algorithm')
 
     def test_confirmed_project_format_round_trips(self):
         text = confirmed_project('Order Service', ['Java 17', 'Spring Boot'], ['- Designed REST endpoints.', 'Wrote tests.'])
@@ -249,7 +255,8 @@ class WorkflowTests(unittest.TestCase):
         self.workspace = Workspace(Path(self.temp.name), code_root=ROOT)
         self.jobs = AutomationJobs(self.workspace)
         self.enqueued = []
-        candidate = {'full_name': 'Arun Sample', 'email': 'arun.sample@example.com', 'years_of_experience': 3,
+        candidate = {'full_name': 'Arun Sample', 'email': 'arun.sample@example.com', 'phone': '+91 90000 00002',
+                     'years_of_experience': 3,
                      'skills': ', '.join(FIXTURE['skills']),
                      'work_experience': [{'company': 'DemoByte Technologies (fictional)', 'position': 'Java Backend Developer',
                                           'start': 'July 2023', 'end': 'October 2026', 'location': '',

@@ -8,22 +8,24 @@ of that dependency remain independent release gates.
 
 ## Candidate input — exactly fourteen categories
 
-1. Target role or job title (`role`).
-2. Total years of experience (`years_of_experience`).
-3. Full name (`full_name`).
-4. Email (`email`).
-5. Phone (`phone`).
-6. Location (`location`).
-7. Current company (`current_company`).
-8. LinkedIn (`linkedin`).
-9. GitHub (`github`).
-10. Portfolio URL (`portfolio`).
-11. Work experience (multiple; employer, designation, start/end dates and location only) (`work_experience`).
-12. Education (multiple; degree, specialization, university, graduation year, CGPA) (`education`).
-13. Projects (multiple; titles/names; source-imported notes may be retained as evidence internally) (`projects`).
+**Only three fields are mandatory to start:** target role (`role`), candidate full name (`full_name`) and a valid phone number (`phone`, 7–15 digits). Email is optional; if supplied, it must be valid. The phone number is the required contact channel.
+
+1. Target role or job title (`role`) — mandatory, selected from the role catalog.
+2. Total years of experience (`years_of_experience`) — optional; derive only when dates support it.
+3. Full name (`full_name`) — mandatory; preserve exactly as supplied.
+4. Email (`email`) — optional.
+5. Phone (`phone`) — mandatory.
+6. Location (`location`) — optional.
+7. Current company (`current_company`) — optional.
+8. LinkedIn (`linkedin`) — optional.
+9. GitHub (`github`) — optional.
+10. Portfolio URL (`portfolio`) — optional.
+11. Work experience (multiple; employer, designation, start/end dates and location only) (`work_experience`) — extract from uploaded source where available.
+12. Education (multiple; degree, specialization, university, graduation year, CGPA) (`education`) — extract from uploaded source where available.
+13. Projects (multiple; titles/names; source-imported notes may be retained as evidence internally) (`projects`) — include only when evidenced or confirmed.
 14. Coding platforms (optional; platform name and URL) (`coding_platforms`).
 
-No candidate-written summary, objective, skills, achievement bullets, work duties, certification list, target keyword list, or pasted job description should be required or requested as an extra form input. AI can use extracted original resume text as internal source evidence; do not treat past resume statements as employer-verified facts.
+AI must create the summary, organize skills, draft role-relevant responsibility wording, suggest project ideas and optimize ATS presentation. Do not ask the candidate to write resume sections manually. When source evidence is insufficient, show concise AI-generated claims for candidate confirmation or ask for a short factual clarification; never invent a completed job, technology, responsibility, metric, qualification or project. A project idea remains a portfolio idea until the candidate actually completes and confirms it.
 
 ## Proposed end-to-end flow
 

@@ -38,6 +38,7 @@ def attested_profile(candidate):
     if not isinstance(candidate, dict):
         raise ValueError('Expected candidate form details.')
     candidate = deepcopy(candidate)
+    candidate.pop('background', None)  # Optional freeform facts belong to minimal intake.
     extras = {key: _form_lines(candidate.pop(key, ''), label, limit, commas=key == 'skills')
               for key, (label, limit) in SCRATCH_TEXT.items()}
     duties = [_form_lines(entry.pop('responsibilities', '') if isinstance(entry, dict) else '',
@@ -78,12 +79,14 @@ def select_target(title):
     return ' '.join(title.split())
 
 
-FIELD_NAMES = {'full_name': 'full name', 'email': 'email address', 'company': 'employer',
+FIELD_NAMES = {'full_name': 'full name', 'email': 'email address', 'phone': 'phone number', 'bullets': 'work activity', 'skills': 'technical skills', 'company': 'employer',
                'position': 'job title', 'start': 'start date', 'end': 'end date',
                'institution': 'institution', 'degree': 'degree'}
 ANSWER_LIMIT = 250
 # Said under each question, so the answer goes in the right field.
-FIELD_HINTS = {'company': ' Enter the company name.', 'position': ' Enter the job title.',
+FIELD_HINTS = {'phone': ' Include the country code, for example +91 98765 43210.',
+               'email': ' Correct it so recruiters can reach you.',
+               'company': ' Enter the company name.', 'position': ' Enter the job title.',
                'institution': ' Enter the college or university name.',
                'degree': ' Enter the degree name, for example B.Tech or MCA.',
                'start': ' For example Jan 2022.', 'end': ' For example Mar 2024, or Present.'}
@@ -127,7 +130,7 @@ def _describe(entry, section):
     return ' '.join(words)
 
 
-def source_profile(source, ai, on_progress=None, notices=None):
+def source_profile(source, ai, on_progress=None, notices=None, identity=None):
     """Verified facts from a resume, keeping every entry it lists.
 
     A fact the resume does not state, or does not tie to its entry, is never completed or guessed.
@@ -135,6 +138,11 @@ def source_profile(source, ai, on_progress=None, notices=None):
     editable field; ``apply_answers`` then finishes the profile. ``notices`` is accepted for
     callers of the earlier version; entries are no longer omitted."""
     draft = extract_profile(source, ai, for_review=True, on_progress=on_progress)
+    # Identity was attested in the minimal form. Never let model extraction replace it.
+    if identity:
+        for field in ('full_name', 'phone', 'email'):
+            if identity.get(field):
+                draft[field] = identity[field]
     lines = [phrase(line) for line in source.splitlines() if line.strip()]
     questions = []
     # Labelled form rows ("Company Name" | value) tie their values together by label, not by distance.
@@ -151,9 +159,16 @@ def source_profile(source, ai, on_progress=None, notices=None):
                           'entry': index, 'field': field, 'label': label, 'explanation': explanation,
                           'value': (holder.get(field) or '') if suggest else ''})
 
-    for field in ('full_name', 'email'):
+    for field in ('full_name',):
         if not (draft.get(field) or '').strip():
             ask('profile', None, field, f"The resume does not state the candidate's {FIELD_NAMES[field]}.")
+    # Contact rules: a phone number is mandatory; email is optional, but a supplied email must be readable.
+    phone = (draft.get('phone') or '').strip()
+    if not phone:
+        ask('profile', None, 'phone', 'The resume does not state a phone number, and one is required.')
+    elif not readable_phone(phone):
+        ask('profile', None, 'phone', 'The phone number in the resume could not be read clearly. Confirm or correct it.',
+            suggest=True)
     if (draft.get('email') or '').strip() and not EMAIL_FORMAT.fullmatch(draft['email'].strip()):
         ask('profile', None, 'email', 'The email address in the resume could not be read clearly. Confirm or correct it.',
             suggest=True)
@@ -248,6 +263,11 @@ def source_profile(source, ai, on_progress=None, notices=None):
 EMAIL_FORMAT = re.compile(r'[^\s@]+@[^\s@]+\.[^\s@]+')
 
 
+def readable_phone(value):
+    """A phone number has 7-15 digits (E.164 allows at most 15); notes such as "(Mobile)" are allowed."""
+    return 7 <= len(re.sub(r'\D', '', value)) <= 15
+
+
 def _ask_what_validation_rejects(draft, questions, ask):
     """Run the final profile check now, with the open questions answered by placeholders. Whatever it
     would still reject becomes an editable question here, so answering never ends in an error that names
@@ -257,7 +277,8 @@ def _ask_what_validation_rejects(draft, questions, ask):
         trial = copy.deepcopy(draft)
         for question in questions:
             target = trial if question['entry'] is None else trial[question['section']][question['entry']]
-            target[question['field']] = 'reader@example.com' if question['field'] == 'email' else 'Answer'
+            target[question['field']] = {'email': 'reader@example.com', 'phone': '+910000000000'}.get(
+                question['field'], 'Answer')
         try:
             validate_profile(trial)
             return
@@ -299,11 +320,18 @@ def apply_answers(draft, questions, answers):
             raise AnswerError(f'Keep the {name} under {ANSWER_LIMIT} characters.', qid)
         if question['field'] == 'email' and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', value):
             raise AnswerError('Enter a valid email address.', qid)
+        if question['field'] == 'phone' and not readable_phone(value):
+            raise AnswerError('Enter a valid phone number with 7 to 15 digits.', qid)
         if question['field'] in NAMED_FIELDS and not re.search(r'[^\W\d_]', value):
             # A year typed into "Degree" would print as the degree; names are written in words.
             raise AnswerError(NAMED_FIELDS[question['field']], qid)
         target = draft if question['entry'] is None else draft[question['section']][question['entry']]
-        target[question['field']] = value
+        if question['field'] == 'bullets':
+            target['bullets'] = [value]
+        elif question['field'] == 'skills':
+            target['skills'] = _form_lines(value, 'Technical skills', ANSWER_LIMIT, commas=True)
+        else:
+            target[question['field']] = value
     try:
         return validate_profile(draft)
     except ValueError as exc:

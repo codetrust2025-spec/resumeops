@@ -30,7 +30,7 @@ def candidate():
     return {
         'role': 'Frontend Developer', 'years_of_experience': 2,
         'full_name': 'Example Candidate', 'email': 'example@example.com',
-        'phone': '', 'location': 'Hyderabad', 'current_company': '',
+        'phone': '+91 9000000000', 'location': 'Hyderabad', 'current_company': '',
         'linkedin': '', 'github': '', 'portfolio': '',
         'work_experience': [
             {'company': 'Example Company', 'position': 'Developer', 'start': 'Jan 2024',
@@ -125,9 +125,20 @@ class AIIntakeContract(unittest.TestCase):
         self.assertEqual(sourced['suggestions']['key_achievements']['items'],
                          ['Reduced latency by 90%'])
 
+    def test_phone_is_mandatory_even_when_email_is_present(self):
+        data = candidate()
+        data['phone'] = ''
+        with self.assertRaisesRegex(IntakeError, 'phone'):
+            validate_intake(data)
+        data['phone'] = '12345'
+        with self.assertRaisesRegex(IntakeError, 'phone'):
+            validate_intake(data)
+        data['phone'] = '+91 9000000000'
+        self.assertEqual(validate_intake(data)['phone'], '+91 9000000000')
+
     def test_invalid_intake_is_rejected(self):
-        for patch in ({'email': 'not an email'}, {'years_of_experience': -1},
-                      {'years_of_experience': '4'}, {'full_name': ''}):
+        for patch in ({'email': 'not an email'}, {'phone': ''}, {'phone': '12345'},
+                      {'years_of_experience': -1}, {'years_of_experience': '4'}, {'full_name': ''}):
             data = candidate()
             data.update(patch)
             with self.assertRaises(IntakeError):

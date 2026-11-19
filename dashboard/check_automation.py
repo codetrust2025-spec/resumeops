@@ -30,7 +30,7 @@ from resume_bot.storage import write_json
 PUBLIC = 'https://resumeops.example'
 TARGET = 'Azure Data Engineer'
 SOURCE = """Synthetic Applicant
-synthetic@example.test
+synthetic@example.test | +44 7700 900123
 Experience
 Example Studio
 UI Developer
@@ -49,7 +49,8 @@ Cloud Practitioner (planned)
 
 
 def make_facts():
-    return {'full_name': 'Synthetic Applicant', 'email': 'synthetic@example.test', 'skills': ['SQL', 'JavaScript'],
+    return {'full_name': 'Synthetic Applicant', 'email': 'synthetic@example.test', 'phone': '+44 7700 900123',
+            'skills': ['SQL', 'JavaScript'],
             'experience': [{'company': 'Example Studio', 'position': 'UI Developer',
                             'start': 'January 2022', 'end': 'December 2024',
                             'bullets': ['Built reporting interfaces using SQL queries.']}],
@@ -205,10 +206,14 @@ def check():
                     page.goto(origin)
                     target = page.get_by_label('Target role')
                     target.fill('Full Stack Developer')
-                    page.get_by_label('Enter details').check()
+                    page.get_by_label('AI-first: name and phone').check()
                     page.get_by_label('Full name').fill('Fresher Synthetic')
-                    page.get_by_label('Email').fill('fresher@example.test')
-                    page.get_by_label('Years of experience').fill('0')
+                    page.get_by_label('Phone', exact=True).fill('+44 7700 900456')
+                    page.get_by_text('Optional details and profiles', exact=True).click()
+                    page.get_by_label('Email (optional)').fill('fresher@example.test')
+                    page.get_by_label('Years of experience (optional)').fill('0')
+                    # Without confirmed skills the evidence gate would (rightly) ask for them first.
+                    page.get_by_label('Technical skills (comma separated)').fill('SQL, JavaScript')
                     education = page.locator('details').filter(has=page.get_by_text('Education', exact=True))
                     education.locator('summary').click()
                     education.get_by_role('button', name='Add entry').click()
