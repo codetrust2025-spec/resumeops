@@ -51,8 +51,9 @@ def validate_intake(candidate):
         raise IntakeError('Target role and full name are required')
     if result['email'] and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', result['email']):
         raise IntakeError('Enter a valid email address, if supplied')
-    if not result['email'] and not result['phone']:
-        raise IntakeError('A phone number or email address is required')
+    phone_digits = re.sub(r'\D', '', result['phone'])
+    if not 7 <= len(phone_digits) <= 15:
+        raise IntakeError('A valid phone number with 7 to 15 digits is required')
     years = candidate.get('years_of_experience')
     if years is not None and (type(years) not in (int, float) or not 0 <= years <= 60):
         raise IntakeError('Total experience must be between 0 and 60 years')
