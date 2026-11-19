@@ -40,7 +40,9 @@ def flatten(suite):
 
 
 def unit_tests(part):
-    # Same discovery as `python -m unittest discover -s tests` from the repository root.
+    # Same discovery as `python -m unittest discover -s tests` from the repository root, which also puts the
+    # root on sys.path so the tests can import resume_bot and dashboard modules.
+    sys.path.insert(0, str(ROOT))
     tests = list(flatten(unittest.defaultTestLoader.discover(str(ROOT / 'tests'))))
     slow = part == 'unit-a'
     picked = [t for t in tests if (type(t).__module__ in SLOW_UNIT_MODULES) == slow]
