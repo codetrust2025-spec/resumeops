@@ -175,6 +175,11 @@ async function send() {
     }
     tracked = result.id;
     sendDelay = 2000;
+    // Show the new submission: first page, no search or filters hiding it.
+    page = 0;
+    byId('auto-search').value = '';
+    byId('auto-filter-role').value = '';
+    byId('auto-filter-status').value = '';
     await ResumeRecovery.remove('automation-pending');
     pending = null;
     form.reset();
@@ -234,12 +239,14 @@ function controlFor(message) {
   return byId('auto-submit');
 }
 
+// Compact action buttons: short visible text, full accessible names ("Download PDF", "Open Overleaf project").
 function links(job) {
   const box = element('div');
   box.className = 'auto-links';
-  for (const [label, filename] of [['Download PDF','resume.pdf'], ['Download LaTeX','main.tex'],
-    ['Download Overleaf PDF','overleaf.pdf']]) {
-    const link = element('a', label);
+  for (const [text, label, filename] of [['PDF', 'Download PDF', 'resume.pdf'], ['LaTeX', 'Download LaTeX', 'main.tex'],
+    ['Overleaf PDF', 'Download Overleaf PDF', 'overleaf.pdf']]) {
+    const link = element('a', text);
+    link.setAttribute('aria-label', label);
     link.href = '/api/artifact?' + new URLSearchParams({key:job.revision, name:filename, download:'1'});
     link.addEventListener('click', async event => {
       event.preventDefault();
@@ -251,13 +258,15 @@ function links(job) {
     });
     box.append(link);
   }
-  const preview = element('a', 'Preview PDF');
+  const preview = element('a', 'Preview');
+  preview.setAttribute('aria-label', 'Preview PDF');
   preview.href = '/api/artifact?' + new URLSearchParams({key: job.revision, name: 'resume.pdf'});
   preview.target = '_blank';
   preview.rel = 'noopener';
   box.append(preview);
   if (job.overleaf && /^https:\/\/www\.overleaf\.com\/project\/[A-Za-z0-9_-]+$/.test(job.overleaf)) {
-    const link = element('a', 'Open Overleaf project');
+    const link = element('a', 'Open Overleaf');
+    link.setAttribute('aria-label', 'Open Overleaf project');
     link.href = job.overleaf;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
@@ -476,35 +485,115 @@ function answerForm(job) {
   return box;
 }
 
+// One compact row per resume: "candidate · role · date" and the ATS score, then the real status and the
+// actions. Questions and project choices stay open on the row; the ATS breakdown and Regenerate open
+// under Details. A row keeps exactly one <strong>: its status.
 function jobItem(job) {
   const item = element('li');
   item.dataset.status = job.status;
   item.dataset.id = job.id;
+  const top = element('div');
+  top.className = 'auto-line';
   const label = element('span', meta(job));
   label.className = 'auto-meta';
+  top.append(label);
+  if (job.status === 'complete' && job.ats) {
+    const score = element('span', 'ATS ' + job.ats.ats_readiness);
+    score.className = 'auto-score';
+    score.title = 'ATS readiness out of 100';
+    top.append(score);
+  }
+  const line = element('div');
+  line.className = 'auto-line';
+  const state = element('div');
+  state.className = 'auto-state';
+  const body = element('div');
+  body.className = 'auto-body';
+  body.id = 'auto-body-' + job.id.slice(0, 16);
   if (job.status === 'needs_input') {
-    item.append(element('strong', 'Needs your input'), label,
-      (job.proposals || []).length ? proposalsForm(job) : answerForm(job));
+    state.append(element('strong', 'Needs your input'));
+    body.append((job.proposals || []).length ? proposalsForm(job) : answerForm(job));
   } else if (job.status === 'blocked') {
-    item.append(element('strong', 'Needs attention'), label, element('span', explain(job.error)));
+    state.append(element('strong', 'Needs attention'), element('span', explain(job.error)));
+  } else if (job.status === 'complete') {
+    state.append(element('strong', 'Complete'));
   } else {
-    item.append(element('strong', job.stage + ' · ' + job.percent + '%'), label);
-    if (job.status === 'retrying') item.append(element('span', retryText(job)));
+    const bar = element('progress');
+    bar.max = 100;
+    bar.value = job.percent;
+    bar.setAttribute('aria-label', 'Progress ' + job.percent + '%');
+    state.append(element('strong', job.status === 'retrying' ? 'Retrying' : 'In progress'), bar,
+      element('span', job.stage + ' · ' + job.percent + '%'));
+    if (job.status === 'retrying') state.append(element('span', retryText(job)));
   }
-  for (const notice of job.notice || []) item.append(element('span', notice));
+  line.append(state);
+  for (const notice of job.notice || []) body.append(element('span', notice));
   if (job.status === 'complete') {
-    if (job.ats) item.append(atsDetails(job.ats));
-    item.append(links(job));
-    if (job.regenerable) item.append(regenerateForm(job));
+    if (job.ats) body.append(atsDetails(job.ats));
+    const regenerate = job.regenerable ? regenerateForm(job) : null;
+    if (regenerate) body.append(regenerate);
+    const actions = links(job);
+    const open = show => {
+      body.hidden = !show;
+      details.setAttribute('aria-expanded', String(show));
+      details.textContent = show ? 'Hide details' : 'Details';
+    };
+    const details = element('button', 'Details');
+    details.type = 'button';
+    details.setAttribute('aria-controls', body.id);
+    details.addEventListener('click', () => open(body.hidden));
+    if (regenerate) {
+      const again = element('button', 'Regenerate');
+      again.type = 'button';
+      again.setAttribute('aria-controls', body.id);
+      again.addEventListener('click', () => { open(true); regenerate.querySelector('input').focus(); });
+      actions.append(again);
+    }
+    if (body.children.length) actions.append(details);
+    line.append(actions);
+    open(false);
   }
+  item.append(top, line);
+  if (body.children.length) item.append(body);
   return item;
 }
 
-// Keep each job's element (and anything typed into it) until that job itself changes.
+// History: search, role and status filters, rows needing input first, then pages of PAGE_SIZE.
+// Each job's element (and anything typed into it) is kept until that job itself changes.
+const PAGE_SIZE = 6;
 const rendered = new Map();
+let allJobs = [];
+let page = 0;
+
+function matches(job) {
+  const query = byId('auto-search').value.trim().toLowerCase();
+  const roleFilter = byId('auto-filter-role').value;
+  const statusFilter = byId('auto-filter-status').value;
+  if (query && !((job.candidate || '') + ' ' + (job.role || '')).toLowerCase().includes(query)) return false;
+  if (roleFilter && (job.role || '') !== roleFilter) return false;
+  if (statusFilter === 'active') return ACTIVE.has(job.status);
+  return !statusFilter || job.status === statusFilter;
+}
+
+function roleOptions(jobs) {
+  const select = byId('auto-filter-role');
+  const roles = [...new Set(jobs.map(job => job.role).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const current = [...select.options].slice(1).map(option => option.value);
+  if (roles.join('\n') === current.join('\n')) return;
+  const chosen = select.value;
+  select.replaceChildren(select.options[0], ...roles.map(name => { const o = element('option', name); o.value = name; return o; }));
+  select.value = roles.includes(chosen) ? chosen : '';
+}
+
 function renderJobs(jobs) {
+  allJobs = jobs;
+  roleOptions(jobs);
+  const ordered = [...jobs.filter(job => job.status === 'needs_input'), ...jobs.filter(job => job.status !== 'needs_input')];
+  const shown = ordered.filter(matches);
+  const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+  page = Math.min(page, pages - 1);
   const list = byId('auto-job-list');
-  const items = jobs.map(job => {
+  const items = shown.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map(job => {
     const json = JSON.stringify(job);
     const known = rendered.get(job.id);
     if (known && known.json === json) return known.item;
@@ -516,13 +605,24 @@ function renderJobs(jobs) {
     if (list.children[index] !== item) list.insertBefore(item, list.children[index] || null);
   });
   while (list.children.length > items.length) list.lastElementChild.remove();
+  byId('auto-empty').hidden = jobs.length > 0;
+  byId('auto-count').textContent = jobs.length ? jobs.length + (jobs.length === 1 ? ' resume' : ' resumes') : '';
+  byId('auto-page').textContent = !jobs.length ? '' : shown.length ?
+    'Page ' + (page + 1) + ' of ' + pages + ' · ' + shown.length + ' shown' : 'No resumes match the search or filters';
+  byId('auto-prev').disabled = page === 0;
+  byId('auto-next').disabled = page >= pages - 1;
+}
+
+function turnPage(step) {
+  page += step;
+  renderJobs(allJobs);
+  byId('auto-history').scrollTop = 0;
 }
 
 async function refresh() {
   const response = await ResumeAuth.call('/api/automation');
   if (!response.ok) throw new Error('Could not refresh your resumes.');
   const {jobs} = await response.json();
-  byId('auto-empty').hidden = jobs.length > 0;
   showCurrent(jobs);
   renderJobs(jobs);
 }
@@ -532,7 +632,13 @@ async function init() {
   byId('auto-optional').append(input(skillsField));
   byId('auto-optional').append(...optional.map(field => input(field)));
   collections.forEach(addSection);
-  form.addEventListener('change',mode);
+  byId('auto-search').addEventListener('input', () => { page = 0; renderJobs(allJobs); });
+  for (const id of ['auto-filter-role', 'auto-filter-status']) {
+    byId(id).addEventListener('change', () => { page = 0; renderJobs(allJobs); });
+  }
+  byId('auto-prev').addEventListener('click', () => turnPage(-1));
+  byId('auto-next').addEventListener('click', () => turnPage(1));
+  form.addEventListener('change', event => { if (event.target.name === 'method') mode(); });
   role.addEventListener('input', roleChanged);
   role.addEventListener('change', roleChanged);
   form.addEventListener('invalid', event => {
