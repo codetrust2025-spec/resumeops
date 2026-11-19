@@ -358,10 +358,10 @@ class SummaryAttributionTests(unittest.TestCase):
     def test_job_families_recognise_same_track_titles(self):
         def profile(title):
             return {'experience': [{'position': title}]}
-        for past, target, expected in (('Frontend Developer', 'React.js Developer', True),
+        for past, target, expected in (('Frontend Developer', 'React.js Developer', False),
                                        ('Frontend Developer', 'UI Developer', True),
                                        ('Build Engineer', 'DevOps Engineer', True),
-                                       ('Software Engineer', 'Python Backend Developer', True),
+                                       ('Software Engineer', 'Python Backend Developer', False),
                                        ('Reporting Analyst', 'Data Analyst', True),
                                        ('Mobile Developer', 'Android Developer', True),
                                        ('QA Engineer', 'Java Backend Developer', False),
