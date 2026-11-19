@@ -385,8 +385,18 @@ def tools_outside(text, allowed, tools=None):
     return [term for term in matched_terms(tools or named_tools(), text) if not matched_terms([term], listed)]
 
 
+# PostgreSQL and other databases persist password hashes; they are not password-hashing
+# algorithms. Catch this concrete category error before a proposal reaches candidate review.
+PASSWORD_HASH_DATABASE_MISMATCH = re.compile(
+    r'\b(?:hash(?:ed|ing)?|encrypt(?:ed|ing)?|salt(?:ed|ing)?)\s+'
+    r'(?:user\s+)?passwords?\s+(?:using|with|via|through)\s+'
+    r'(?:PostgreSQL|Postgres|MySQL|MariaDB|SQLite|MongoDB|Redis)\b', re.IGNORECASE)
+
+
 def proposal_problems(text):
     problems = []
+    if PASSWORD_HASH_DATABASE_MISMATCH.search(text):
+        problems.append('database incorrectly presented as a password-hashing tool')
     if METRIC.search(text):
         problems.append('metric')
     if PRODUCTION_CLAIM.search(text):
