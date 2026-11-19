@@ -406,14 +406,17 @@ class StrandedJobTests(unittest.TestCase):
                 patch.object(self.workspace, 'enqueue', return_value={'name': 'private-' + 'b' * 64 + '-1.json'}):
             self.jobs._prepare(self.row())
 
-    def test_form_docx_reaches_the_builder_without_questions(self):
+    def test_form_docx_extracts_facts_then_requests_missing_work_details(self):
         self.prepare(JoinedCellModel())
         row = self.row()
-        self.assertEqual(row['status'], 'handed_off', row['error'])
-        facts = json.loads(row['facts'])
+        self.assertEqual(row['status'], 'needs_input', row['error'])
+        self.assertIsNone(row['job'], 'no unsupported work claims may be published')
+        checkpoints = json.loads(row['checkpoints'])
+        facts = checkpoints['facts']
         self.assertEqual(facts['experience'][0]['company'], 'Example Works Solutions Pvt Ltd')
         self.assertEqual(facts['education'][0]['degree'], 'B.Tech in Information Technology')
         self.assertEqual(row['candidate'], 'Kiran Example')
+        self.assertIn('experience.0.bullets', [q['id'] for q in checkpoints['questions']])
 
     def test_history_labels_are_backfilled_from_the_jobs_own_build_request(self):
         # Production: a job submitted before roles were recorded finished with no role in History.
@@ -457,7 +460,9 @@ class StrandedJobTests(unittest.TestCase):
         self.assertEqual(rows['c']['status'], 'needs_input', 'questions from the current extraction stay')
         self.assertEqual(rows['d']['status'], 'needs_input', 'project choices are never discarded')
         self.prepare(JoinedCellModel())
-        self.assertEqual(self.row()['status'], 'handed_off')
+        self.assertEqual(self.row()['status'], 'needs_input')
+        self.assertIn('questions', json.loads(self.row()['checkpoints']),
+                      'recovery now asks for missing work evidence instead of publishing a thin resume')
 
 
 if __name__ == '__main__':
