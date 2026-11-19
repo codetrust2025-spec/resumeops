@@ -1,14 +1,20 @@
 name: ResumeOps checks
 on:
   push:
+    branches: [main]
   pull_request:
+
+concurrency:
+  group: resumeops-checks-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   checks:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     env:
       RESUME_BUILDER_REQUIRE_BROWSER: '1'
     steps:
@@ -16,33 +22,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: pip
       - name: Install build and browser dependencies
-        # The runner's Ubuntu mirror has stalled mid-download (no error, no progress) until the whole step
-        # timed out, which blocked deployments. Each apt attempt is bounded; a stalled one is retried on
-        # the main Ubuntu archive. A healthy run is unchanged (about 3 minutes).
-        timeout-minutes: 25
+        timeout-minutes: 2
         run: |
-          apt_update() {
-            sudo timeout 300 apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
-          }
-          apt_install() {
-            sudo dpkg --configure -a || true
-            sudo timeout 300 apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
-              install -y --no-install-recommends texlive-latex-extra lmodern poppler-utils
-          }
-          if ! apt_update; then
-            echo "::warning::apt update stalled or failed; retrying on archive.ubuntu.com"
-            sudo sed -i -E 's#https?://[A-Za-z0-9.-]*archive\.ubuntu\.com#http://archive.ubuntu.com#g' \
-              /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list 2>/dev/null || true
-            apt_update || { echo "::error::Ubuntu package indexes remain unavailable after fallback"; exit 1; }
-          fi
-          if ! apt_install; then
-            echo "::warning::apt install stalled or failed; retrying on archive.ubuntu.com"
-            sudo sed -i -E 's#https?://[A-Za-z0-9.-]*archive\.ubuntu\.com#http://archive.ubuntu.com#g' \
-              /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list 2>/dev/null || true
-            apt_update || { echo "::error::Ubuntu package indexes remain unavailable after fallback"; exit 1; }
-            apt_install || { echo "::error::System dependencies could not be installed"; exit 1; }
-          fi
+          sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 update
+          sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 \
+            install -y --no-install-recommends texlive-latex-extra lmodern poppler-utils
           python -m pip install -r requirements.txt
           python -m playwright install --with-deps chromium || { echo "::warning::retrying browser install"; python -m playwright install --with-deps chromium; }
       - name: Run builder and dashboard checks
@@ -65,6 +51,7 @@ jobs:
 
   windows-scripts:
     runs-on: windows-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - name: Parse every PowerShell script
