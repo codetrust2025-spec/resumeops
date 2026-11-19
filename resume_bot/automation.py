@@ -128,7 +128,7 @@ def _describe(entry, section):
     return ' '.join(words)
 
 
-def source_profile(source, ai, on_progress=None, notices=None):
+def source_profile(source, ai, on_progress=None, notices=None, identity=None):
     """Verified facts from a resume, keeping every entry it lists.
 
     A fact the resume does not state, or does not tie to its entry, is never completed or guessed.
@@ -136,6 +136,11 @@ def source_profile(source, ai, on_progress=None, notices=None):
     editable field; ``apply_answers`` then finishes the profile. ``notices`` is accepted for
     callers of the earlier version; entries are no longer omitted."""
     draft = extract_profile(source, ai, for_review=True, on_progress=on_progress)
+    # Identity was attested in the minimal form. Never let model extraction replace it.
+    if identity:
+        for field in ('full_name', 'phone', 'email'):
+            if identity.get(field):
+                draft[field] = identity[field]
     lines = [phrase(line) for line in source.splitlines() if line.strip()]
     questions = []
     # Labelled form rows ("Company Name" | value) tie their values together by label, not by distance.
