@@ -40,7 +40,7 @@ def validate_profile(data):
     extra = set(data) - accepted
     if extra:
         raise ProfileError('Unknown fields: ' + ', '.join(sorted(extra)))
-    out = {key: _string(data.get(key, ''), key, key in ('full_name', 'email'))
+    out = {key: _string(data.get(key, ''), key, key == 'full_name')
            for key in ('full_name', 'headline', 'email', 'phone', 'location', 'linkedin', 'github', 'summary')}
     if out['email'] and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', out['email']):
         raise ProfileError('Invalid email address')
