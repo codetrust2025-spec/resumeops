@@ -35,16 +35,17 @@ def submission(payload):
         if not isinstance(candidate, dict) or payload.get('extension'):
             raise ValueError('Expected candidate form details.')
         candidate = {**candidate, 'role': role}
+        # Every candidate form: name and phone are mandatory; email is optional but must be valid if given.
+        name, phone = candidate.get('full_name'), candidate.get('phone')
+        email = candidate.get('email') or ''
+        if not isinstance(name, str) or not name.strip() or len(name) > 250:
+            raise ValueError('Enter the full name.')
+        if not isinstance(phone, str) or not 7 <= len(re.sub(r'\D', '', phone)) <= 15:
+            raise ValueError('Enter a valid phone number.')
+        if not isinstance(email, str) or (email and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email)):
+            raise ValueError('Enter a valid email address if supplied.')
         if not candidate.get('work_experience') and not candidate.get('education'):
-            name, phone = candidate.get('full_name'), candidate.get('phone')
-            email = candidate.get('email') or ''
             background = candidate.get('background') or ''
-            if not isinstance(name, str) or not name.strip() or len(name) > 250:
-                raise ValueError('Enter the full name.')
-            if not isinstance(phone, str) or not 7 <= len(re.sub(r'\D', '', phone)) <= 15:
-                raise ValueError('Enter a valid phone number.')
-            if not isinstance(email, str) or (email and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email)):
-                raise ValueError('Enter a valid email address if supplied.')
             if not isinstance(background, str) or len(background) > 7500:
                 raise ValueError('Existing work or education facts must be under 7500 characters.')
             return {'consent': CONSENT_VERSION, 'role': role,

@@ -79,12 +79,14 @@ def select_target(title):
     return ' '.join(title.split())
 
 
-FIELD_NAMES = {'full_name': 'full name', 'email': 'email address', 'bullets': 'work activity', 'skills': 'technical skills', 'company': 'employer',
+FIELD_NAMES = {'full_name': 'full name', 'email': 'email address', 'phone': 'phone number', 'bullets': 'work activity', 'skills': 'technical skills', 'company': 'employer',
                'position': 'job title', 'start': 'start date', 'end': 'end date',
                'institution': 'institution', 'degree': 'degree'}
 ANSWER_LIMIT = 250
 # Said under each question, so the answer goes in the right field.
-FIELD_HINTS = {'company': ' Enter the company name.', 'position': ' Enter the job title.',
+FIELD_HINTS = {'phone': ' Include the country code, for example +91 98765 43210.',
+               'email': ' Correct it so recruiters can reach you.',
+               'company': ' Enter the company name.', 'position': ' Enter the job title.',
                'institution': ' Enter the college or university name.',
                'degree': ' Enter the degree name, for example B.Tech or MCA.',
                'start': ' For example Jan 2022.', 'end': ' For example Mar 2024, or Present.'}
@@ -160,8 +162,13 @@ def source_profile(source, ai, on_progress=None, notices=None, identity=None):
     for field in ('full_name',):
         if not (draft.get(field) or '').strip():
             ask('profile', None, field, f"The resume does not state the candidate's {FIELD_NAMES[field]}.")
-    if not (draft.get('email') or '').strip() and not (draft.get('phone') or '').strip():
-        ask('profile', None, 'email', 'The resume has no contact details. Enter a reachable email address.')
+    # Contact rules: a phone number is mandatory; email is optional, but a supplied email must be readable.
+    phone = (draft.get('phone') or '').strip()
+    if not phone:
+        ask('profile', None, 'phone', 'The resume does not state a phone number, and one is required.')
+    elif not readable_phone(phone):
+        ask('profile', None, 'phone', 'The phone number in the resume could not be read clearly. Confirm or correct it.',
+            suggest=True)
     if (draft.get('email') or '').strip() and not EMAIL_FORMAT.fullmatch(draft['email'].strip()):
         ask('profile', None, 'email', 'The email address in the resume could not be read clearly. Confirm or correct it.',
             suggest=True)
@@ -256,6 +263,11 @@ def source_profile(source, ai, on_progress=None, notices=None, identity=None):
 EMAIL_FORMAT = re.compile(r'[^\s@]+@[^\s@]+\.[^\s@]+')
 
 
+def readable_phone(value):
+    """A phone number has 7-15 digits (E.164 allows at most 15); notes such as "(Mobile)" are allowed."""
+    return 7 <= len(re.sub(r'\D', '', value)) <= 15
+
+
 def _ask_what_validation_rejects(draft, questions, ask):
     """Run the final profile check now, with the open questions answered by placeholders. Whatever it
     would still reject becomes an editable question here, so answering never ends in an error that names
@@ -265,7 +277,8 @@ def _ask_what_validation_rejects(draft, questions, ask):
         trial = copy.deepcopy(draft)
         for question in questions:
             target = trial if question['entry'] is None else trial[question['section']][question['entry']]
-            target[question['field']] = 'reader@example.com' if question['field'] == 'email' else 'Answer'
+            target[question['field']] = {'email': 'reader@example.com', 'phone': '+910000000000'}.get(
+                question['field'], 'Answer')
         try:
             validate_profile(trial)
             return
@@ -307,6 +320,8 @@ def apply_answers(draft, questions, answers):
             raise AnswerError(f'Keep the {name} under {ANSWER_LIMIT} characters.', qid)
         if question['field'] == 'email' and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', value):
             raise AnswerError('Enter a valid email address.', qid)
+        if question['field'] == 'phone' and not readable_phone(value):
+            raise AnswerError('Enter a valid phone number with 7 to 15 digits.', qid)
         if question['field'] in NAMED_FIELDS and not re.search(r'[^\W\d_]', value):
             # A year typed into "Degree" would print as the degree; names are written in words.
             raise AnswerError(NAMED_FIELDS[question['field']], qid)
