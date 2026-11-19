@@ -281,6 +281,8 @@ class AutomationJobStateTests(unittest.TestCase):
     def prepare(self, model, source=RESUME):
         with patch.object(self.workspace, 'read_automation_source', return_value=source) as reader, \
                 patch('resume_bot.automation.generate', side_effect=lambda ai, *a, **k: model.generate(*a, **k)), \
+                patch('resume_bot.generate.generate', return_value={}), \
+                patch('resume_bot.generate.propose_projects', return_value=[]), \
                 patch('resume_bot.automation.role_intelligence',
                       return_value={'role': 'custom', 'label': 'Backend Engineer', 'terms': ['Python'], 'sources': []}), \
                 patch('resume_bot.ingest.generate', side_effect=lambda ai, *a, **k: model.generate(*a, **k)):

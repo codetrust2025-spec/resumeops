@@ -4,6 +4,18 @@ ResumeOps combines candidate entry, target roles, keyword coverage, and template
 
 ## Isolated staging on Windows
 
+The automation intake accepts candidate evidence documents, including education records, earned
+certificates, experience letters, project descriptions and resumes. Users can submit up to 10 PDF,
+DOCX, TXT, JPG or PNG documents for one candidate, with a combined 12 MiB limit. The server validates
+the same limits, reads every document and combines the evidence before asking for missing facts.
+Text-based PDFs are read with Poppler. Image-only and mixed scanned PDFs are rendered with
+`pdftoppm` and OCR is limited to 20 pages. JPG/PNG and rendered pages use Tesseract when installed,
+or Windows' built-in OCR on Windows. Linux installations need `tesseract-ocr`; Windows needs its OCR
+language feature. The Windows helper runs with process-scoped `RemoteSigned`, honoring enforced
+Group Policy without changing persistent execution policy. OCR failure asks the user for clearer
+evidence or manual entry. Include `resume_bot/ocr_windows.ps1` when packaging Windows code.
+Legacy single-document submissions retain their request format and continue to work.
+
 Use a separate checkout and empty private inbox and output directories. Install Python 3.12, MiKTeX or TeX Live with Latin Modern, and Poppler. Then run:
 
 ```powershell

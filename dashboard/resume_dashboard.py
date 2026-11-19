@@ -141,7 +141,7 @@ class Workspace:
         return health.get('code') == CODE and time.time() - checked < 900
 
     def read_automation_source(self, extension, data):
-        from resume_bot.ingest import read_resume_text
+        from resume_bot.document_evidence import read_evidence
         with tempfile.TemporaryDirectory(prefix='resumeops-source-') as temp:
             path = Path(temp) / ('resume.' + extension)
             path.write_bytes(data)
@@ -152,7 +152,7 @@ class Workspace:
                             raise ValueError('The Word document text is too large.')
                 except (BadZipFile, KeyError) as exc:
                     raise ValueError('The Word document could not be read.') from exc
-            return read_resume_text(path)
+            return read_evidence(path)
 
     def draft(self, extension, data, report=lambda stage, metrics=None: None):
         from resume_bot.ingest import extract_profile, read_resume_text
