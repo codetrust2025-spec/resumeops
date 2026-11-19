@@ -261,6 +261,9 @@ class AutomationJobs:
                 db.execute('INSERT INTO automation(owner,id,payload,checkpoints,created,updated,role,candidate,percent,stage) '
                            "VALUES (?,?,?,?,?,?,?,?,30,'Verified facts reused from an earlier resume')",
                            (owner, new_id, payload, checkpoints, now, now, role, row['candidate']))
+            else:
+                db.execute('UPDATE automation SET hidden_at=NULL WHERE owner=? AND id=? AND hidden_at IS NOT NULL',
+                           (owner, new_id))
         self.start()
         self.wake.set()
         return new_id
