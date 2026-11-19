@@ -6,9 +6,10 @@ const fileControl = byId('auto-file');
 const role = form.elements.role;
 const customRole = byId('auto-custom-role');
 const CUSTOM = 'Custom Role';
-const required = [['full_name','Full name'], ['email','Email','email'],
-  ['years_of_experience','Years of experience (0 for a fresher)','number']];
-const optional = [['phone','Phone','tel'], ['location','Location'], ['current_company','Current company'],
+const required = [['full_name','Full name'], ['phone','Phone','tel']];
+const optional = [['email','Email (optional)','email'],
+  ['years_of_experience','Years of experience (optional)','number'],
+  ['location','Location'], ['current_company','Current company'],
   ['linkedin','LinkedIn','url'], ['github','GitHub','url'], ['portfolio','Portfolio','url'],
   ['certifications','Certifications (one per line)','textarea'], ['achievements','Achievements (one per line)','textarea']];
 const skillsField = ['skills','Technical skills (comma separated)','textarea'];
@@ -112,7 +113,8 @@ function mode() {
 
 function candidate() {
   const info = Object.fromEntries([...required, ...optional, skillsField].map(([key]) => [key, form.elements[key].value]));
-  info.years_of_experience = Number(info.years_of_experience);
+  info.years_of_experience = info.years_of_experience.trim() === '' ? null : Number(info.years_of_experience);
+  info.background = byId('auto-background').value;
   for (const [key] of collections) {
     const rows = form.querySelector('[data-entries="' + key + '"]').children;
     info[key] = [...rows].map(row =>
@@ -395,6 +397,7 @@ function meta(job) {
 
 const ACTIVE = new Set(['queued', 'processing', 'handed_off', 'retrying']);
 const FIELD_WORDS = {company: 'employer', position: 'job title', start: 'start date', end: 'end date',
+  bullets: 'work activity', source_text: 'work or education information',
   institution: 'institution', degree: 'degree', full_name: 'full name', email: 'email address'};
 
 function retryText(job) {
@@ -430,10 +433,10 @@ function answerForm(job) {
   box.append(element('p', job.error || 'Your resume does not state some details.'));
   for (const question of job.questions || []) {
     const label = element('label', question.label);
-    const field = element('input');
+    const field = element(question.field === 'source_text' ? 'textarea' : 'input');
     field.name = question.id;
-    field.type = question.field === 'email' ? 'email' : 'text';
-    field.maxLength = 250;
+    if (field.tagName === 'INPUT') field.type = question.field === 'email' ? 'email' : 'text';
+    field.maxLength = question.field === 'source_text' ? 7500 : 250;
     field.required = true;
     field.value = question.value || '';
     const hint = element('span', question.explanation);
@@ -448,7 +451,7 @@ function answerForm(job) {
   box.addEventListener('submit', async event => {
     event.preventDefault();
     clearFieldErrors(box);
-    const fields = [...box.querySelectorAll('input')];
+    const fields = [...box.querySelectorAll('input, textarea')];
     const empty = fields.find(field => !field.value.trim());
     if (empty) { fieldError(empty, 'Enter this detail to continue.'); return; }
     submit.disabled = true;
@@ -525,7 +528,8 @@ async function refresh() {
 }
 
 async function init() {
-  byId('auto-basics').append(...required.map(field => input(field, true)), input(skillsField));
+  byId('auto-basics').append(...required.map(field => input(field, true)));
+  byId('auto-optional').append(input(skillsField));
   byId('auto-optional').append(...optional.map(field => input(field)));
   collections.forEach(addSection);
   form.addEventListener('change',mode);
