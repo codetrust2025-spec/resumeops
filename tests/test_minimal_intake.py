@@ -51,6 +51,38 @@ class MinimalIntakeTests(unittest.TestCase):
         self.assertFalse(same_track(facts, 'Node.js Developer'))
         self.assertTrue(same_track(facts, 'Frontend Developer'))
 
+    def test_missing_real_work_activities_pause_before_publication(self):
+        candidate = {
+            'full_name': 'Arun Kumar', 'email': 'arun@example.com',
+            'phone': '+91 9000000000', 'years_of_experience': 3,
+            'skills': 'React.js, TypeScript',
+            'work_experience': [{'company': 'DemoTech', 'position': 'Frontend Developer',
+                                 'start': 'July 2023', 'end': 'Present'}],
+            'education': [{'degree': 'B.Tech', 'university': 'Example Institute',
+                           'graduation_year': '2022'}],
+        }
+        with tempfile.TemporaryDirectory() as root:
+            jobs = AutomationJobs(Workspace(Path(root), code_root=ROOT))
+            with patch.object(jobs, 'start'):
+                identifier = jobs.enqueue(OWNER, payload(**candidate))
+            with closing(jobs.connection()) as db:
+                row = db.execute('SELECT * FROM automation WHERE id=?', (identifier,)).fetchone()
+            jobs._prepare(row)
+            with closing(jobs.connection()) as db:
+                waiting = db.execute('SELECT * FROM automation WHERE id=?', (identifier,)).fetchone()
+            self.assertEqual(waiting['status'], 'needs_input')
+            self.assertEqual([q['id'] for q in json.loads(waiting['checkpoints'])['questions']],
+                             ['experience.0.bullets'])
+            self.assertIsNone(waiting['job'])
+            with patch.object(jobs, 'start'):
+                jobs.answer(OWNER, identifier, {'experience.0.bullets':
+                    'Developed React components and TypeScript UI forms for internal tools.'})
+            with closing(jobs.connection()) as db:
+                updated = db.execute('SELECT * FROM automation WHERE id=?', (identifier,)).fetchone()
+            self.assertEqual(updated['status'], 'queued')
+            self.assertEqual(json.loads(updated['checkpoints'])['facts']['experience'][0]['bullets'],
+                             ['Developed React components and TypeScript UI forms for internal tools.'])
+
     def test_identity_only_waits_for_evidence_without_generating_pdf(self):
         with tempfile.TemporaryDirectory() as root:
             workspace = Workspace(Path(root), code_root=ROOT)
