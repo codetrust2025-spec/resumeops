@@ -209,6 +209,8 @@ def check(ai_first=False):
                     page.get_by_label('Target role').fill('Full Stack Developer')
                     page.get_by_label('Total years of experience').fill('0')
                     page.get_by_label('Full name').fill('AI First Synthetic')
+                    page.locator('#ai-contact > summary').click()
+                    expect(page.locator('#ai-contact')).to_have_attribute('open', '')
                     page.get_by_label('Phone').fill('+91 90000 00002')
                     page.get_by_label('Email').fill('ai-first@example.com')
                     page.get_by_role('button', name='Add education').click()
