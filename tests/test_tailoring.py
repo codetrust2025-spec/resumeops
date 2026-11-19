@@ -142,14 +142,14 @@ class ExperienceTests(unittest.TestCase):
         target = {'role': 'frontend-developer', 'template': 'standard', 'keywords': []}
         honest = analyze(SAMPLE, {**target, 'experience_years': 5}, today=TODAY)
         inflated = analyze(SAMPLE, {**target, 'experience_years': 15}, today=TODAY)
-        self.assertEqual(honest['ats_readiness'] - inflated['ats_readiness'], 5)
+        self.assertEqual(honest['ats_readiness'] - inflated['ats_readiness'], 4)  # V3 rubric: 4 experience points
         self.assertTrue(any('dated roles show 5 years' in tip for tip in inflated['suggestions']))
         self.assertEqual(inflated['experience']['used'], 5)
 
     def test_fresher_layout_puts_education_first(self):
         fresher, experienced = render(SAMPLE, years=0), render(SAMPLE, years=4)
-        self.assertLess(fresher.index('EDUCATION'), fresher.index('PROFESSIONAL EXPERIENCE'))
-        self.assertLess(experienced.index('PROFESSIONAL EXPERIENCE'), experienced.index('EDUCATION'))
+        self.assertLess(fresher.index(r'\section*{Education}'), fresher.index(r'\section*{Professional Experience}'))
+        self.assertLess(experienced.index(r'\section*{Professional Experience}'), experienced.index(r'\section*{Education}'))
 
 
 @unittest.skipUnless(shutil.which('pdflatex') and shutil.which('pdftotext'), 'TeX/PDF tools missing')

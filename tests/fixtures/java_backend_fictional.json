@@ -1,0 +1,50 @@
+{
+ "full_name": "Arun Sample",
+ "email": "arun.sample@example.com",
+ "phone": "+91 9000000000",
+ "location": "Hyderabad, Telangana, India",
+ "linkedin": "",
+ "github": "",
+ "skills": [
+  "Java 17",
+  "REST APIs",
+  "MySQL",
+  "PostgreSQL",
+  "JUnit 5",
+  "Mockito",
+  "Maven",
+  "Git",
+  "Docker",
+  "Spring Boot",
+  "Spring Data JPA",
+  "Hibernate",
+  "Spring MVC"
+ ],
+ "experience": [
+  {
+   "company": "DemoByte Technologies (fictional)",
+   "position": "Java Backend Developer",
+   "start": "July 2023",
+   "end": "October 2026",
+   "location": "",
+   "bullets": [
+    "- Built and maintained Java 17 and Spring Boot REST APIs for an internal inventory application.",
+    "- Created database queries and data access components using Spring Data JPA and PostgreSQL.",
+    "- Wrote unit tests with JUnit 5 and Mockito for service-layer code.",
+    "- Used Git, Maven, Docker, and Postman during development and testing."
+   ]
+  }
+ ],
+ "education": [
+  {
+   "institution": "Example Institute of Technology (fictional)",
+   "degree": "B.Tech in Information Technology",
+   "start": "2019",
+   "end": "2023",
+   "details": ""
+  }
+ ],
+ "certifications": [],
+ "headline": "",
+ "summary": ""
+}

@@ -39,11 +39,12 @@ class WorkflowTests(unittest.TestCase):
         target['experience_years'] = 0
         profile['education'] = []
         suggestions = analyze(profile, target)['suggestions']
-        self.assertIn('Provide a confirmed graduation year.', suggestions)
-        self.assertNotIn('Provide confirmed dates for employment.', suggestions)
+        self.assertIn('Add the graduation year.', suggestions)
+        self.assertNotIn('Give every role its start date.', suggestions)
+        self.assertNotIn('Provide confirmed employment dates.', suggestions)
         profile['education'] = [{'degree': 'BTech', 'institution': 'Example University',
                                  'start': '', 'end': '2024', 'details': ''}]
-        self.assertNotIn('Provide a confirmed graduation year.',
+        self.assertNotIn('Add the graduation year.',
                          analyze(profile, target)['suggestions'])
 
     def test_fresher_contributions_come_from_described_projects(self):
@@ -52,15 +53,15 @@ class WorkflowTests(unittest.TestCase):
         profile['experience'] = []
         profile['projects'] = ['Campus Event Portal']
         suggestions = analyze(profile, target)['suggestions']
-        self.assertIn('Describe verified project contributions.', suggestions)
-        self.assertNotIn('Describe verified work contributions.', suggestions)
-        bare = analyze(profile, target)['breakdown'][2]['points']
+        self.assertIn('Describe what you built in at least one project.', suggestions)
+        self.assertNotIn('Describe responsibilities for every role.', suggestions)
+        bare = analyze(profile, target)['breakdown'][3]['points']  # V3: Professional experience
         profile['projects'] = ['Campus Event Portal - React app listing college events']
         described = analyze(profile, target)
-        self.assertNotIn('Describe verified project contributions.', described['suggestions'])
-        self.assertEqual(described['breakdown'][2]['points'], bare + 6)
+        self.assertNotIn('Describe what you built in at least one project.', described['suggestions'])
+        self.assertEqual(described['breakdown'][3]['points'], bare + 5)
         target['experience_years'] = 2
-        self.assertIn('Describe verified work contributions.', analyze(profile, target)['suggestions'])
+        self.assertIn('Describe responsibilities for every role.', analyze(profile, target)['suggestions'])
 
     def test_ats_rubric_distinguishes_coverage_from_section_and_evidence_points(self):
         job = targeted()

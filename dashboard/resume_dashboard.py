@@ -76,6 +76,8 @@ class Workspace:
         self.approvals = self.root / 'approvals'
         self._result_cache = {}
         self._revision_lock = Lock()
+        # The operator-managed role catalog lives with the data, not the code (watcher: cwd is the data root).
+        os.environ.setdefault('RESUMEOPS_ROLE_CATALOG', str(self.root / 'role-catalog.json'))
         # Resolved once here (it may be a link or on another drive); never per poll.
         self._output_bases = list(dict.fromkeys(
             os.path.normcase(os.path.abspath(str(base))) for base in (self.output, self.output.resolve())))
@@ -583,8 +585,26 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                         stage = import_stages.get((owner, identifier))
                     response = {'stage': stage, 'status': 'processing' if stage else 'unknown'}
                 return self.send_json(response)
+            if url.path == '/api/roles':
+                if not self.is_operator(request_origin):
+                    return self.send_json({'error': 'An operator account is required for this route.'}, 403)
+                from resume_bot.workflow import CATALOG_STATUS, ROLES, catalog_path, load_roles
+                load_roles()
+                managed = None
+                if catalog_path().is_file():
+                    try:
+                        managed = json.loads(catalog_path().read_text(encoding='utf-8'))
+                    except (OSError, ValueError):
+                        managed = None
+                return self.send_json({'roles': list(ROLES.values()), 'status': dict(CATALOG_STATUS),
+                                       'file': catalog_path().name, 'managed': managed})
             if url.path == '/api/catalog':
-                from resume_bot.workflow import ROLES, TEMPLATES
+                from resume_bot.workflow import ROLES, TEMPLATES, load_roles
+                load_roles()
+                if query.get('visible') == ['1']:
+                    return self.send_json({'roles': [{'id': r['id'], 'name': r['name'], 'groups': r['groups']}
+                                                     for r in ROLES.values() if not r.get('hidden')],
+                                           'templates': TEMPLATES})
                 return self.send_json({'roles': list(ROLES.values()), 'templates': TEMPLATES})
             if url.path == '/api/keywords':
                 try:
@@ -641,6 +661,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                       '/automation.js': ('automation.js', 'text/javascript'),
                       '/automation.css': ('automation.css', 'text/css'),
                       '/workflow': ('index.html', 'text/html'),
+                      '/roles': ('roles.html', 'text/html'),
+                      '/roles.js': ('roles.js', 'text/javascript'),
                       '/ai-builder': ('ai-builder.html', 'text/html'),
                       '/ai-builder.js': ('ai-builder.js', 'text/javascript'),
                       '/ai-builder.css': ('ai-builder.css', 'text/css'),
@@ -659,7 +681,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 name, mime = assets[url.path]
                 path = Path(__file__).with_name(name)
                 data = path.read_bytes()
-                if url.path in ('/', '/automated', '/operations', '/ai-builder', '/workflow'):
+                if url.path in ('/', '/automated', '/operations', '/ai-builder', '/workflow', '/roles'):
                     data = data.replace(b'__TOKEN__', token.encode('ascii'))
                 return self.send_content(data, mime + '; charset=utf-8')
             return self.send_json({'error': 'File unavailable.'}, 404)
@@ -687,26 +709,53 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return self.send_json({'error': 'Upload interrupted. Retry the same submission.'}, 408)
             return self.send_json({'id': identifier}, 202)
 
-        def answer_automation(self, request_origin):
-            """The candidate fills facts their resume does not state. Owner-scoped; errors name the field."""
+        def automation_action(self, request_origin, action):
+            """Owner-scoped follow-ups on one resume: answers to missing details, decisions on suggested
+            projects, or regeneration for another role. Errors name the field they concern."""
             from resume_bot.automation import AnswerError
             owner = self.session_owner(request_origin)
             if not owner:
-                return self.reject_post('Sign in before answering.')
+                return self.reject_post('Sign in first.')
             try:
                 size = int(self.headers.get('Content-Length', ''))
-                if not 0 < size <= 65536 or self.headers.get_content_type() != 'application/json':
-                    return self.send_json({'error': 'Invalid answers.'}, 413)
+                if not 0 < size <= 131072 or self.headers.get_content_type() != 'application/json':
+                    return self.send_json({'error': 'Invalid request.'}, 413)
                 request = json.loads(self.rfile.read(size))
                 identifier = request.get('id') if isinstance(request, dict) else None
                 if not isinstance(identifier, str) or not re.fullmatch(r'[0-9a-f]{64}', identifier):
                     return self.send_json({'error': 'Invalid resume identifier.'}, 400)
-                automation.answer(owner, identifier, request.get('answers'))
+                if action == 'answer':
+                    automation.answer(owner, identifier, request.get('answers'))
+                elif action == 'projects':
+                    automation.decide_projects(owner, identifier, request.get('decisions'))
+                else:
+                    if not workspace.automation_ready():
+                        return self.send_json({'error': 'The resume watcher version is not ready. Retry shortly.'}, 503)
+                    identifier = automation.regenerate(owner, identifier, request.get('role'))
+                    return self.send_json({'id': identifier, 'status': 'queued'}, 202)
             except AnswerError as exc:
                 return self.send_json({'error': str(exc), 'field': exc.field}, 400)
-            except (ValueError, UnicodeError):
-                return self.send_json({'error': 'Invalid answers.'}, 400)
+            except (ValueError, UnicodeError) as exc:
+                return self.send_json({'error': str(exc) if action == 'regenerate' else 'Invalid request.'}, 400)
             return self.send_json({'id': identifier, 'status': 'queued'})
+
+        def save_roles(self):
+            """Operator: replace the managed role catalog after validation. Takes effect immediately."""
+            from resume_bot.workflow import catalog_path, load_roles, validate_catalog
+            try:
+                size = int(self.headers.get('Content-Length', ''))
+                if not 0 < size <= 524288 or self.headers.get_content_type() != 'application/json':
+                    return self.send_json({'error': 'Send the catalog as JSON up to 512 KB.'}, 413)
+                catalog = json.loads(self.rfile.read(size))
+                roles, _ = validate_catalog(catalog)
+            except (ValueError, UnicodeError) as exc:
+                return self.send_json({'error': f'Catalog not saved: {exc}'}, 400)
+            path = catalog_path()
+            temporary = path.with_name(path.name + '.tmp')
+            temporary.write_text(json.dumps(catalog, indent=1, ensure_ascii=False), encoding='utf-8')
+            os.replace(temporary, path)
+            load_roles(force=True)
+            return self.send_json({'saved': len(roles), 'file': path.name})
 
         def reject_post(self, message):
             # Closing a socket with unread request bytes can reset it before Windows clients see
@@ -722,7 +771,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
 
         def do_POST(self):
             request_origin = self.request_origin()
-            if (self.path not in ('/api/automation', '/api/automation/answer', '/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry', '/api/ai-draft', '/api/ai-review', '/api/ai-queue') or request_origin is None
+            if (self.path not in ('/api/automation', '/api/automation/answer', '/api/automation/projects',
+                                  '/api/automation/regenerate', '/api/roles', '/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry', '/api/ai-draft', '/api/ai-review', '/api/ai-queue') or request_origin is None
                     or self.headers.get('Origin') != request_origin
                     or not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token)):
                 return self.reject_post('Request not authorized.')
@@ -730,8 +780,12 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return self.reject_post('Dashboard access denied for this session.')
             if self.path == '/api/automation':
                 return self.submit_automation(request_origin)
-            if self.path == '/api/automation/answer':
-                return self.answer_automation(request_origin)
+            if self.path in ('/api/automation/answer', '/api/automation/projects', '/api/automation/regenerate'):
+                return self.automation_action(request_origin, self.path.rsplit('/', 1)[1])
+            if self.path == '/api/roles':
+                if not self.is_operator(request_origin):
+                    return self.reject_post('An operator account is required for this route.')
+                return self.save_roles()
             if self.path in ('/api/queue', '/api/retry', '/api/ai-queue', '/api/keywords/update') and not self.is_operator(request_origin):
                 return self.reject_post('An operator account is required for this route.')
             drafting = self.path == '/api/draft'

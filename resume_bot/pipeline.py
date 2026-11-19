@@ -368,6 +368,11 @@ def _code_fingerprint():
 
 
 CODE = _code_fingerprint()
+# Fixed messages (no resume content) for a resume the watcher's independent fact check refused.
+FACT_CHECK_FAILURES = {'Candidate approval is missing or does not match this job.',
+                       'Automated resume differs from the attested or source-verified facts.',
+                       'Generated PDF text differs from the candidate-approved resume.',
+                       'Saved PDF text differs from the candidate-approved resume.'}
 CODE_VERSION = hashlib.sha256(json.dumps(CODE, sort_keys=True).encode()).hexdigest()[:16]
 MAX_AUTO_ATTEMPTS = 8  # transient failures: automatic retries with backoff, then a person decides
 # Errors that repeat identically for the same input and code: retrying cannot help.
@@ -505,6 +510,10 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
                 ExtractionError: 'Candidate input could not be verified against the source.',
                 json.JSONDecodeError: 'Candidate JSON is incomplete or invalid.',
             }.get(type(exc), f'Processing failed during {activity.get("stage_label") or activity.get("stage", "input preparation")}.')
+            if isinstance(exc, BuildError) and str(exc) in FACT_CHECK_FAILURES:
+                # Not a build-dependency problem: the final fact check refused the resume, so nothing was published.
+                error = ('The resume did not pass the final fact check, so nothing was published. '
+                         'It is checked again automatically when ResumeOps is updated.')
             now = time.time()
             retryable = not isinstance(exc, DETERMINISTIC) or isinstance(exc, (OSError,))
             detail = f'{type(exc).__name__}: {exc}'[:300]

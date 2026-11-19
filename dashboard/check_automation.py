@@ -197,7 +197,7 @@ def check():
                                                  access_verifier=AccessFixture(), automation_first=True)
             threading.Thread(target=server.serve_forever, daemon=True).start()
             try:
-                with patch('resume_bot.automation.generate', side_effect=evidence_model), \
+                with patch('resume_bot.automation.generate', side_effect=evidence_model),                         patch('resume_bot.generate.generate', side_effect=evidence_model), \
                         patch('resume_bot.automation.extract_profile', return_value=make_facts()), \
                         patch('resume_bot.pipeline.import_zip', side_effect=fake_overleaf), sync_playwright() as pw:
                     browser = pw.chromium.launch()
@@ -219,7 +219,7 @@ def check():
                                               response.request.method == 'POST') as accepted:
                         page.get_by_role('button', name='Create verified resume').click()
                     assert accepted.value.status == 202, accepted.value.text()
-                    expect(page.get_by_text('Waiting for the resume watcher', exact=True)).to_be_visible()
+                    expect(page.get_by_text('Waiting for the resume builder', exact=True)).to_be_visible()
                     auth = {'interrupted': False, 'renewed': False}
 
                     def expire_once(route):
@@ -232,7 +232,7 @@ def check():
 
                     page.route('**/api/automation', expire_once)
                     page.reload()
-                    expect(page.get_by_text('Waiting for the resume watcher', exact=True)).to_be_visible()
+                    expect(page.get_by_text('Waiting for the resume builder', exact=True)).to_be_visible()
                     assert auth['interrupted'] and auth['renewed']
                     page.unroute('**/api/automation', expire_once)
                     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
@@ -264,7 +264,7 @@ def check():
                     deadline = time.monotonic() + 25
                     while time.monotonic() < deadline:
                         entries = request('/api/automation', 'alice')['jobs']
-                        if len(entries) == 3 and all(entry['percent'] == 55 for entry in entries):
+                        if len(entries) == 3 and all(entry['percent'] == 65 for entry in entries):
                             break
                         assert not any(entry['status'] == 'blocked' for entry in entries), entries
                         time.sleep(.15)

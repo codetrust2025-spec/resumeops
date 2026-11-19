@@ -78,7 +78,7 @@ class RoleIntelligenceTests(unittest.TestCase):
         self.assertEqual(reviewed['profile']['competencies'],[claim['text']])
         audit={'attested':True,'claims':reviewed['approved_claims']}
         self.assertEqual(claim_violations(reviewed['profile'],audit),[])
-        self.assertIn(r'\section*{CORE COMPETENCIES}',render(reviewed['profile']))
+        self.assertIn(r'\section*{Core Competencies}',render(reviewed['profile']))
 
     def test_work_and_project_content_cannot_repeat(self):
         draft=suggest_sections({**candidate(),'role':'frontend-developer','projects':[{'name':'Portfolio'}]},FakeAI())

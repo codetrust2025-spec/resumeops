@@ -4,8 +4,10 @@ import json
 import re
 import unicodedata
 
+# generated_from_verified_facts: a V3 summary composed from verified facts only; the watcher re-checks
+# it (resume_bot.generate.summary_problems) before rendering.
 APPROVED_PROVENANCE = {'verified_from_source', 'unverified_suggestion', 'unsupported_role_keyword',
-                       'candidate_confirmed'}
+                       'candidate_confirmed', 'generated_from_verified_facts'}
 CLAIM_FIELDS = (('summary', ('Summary',)), ('skills', ('Skill', 'Competency')),
                 ('competencies', ('Competency',)),
                 ('certifications', ('Earned certification',)), ('achievements', ('Achievement',)))
@@ -76,6 +78,19 @@ def records_for(folder, job):
 
 
 def matches_pdf_text(observed, profile, years):
+    """The compiled PDF says exactly what the approved profile says, in the template's order."""
+    from .latex import expected_text
+
+    def tokens(text):
+        return re.findall(r"\w+(?:[.'@+#/-]\w+|[+#](?!\w))*|[%$]", normalize(text))
+
+    expected = tokens(' '.join(expected_text(profile, years)))
+    joined = re.sub(r'(?<=\w)-[ \t]*\r?\n[ \t]*(?=\w)', '', observed)
+    return tokens(observed) == expected or tokens(joined) == expected
+
+
+def _v2_matches_pdf_text(observed, profile, years):
+    """The v2 template's reading order, kept for reference; not used."""
     parts = [profile['full_name'], profile.get('headline', '')]
     parts.extend(profile.get(key, '') for key in ('email', 'phone', 'location', 'linkedin', 'github', 'portfolio'))
     experience = profile['experience']

@@ -9,13 +9,22 @@ def role_intelligence(role, root=None):
     from .market import relevant_sources, title_words
     from .workflow import valid_role_title
 
+    from .workflow import load_roles, role_by_title
+
     if not valid_role_title(role):
         raise IntakeError('Enter a valid target job title')
+    load_roles()
     title = ' '.join(role.split())
-    exact = next((key for key, row in ROLES.items()
-                  if title.casefold() in {key.casefold(), row['name'].casefold()}), None)
+    match = ROLES.get(title.casefold()) or role_by_title(title)
+    exact = match['id'] if match else None
     if exact:
+        # A catalog role uses its curated, role-specific keywords. Market listings are kept only as
+        # reference, so a Java role is never scored against Node.js or Django terms.
         title = ROLES[exact]['name']
+        keywords = ROLES[exact]['keywords']
+        return {'label': title, 'role': exact, 'terms': keywords[:40],
+                'sources': [{'label': 'ResumeOps role catalog (curated)', 'url': '', 'terms': keywords}],
+                'keyword_relevance': {term: 1 for term in keywords[:40]}}
     sources = relevant_sources(title, root)
     keywords = list(dict.fromkeys(term for row in sources for term in row['terms']))
     if not keywords:

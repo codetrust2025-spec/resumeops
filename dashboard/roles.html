@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="dashboard-token" content="__TOKEN__">
+<title>Role catalog | ResumeOps</title>
+<link rel="stylesheet" href="/builder.css">
+<link rel="stylesheet" href="/automation.css">
+<script defer src="/auth.js"></script>
+<script defer src="/roles.js"></script>
+</head>
+<body>
+<header class="auto-nav"><div class="width"><strong>ResumeOps</strong><a href="/">Create a resume</a></div></header>
+<main class="width auto-main">
+  <h1>Role catalog</h1>
+  <p>Operators manage roles here without changing code. The bundled catalog is always loaded; this managed file adds roles, replaces a role with the same id, or hides one with <code>"hidden": true</code>.</p>
+  <section class="auto-card">
+    <h2>Roles in use</h2>
+    <p id="roles-status" role="status"></p>
+    <ul id="roles-list"></ul>
+  </section>
+  <section class="auto-card">
+    <h2>Managed roles (<span id="roles-file">role-catalog.json</span>)</h2>
+    <label>Catalog JSON
+      <textarea id="roles-json" rows="16" spellcheck="false"></textarea>
+    </label>
+    <p id="roles-error" class="field-error" role="alert" hidden></p>
+    <button id="roles-save" class="primary" type="button">Validate and save</button>
+  </section>
+</main>
+</body>
+</html>

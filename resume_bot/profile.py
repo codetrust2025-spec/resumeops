@@ -35,7 +35,8 @@ def validate_profile(data):
     if not isinstance(data, dict):
         raise ProfileError('Profile must be a JSON object')
     accepted = {'full_name', 'headline', 'email', 'phone', 'location', 'linkedin', 'github',
-                'summary', 'skills', 'experience', 'education', 'certifications', 'projects', 'portfolio', 'current_company', 'achievements', 'coding_platforms', 'competencies'}
+                'summary', 'skills', 'experience', 'education', 'certifications', 'projects', 'portfolio', 'current_company', 'achievements', 'coding_platforms', 'competencies',
+                'skill_groups'}
     extra = set(data) - accepted
     if extra:
         raise ProfileError('Unknown fields: ' + ', '.join(sorted(extra)))
@@ -92,6 +93,18 @@ def validate_profile(data):
                 raise ProfileError(f'{field}: expected up to 40 entries')
             if items:
                 out[field] = [_string(item, field, True) for item in items]
+    if 'skill_groups' in data:
+        # Presentation only: the candidate's own skills, each in exactly one named group.
+        groups = data['skill_groups']
+        if not isinstance(groups, list) or len(groups) > 12 or any(
+                not isinstance(g, dict) or set(g) != {'name', 'items'} or not isinstance(g['items'], list) for g in groups):
+            raise ProfileError('skill_groups: expected up to 12 {name, items} groups')
+        out['skill_groups'] = [{'name': _string(g['name'], 'skill_groups[].name', True),
+                                'items': [_string(item, 'skill_groups[].items', True) for item in g['items']]}
+                               for g in groups]
+        grouped = [item for g in out['skill_groups'] for item in g['items']]
+        if sorted(grouped) != sorted(out['skills']):
+            raise ProfileError('skill_groups must contain every listed skill exactly once')
     if not (out['experience'] or out['education']):
         raise ProfileError('At least one experience or education record is required')
     return out
