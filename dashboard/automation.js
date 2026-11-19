@@ -488,6 +488,30 @@ function answerForm(job) {
 // One compact row per resume: "candidate · role · date" and the ATS score, then the real status and the
 // actions. Questions and project choices stay open on the row; the ATS breakdown and Regenerate open
 // under Details. A row keeps exactly one <strong>: its status.
+async function deleteHistory(button, job) {
+  const message = job
+    ? 'Delete ' + meta(job) + ' from My resumes?'
+    : 'Delete all entries in My resumes, including other pages and filters?';
+  if (!window.confirm(message + ' Generated files are kept. Entries still processing or awaiting input stay visible.')) return;
+  button.disabled = true;
+  const status = byId('auto-delete-status');
+  status.textContent = '';
+  try {
+    const response = await ResumeAuth.call('/api/automation/delete', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(job ? {id: job.id} : {all: true}),
+    });
+    if (!response.ok) throw new Error('Could not delete resume history.');
+    const {removed} = await response.json();
+    await refresh();
+    status.textContent = removed ? 'Removed ' + removed + ' from My resumes.' : 'No eligible resumes to delete.';
+  } catch {
+    status.textContent = 'Could not update resume history. Refresh and try again.';
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function jobItem(job) {
   const item = element('li');
   item.dataset.status = job.status;
@@ -527,6 +551,10 @@ function jobItem(job) {
     if (job.status === 'retrying') state.append(element('span', retryText(job)));
   }
   line.append(state);
+  const remove = element('button', 'Delete');
+  remove.type = 'button';
+  remove.setAttribute('aria-label', 'Delete ' + meta(job));
+  remove.addEventListener('click', () => deleteHistory(remove, job));
   for (const notice of job.notice || []) body.append(element('span', notice));
   if (job.status === 'complete') {
     if (job.ats) body.append(atsDetails(job.ats));
@@ -550,8 +578,11 @@ function jobItem(job) {
       actions.append(again);
     }
     if (body.children.length) actions.append(details);
+    actions.append(remove);
     line.append(actions);
     open(false);
+  } else if (job.status === 'blocked') {
+    line.append(remove);
   }
   item.append(top, line);
   if (body.children.length) item.append(body);
@@ -606,6 +637,7 @@ function renderJobs(jobs) {
   });
   while (list.children.length > items.length) list.lastElementChild.remove();
   byId('auto-empty').hidden = jobs.length > 0;
+  byId('auto-delete-all').hidden = jobs.length === 0;
   byId('auto-count').textContent = jobs.length ? jobs.length + (jobs.length === 1 ? ' resume' : ' resumes') : '';
   byId('auto-page').textContent = !jobs.length ? '' : shown.length ?
     'Page ' + (page + 1) + ' of ' + pages + ' · ' + shown.length + ' shown' : 'No resumes match the search or filters';
@@ -628,6 +660,8 @@ async function refresh() {
 }
 
 async function init() {
+  const deleteAll = byId('auto-delete-all');
+  deleteAll.addEventListener('click', () => deleteHistory(deleteAll));
   byId('auto-basics').append(...required.map(field => input(field, true)));
   byId('auto-optional').append(input(skillsField));
   byId('auto-optional').append(...optional.map(field => input(field)));
