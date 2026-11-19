@@ -444,7 +444,8 @@ class AutomationJobs:
             if facts is None:
                 progress(20, 'Candidate fact validation')
                 facts = checkpoint('facts', source if isinstance(source, dict) else
-                                   source_profile(source, model, extraction_progress))
+                                   source_profile(source, model, extraction_progress,
+                                                  identity=request.get('identity')))
             with closing(self.connection()) as db, db:
                 db.execute('UPDATE automation SET candidate=? WHERE owner=? AND id=?', (facts.get('full_name'), *key))
             # Never publish an experienced candidate's empty job history or an unsubstantiated
