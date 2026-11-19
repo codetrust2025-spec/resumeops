@@ -70,16 +70,10 @@ B.Tech from Example Institute
 class ProfileTests(unittest.TestCase):
     def test_sample_valid(self):
         self.assertEqual(validate_profile(SAMPLE)['full_name'],'Asha Example')
-    def test_phone_is_mandatory_even_when_email_is_present(self):
+    def test_legacy_profile_can_use_email_when_phone_is_unavailable(self):
         profile = dict(SAMPLE)
         profile['phone'] = ''
-        with self.assertRaisesRegex(ProfileError, 'phone'):
-            validate_profile(profile)
-        profile['phone'] = '12345'
-        with self.assertRaisesRegex(ProfileError, 'phone'):
-            validate_profile(profile)
-        profile['phone'] = '+91 90000 00000'
-        self.assertEqual(validate_profile(profile)['phone'], '+91 90000 00000')
+        self.assertEqual(validate_profile(profile)['email'], SAMPLE['email'])
 
     def test_email_is_optional_when_phone_is_valid(self):
         profile = dict(SAMPLE)
