@@ -87,7 +87,7 @@ class AutomationJobs:
             columns = {row[1] for row in db.execute('PRAGMA table_info(automation)')}
             # role/candidate: History labels. facts: the verified facts of a finished resume, owner-scoped,
             # so it can be regenerated for another role without uploading again.
-            for column in ('notice', 'role', 'candidate', 'facts'):
+            for column in ('notice', 'role', 'candidate', 'facts', 'hidden_at'):
                 if column not in columns:
                     db.execute(f'ALTER TABLE automation ADD COLUMN {column} TEXT')
 
@@ -105,6 +105,8 @@ class AutomationJobs:
         with closing(self.connection()) as db, db:
             db.execute('BEGIN IMMEDIATE')
             old = db.execute('SELECT 1 FROM automation WHERE owner=? AND id=?', (owner, identifier)).fetchone()
+            if old:
+                db.execute('UPDATE automation SET hidden_at=NULL WHERE owner=? AND id=?', (owner, identifier))
             if not old:
                 pending = db.execute("SELECT count(*) FROM automation WHERE status in ('queued','processing','retrying') AND owner=?",
                                      (owner,)).fetchone()[0]
@@ -168,7 +170,7 @@ class AutomationJobs:
         with closing(self.connection()) as db:
             rows = db.execute(f"SELECT {fields}, CASE status WHEN 'needs_input' THEN checkpoints END AS waiting, "
                               'facts IS NOT NULL AS regenerable '
-                              'FROM automation WHERE owner=? AND (? IS NULL OR id=?) ORDER BY created DESC LIMIT 50',
+                              'FROM automation WHERE owner=? AND hidden_at IS NULL AND (? IS NULL OR id=?) ORDER BY created DESC LIMIT 50',
                               (owner, identity, identity)).fetchall()
         state = self.workspace.automation_state()
         jobs = []
@@ -183,6 +185,19 @@ class AutomationJobs:
                 job['proposals'] = waiting.get('proposals', [])
             jobs.append(job)
         return jobs
+
+    def hide_history(self, owner, identifier=None):
+        """Hide displayed history from its owner while retaining generated files."""
+        with closing(self.connection()) as db, db:
+            db.execute('BEGIN IMMEDIATE')
+            rows = db.execute('SELECT id, status, job FROM automation WHERE owner=? AND hidden_at IS NULL '
+                              'AND (? IS NULL OR id=?)', (owner, identifier, identifier)).fetchall()
+            state = self.workspace.automation_state()
+            ids = [row['id'] for row in rows
+                   if self._status(row, state, owner)['status'] in ('complete', 'blocked')]
+            db.executemany('UPDATE automation SET hidden_at=? WHERE owner=? AND id=?',
+                           ((time.time(), owner, key) for key in ids))
+            return len(ids)
 
     def decide_projects(self, owner, identifier, decisions):
         """Apply the candidate's decision on each suggested project. Only projects they confirm, as
