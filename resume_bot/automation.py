@@ -79,7 +79,7 @@ def select_target(title):
     return ' '.join(title.split())
 
 
-FIELD_NAMES = {'full_name': 'full name', 'email': 'email address', 'phone': 'phone number', 'bullets': 'work activity', 'skills': 'technical skills', 'company': 'employer',
+FIELD_NAMES = {'full_name': 'full name', 'email': 'email address', 'phone': 'phone number', 'bullets': 'work activity', 'skills': 'technical skills', 'certifications': 'earned certificates', 'company': 'employer',
                'position': 'job title', 'start': 'start date', 'end': 'end date',
                'institution': 'institution', 'degree': 'degree'}
 ANSWER_LIMIT = 250
@@ -98,13 +98,13 @@ NAMED_FIELDS = {'company': 'Enter the company name in words, not a number.',
 
 
 class NeedsInput(ValueError):
-    """The resume does not state, or does not clearly tie to its entry, a fact the resume needs.
+    """The document does not state, or does not clearly tie to its entry, a fact the resume needs.
     Nothing is guessed: every gap is a question the candidate answers in an editable field."""
 
     def __init__(self, draft, questions):
         self.draft, self.questions = draft, questions
         count = len(questions)
-        super().__init__(f'{count} detail{"s" if count != 1 else ""} from your resume '
+        super().__init__(f'{count} detail{"s" if count != 1 else ""} from your documents '
                          f'need{"s" if count == 1 else ""} your confirmation.')
 
 
@@ -130,7 +130,7 @@ def _describe(entry, section):
     return ' '.join(words)
 
 
-def source_profile(source, ai, on_progress=None, notices=None, identity=None):
+def source_profile(source, ai, on_progress=None, notices=None, identity=None, evidence_documents=False):
     """Verified facts from a resume, keeping every entry it lists.
 
     A fact the resume does not state, or does not tie to its entry, is never completed or guessed.
@@ -161,16 +161,16 @@ def source_profile(source, ai, on_progress=None, notices=None, identity=None):
 
     for field in ('full_name',):
         if not (draft.get(field) or '').strip():
-            ask('profile', None, field, f"The resume does not state the candidate's {FIELD_NAMES[field]}.")
+            ask('profile', None, field, f"The document does not state the candidate's {FIELD_NAMES[field]}.")
     # Contact rules: a phone number is mandatory; email is optional, but a supplied email must be readable.
     phone = (draft.get('phone') or '').strip()
     if not phone:
-        ask('profile', None, 'phone', 'The resume does not state a phone number, and one is required.')
+        ask('profile', None, 'phone', 'The document does not state a phone number, and one is required.')
     elif not readable_phone(phone):
-        ask('profile', None, 'phone', 'The phone number in the resume could not be read clearly. Confirm or correct it.',
+        ask('profile', None, 'phone', 'The phone number in the document could not be read clearly. Confirm or correct it.',
             suggest=True)
     if (draft.get('email') or '').strip() and not EMAIL_FORMAT.fullmatch(draft['email'].strip()):
-        ask('profile', None, 'email', 'The email address in the resume could not be read clearly. Confirm or correct it.',
+        ask('profile', None, 'email', 'The email address in the document could not be read clearly. Confirm or correct it.',
             suggest=True)
     anchors = {}
     for index, job in enumerate(draft['experience']):
@@ -178,7 +178,7 @@ def source_profile(source, ai, on_progress=None, notices=None, identity=None):
             job['company'] = ''  # the model copied the job title into the employer: none is stated
         absent = [field for field in ('company', 'position', 'start') if not (job.get(field) or '').strip()]
         for field in absent:
-            ask('experience', index, field, f'The resume does not state the {FIELD_NAMES[field]} for this role.', job)
+            ask('experience', index, field, f'The document does not state the {FIELD_NAMES[field]} for this role.', job)
         if absent:
             continue
         employer, title = phrase(job['company']), phrase(job['position'])
@@ -224,7 +224,7 @@ def source_profile(source, ai, on_progress=None, notices=None, identity=None):
         absent = [field for field in ('institution', 'degree') if not (entry.get(field) or '').strip()]
         for field in absent:
             ask('education', index, field,
-                f'The resume does not state the {FIELD_NAMES[field]} for this qualification.', entry)
+                f'The document does not state the {FIELD_NAMES[field]} for this qualification.', entry)
         if absent:
             continue
         school, degree = phrase(entry['institution']), phrase(entry['degree'])
@@ -235,7 +235,7 @@ def source_profile(source, ai, on_progress=None, notices=None, identity=None):
                 ask('education', index, field,
                     'The resume shows this degree and institution in different places. Confirm or correct it.',
                     entry, suggest=True)
-    if not draft['experience'] and not draft['education']:
+    if not evidence_documents and not draft['experience'] and not draft['education']:
         raise ExtractionError('No work history or education could be read from this resume. '
                               'Choose "Enter details" to type them, or upload a different file.')
 
@@ -247,6 +247,13 @@ def source_profile(source, ai, on_progress=None, notices=None, identity=None):
             listed = [part.strip() for line in listed for part in re.split(r'[,;|]', line)]
         if labelled_row in form:  # the same list written in a labelled form row
             listed += [phrase(part) for part in _split_list(form[labelled_row][0])]
+        if evidence_documents:
+            # Quotes are already source-checked by extract_profile. Keep document statements even
+            # without resume headings, while retaining qualifiers such as "planned" or "learning".
+            listed = [phrase(line) for line in source.splitlines() if line.strip()]
+            return [value for value in values if any(phrase(value) in line for line in listed)
+                    and not any(re.search(r'\b(?:pursuing|planned|unearned|in progress|not earned|not completed|learning)\b',
+                                          line, re.I) for line in listed if phrase(value) in line)]
         return [value for value in values if phrase(value) in listed and not re.search(
             r'\b(?:pursuing|planned|unearned|in progress|not earned|not completed|learning)\b', value, re.I)]
 
@@ -254,6 +261,17 @@ def source_profile(source, ai, on_progress=None, notices=None, identity=None):
     draft['certifications'] = from_section(draft.get('certifications', []), r'certifications?')
     if draft.get('projects'):
         draft['projects'] = from_section(draft['projects'], r'(?:completed )?projects')
+    if evidence_documents and not draft['experience'] and not draft['education']:
+        raise NeedsInput(draft, [{'id': 'source_text', 'section': 'profile', 'entry': None,
+                                 'field': 'source_text', 'label': 'Additional candidate facts',
+                                 'explanation': 'Your documents provide partial evidence. Add your full name, phone, '
+                                                'actual education or work history, and relevant skills that are missing.',
+                                 'value': ''}])
+    if evidence_documents and not draft['certifications'] and re.search(
+            r'\bcertificate\s+of\s+(?:completion|achievement)\b', source, re.I):
+        ask('profile', None, 'certifications',
+            'Your documents include a certificate, but its credential title could not be verified. '
+            'Enter the earned title exactly as printed. Separate multiple titles with commas.')
     _ask_what_validation_rejects(draft, questions, ask)
     if questions:
         raise NeedsInput(draft, questions)
@@ -286,7 +304,7 @@ def _ask_what_validation_rejects(draft, questions, ask):
             message = str(exc)
         found = re.match(r'(experience|education)\[(\d+)\](?:\.(\w+))?', message)
         if message == 'Invalid email address' and 'email' not in asked:
-            ask('profile', None, 'email', 'The email address in the resume could not be read clearly. '
+            ask('profile', None, 'email', 'The email address in the document could not be read clearly. '
                 'Confirm or correct it.', suggest=True)
         elif found and 'end before start' in message:
             section, index = found[1], int(found[2])
@@ -296,7 +314,7 @@ def _ask_what_validation_rejects(draft, questions, ask):
                         'Confirm or correct them.', draft[section][index], suggest=True)
         elif found and found[3] in FIELD_NAMES and f'{found[1]}.{found[2]}.{found[3]}' not in asked:
             section, index = found[1], int(found[2])
-            ask(section, index, found[3], f'The resume does not state the {FIELD_NAMES[found[3]]} clearly. '
+            ask(section, index, found[3], f'The document does not state the {FIELD_NAMES[found[3]]} clearly. '
                 'Confirm or correct it.', draft[section][index], suggest=True)
         else:
             return  # not something the candidate can answer; the job reports it plainly
@@ -328,8 +346,8 @@ def apply_answers(draft, questions, answers):
         target = draft if question['entry'] is None else draft[question['section']][question['entry']]
         if question['field'] == 'bullets':
             target['bullets'] = [value]
-        elif question['field'] == 'skills':
-            target['skills'] = _form_lines(value, 'Technical skills', ANSWER_LIMIT, commas=True)
+        elif question['field'] in ('skills', 'certifications'):
+            target[question['field']] = _form_lines(value, FIELD_NAMES[question['field']], ANSWER_LIMIT, commas=True)
         else:
             target[question['field']] = value
     try:

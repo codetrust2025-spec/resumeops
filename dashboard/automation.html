@@ -31,11 +31,11 @@
       </label>
       <fieldset class="auto-choice">
         <legend>Candidate evidence</legend>
-        <label><input type="radio" name="method" value="upload"> Upload existing resume</label>
+        <label><input type="radio" name="method" value="upload"> Upload candidate documents</label>
         <label><input type="radio" name="method" value="manual" checked> AI-first: name and phone</label>
       </fieldset>
-      <label id="auto-upload">Resume file <span>PDF, DOCX or TXT, up to 12 MB</span>
-        <input type="file" id="auto-file" accept=".pdf,.docx,.txt" required>
+      <label id="auto-upload">Candidate evidence documents <span>Upload education records, certificates, experience letters, project details or resumes for one candidate. PDF, DOCX, TXT, JPG or PNG. Up to 10 documents and 12 MB total.</span>
+        <input type="file" id="auto-file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png" multiple required>
       </label>
       <fieldset id="auto-manual" hidden disabled>
         <legend>Candidate details</legend>

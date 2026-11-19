@@ -113,7 +113,7 @@ class DashboardLayoutTests(unittest.TestCase):
     def test_desktop_uses_the_full_screen_without_page_scrolling_in_both_modes(self):
         for width, height in ((1366, 768), (1440, 900), (1920, 1080)):
             page = self.open(viewport={'width': width, 'height': height})
-            for mode in ('AI-first: name and phone', 'Upload existing resume'):
+            for mode in ('AI-first: name and phone', 'Upload candidate documents'):
                 with self.subTest(resolution=f'{width}x{height}', mode=mode):
                     page.get_by_label(mode).check()
                     m = self.measure(page)
@@ -137,7 +137,7 @@ class DashboardLayoutTests(unittest.TestCase):
         self.assertLessEqual(m['pageX'], 0)
         self.assertGreaterEqual(m['historyTop'], m['createBottom'] - 1, 'My resumes follows the form')
         self.assertGreaterEqual(m['submit'], 44, 'touch-friendly')
-        page.get_by_label('Upload existing resume').check()
+        page.get_by_label('Upload candidate documents').check()
         self.assertLessEqual(self.measure(page)['pageX'], 0)
         page.close()
 
@@ -147,7 +147,7 @@ class DashboardLayoutTests(unittest.TestCase):
         page.get_by_label('Full name').fill('Kiran Example (fictional)')
         page.get_by_label('Phone', exact=True).fill('+91 90000 00000')
         page.locator('#auto-background').fill('Worked at Example Works as Frontend Developer from 2023.')
-        page.get_by_label('Upload existing resume').check()
+        page.get_by_label('Upload candidate documents').check()
         with tempfile.TemporaryDirectory() as folder:
             resume = Path(folder) / 'resume.txt'
             resume.write_text('Kiran Example (fictional)\n+91 90000 00000\n', encoding='utf-8')
@@ -156,9 +156,33 @@ class DashboardLayoutTests(unittest.TestCase):
         self.assertEqual(page.get_by_label('Full name').input_value(), 'Kiran Example (fictional)')
         self.assertEqual(page.get_by_label('Phone', exact=True).input_value(), '+91 90000 00000')
         self.assertIn('Example Works', page.locator('#auto-background').input_value())
-        page.get_by_label('Upload existing resume').check()
+        page.get_by_label('Upload candidate documents').check()
         self.assertEqual(page.evaluate("document.querySelector('#auto-file').files.length"), 1, 'the chosen file stays')
         self.assertEqual(page.get_by_label('Target role').input_value(), 'React.js Developer')
+        page.close()
+
+    def test_multiple_evidence_documents_are_sent_in_one_submission(self):
+        page = self.open(viewport={'width': 1366, 'height': 768})
+
+        def submit(route):
+            if route.request.method == 'POST':
+                route.fulfill(status=202, content_type='application/json',
+                              body=json.dumps({'id': 'd' * 64, 'status': 'queued'}))
+            else:
+                route.fulfill(status=200, content_type='application/json', body=json.dumps({'jobs': []}))
+
+        page.route('**/api/automation', submit)
+        page.get_by_label('Target role').fill('Python Backend Developer')
+        page.get_by_label('Upload candidate documents').check()
+        page.locator('#auto-file').set_input_files([
+            {'name': 'education.txt', 'mimeType': 'text/plain', 'buffer': b'Example College diploma'},
+            {'name': 'certificate.png', 'mimeType': 'image/png', 'buffer': b'fixture image bytes'}])
+        page.locator('#auto-consent').check()
+        with page.expect_request(lambda request: request.method == 'POST' and request.url.endswith('/api/automation')) as sent:
+            page.get_by_role('button', name='Create verified resume', exact=True).click()
+        payload = sent.value.post_data_json
+        self.assertEqual([item['extension'] for item in payload['documents']], ['txt', 'png'])
+        self.assertNotIn('candidate', payload)
         page.close()
 
     def test_search_filters_and_pagination(self):

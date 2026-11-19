@@ -23,14 +23,30 @@ class AutomationCapacity(ValueError):
 def submission(payload):
     from resume_bot.automation import CONSENT_VERSION, attested_profile, select_target
 
-    if not isinstance(payload, dict) or set(payload) - {'consent', 'role', 'candidate', 'document', 'extension'}:
-        raise ValueError('Expected candidate facts or a resume, a target role, and consent.')
+    if not isinstance(payload, dict) or set(payload) - {'consent', 'role', 'candidate', 'document', 'extension', 'documents'}:
+        raise ValueError('Expected candidate facts or evidence documents, a target role, and consent.')
     if payload.get('consent') != CONSENT_VERSION:
         raise ValueError('Confirm the facts and consent to publishing the resume on Overleaf.')
     role = select_target(payload.get('role'))
     candidate, document = payload.get('candidate'), payload.get('document')
+    if 'documents' in payload:
+        if candidate is not None or document is not None or payload.get('extension'):
+            raise ValueError('Submit candidate documents or a candidate form.')
+        documents = payload['documents']
+        if not isinstance(documents, list) or not 1 <= len(documents) <= 10:
+            raise ValueError('Choose between 1 and 10 candidate documents.')
+        normalized, total = [], 0
+        for item in documents:
+            if not isinstance(item, dict) or set(item) != {'extension', 'document'}:
+                raise ValueError('Invalid candidate document.')
+            accepted = submission({'consent': payload['consent'], 'role': role, **item})
+            total += len(base64.b64decode(accepted['document']))
+            if total > DOCUMENT_LIMIT:
+                raise ValueError('Candidate documents must total 12 MB or less.')
+            normalized.append({'extension': accepted['extension'], 'document': accepted['document']})
+        return {'consent': payload['consent'], 'role': role, 'documents': normalized}
     if (candidate is None) == (document is None):
-        raise ValueError('Submit a candidate form or one resume file.')
+        raise ValueError('Submit a candidate form or one candidate evidence document.')
     if candidate is not None:
         if not isinstance(candidate, dict) or payload.get('extension'):
             raise ValueError('Expected candidate form details.')
@@ -54,14 +70,14 @@ def submission(payload):
         profile = attested_profile(candidate)
         return {'consent': CONSENT_VERSION, 'role': role, 'profile': profile,
                 'years': candidate.get('years_of_experience')}
-    if payload.get('extension') not in ('pdf', 'docx', 'txt') or not isinstance(document, str):
-        raise ValueError('Choose a PDF, DOCX or TXT file.')
+    if payload.get('extension') not in ('pdf', 'docx', 'txt', 'jpg', 'jpeg', 'png') or not isinstance(document, str):
+        raise ValueError('Choose PDF, DOCX, TXT, JPG or PNG documents.')
     try:
         raw = base64.b64decode(document, validate=True)
     except (ValueError, binascii.Error) as error:
         raise ValueError('Could not read the uploaded file.') from error
     if not 0 < len(raw) <= DOCUMENT_LIMIT:
-        raise ValueError('Choose a resume file up to 12 MB.')
+        raise ValueError('Choose a candidate evidence document up to 12 MB.')
     return {'consent': CONSENT_VERSION, 'role': role, 'extension': payload['extension'],
             'document': base64.b64encode(raw).decode('ascii')}
 
@@ -279,7 +295,15 @@ class AutomationJobs:
             if not row or row['status'] != 'needs_input':
                 raise AnswerError('This resume is not waiting for your answers.')
             checkpoints = json.loads(row['checkpoints'])
-            if 'identity_intake' in checkpoints:
+            if checkpoints.get('document_intake'):
+                note = answers.get('source_text') if isinstance(answers, dict) else None
+                if not isinstance(note, str) or not 20 <= len(note.strip()) <= 7500:
+                    raise AnswerError('Add the missing candidate facts (20-7500 characters).', 'source_text')
+                checkpoints['source'] += '\nCandidate-provided facts:\n' + note.strip()
+                for field in ('document_intake', 'draft', 'questions'):
+                    checkpoints.pop(field, None)
+                confirmed = ['Candidate supplied additional facts alongside document evidence.']
+            elif 'identity_intake' in checkpoints:
                 note = answers.get('source_text') if isinstance(answers, dict) else None
                 if not isinstance(note, str) or not 20 <= len(note.strip()) <= 7500:
                     raise AnswerError('Add a short factual work or education history (20-7500 characters).',
@@ -413,6 +437,18 @@ class AutomationJobs:
         def extract():
             if 'profile' in request:
                 return request['profile']
+            if 'documents' in request:
+                sources = []
+                for index, item in enumerate(request['documents'], 1):
+                    progress(12, f'File extraction: reading document {index} of {len(request["documents"])}')
+                    try:
+                        text = self.workspace.read_automation_source(item['extension'], base64.b64decode(item['document']))
+                    except ValueError as error:
+                        raise ValueError(f'Document {index}: {error}') from error
+                    sources.append(f'Candidate evidence document {index}\n{text}')
+                    if sum(map(len, sources)) > 75000:
+                        raise ValueError('The combined document text is too long. Submit fewer documents.')
+                return '\n\n'.join(sources)
             progress(12, 'File extraction: reading the resume')
             return self.workspace.read_automation_source(request['extension'], base64.b64decode(request['document']))
 
@@ -464,7 +500,8 @@ class AutomationJobs:
                 progress(20, 'Candidate fact validation')
                 facts = checkpoint('facts', source if isinstance(source, dict) else
                                    source_profile(source, model, extraction_progress,
-                                                  identity=request.get('identity')))
+                                                  identity=request.get('identity'),
+                                                  evidence_documents='documents' in request))
             with closing(self.connection()) as db, db:
                 db.execute('UPDATE automation SET candidate=? WHERE owner=? AND id=?', (facts.get('full_name'), *key))
             # Never publish an experienced candidate's empty job history or an unsubstantiated
@@ -535,12 +572,16 @@ class AutomationJobs:
                 final_facts.pop('projects')
             packet, claims = verified_request(profile, role, years, intelligence)
             progress(65, 'Projects confirmed; facts and claims verified')
+            source_kind = request.get('extension', 'attested form')
+            if 'documents' in request:
+                source_kind = 'documents'
+            elif request.get('regenerated_from'):
+                source_kind = 'regenerated'
             approval = {'operation': job['id'], 'approved_by': job['owner'], 'claims': claims,
                         'project_names': [split_project(p)[0] for p in packet['profile'].get('projects', [])],
                         'market_sources': intelligence['sources'],
                         'automation': {'v': 3, 'consent': request['consent'], 'submission_sha256': job['id'],
-                                       'source_kind': request.get('extension', 'regenerated' if request.get('regenerated_from')
-                                                                  else 'attested form'),
+                                       'source_kind': source_kind,
                                        'source_sha256': hashlib.sha256(
                                            (source if isinstance(source, str) else
                                             json.dumps(source, sort_keys=True)).encode()).hexdigest(),
@@ -555,6 +596,8 @@ class AutomationJobs:
         except NeedsInput as gap:
             # Keep the submission and everything already done; ask only for what the resume lacks.
             checkpoints.update(draft=gap.draft, questions=gap.questions, extraction=EXTRACTION_VERSION)
+            if 'documents' in request and any(question.get('field') == 'source_text' for question in gap.questions):
+                checkpoints['document_intake'] = True
             with closing(self.connection()) as db, db:
                 db.execute("UPDATE automation SET status='needs_input',stage='Needs your input',error=?,checkpoints=?,"
                            'updated=? WHERE owner=? AND id=?', (str(gap), json.dumps(checkpoints), updated(), *key))

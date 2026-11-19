@@ -131,17 +131,22 @@ async function body() {
   }
   const data = {role: selectedRole(), consent: 'resumeops-auto-1'};
   if (mode()) return {...data, candidate: candidate()};
-  const file = fileControl.files[0];
-  const extension = file?.name.match(/\.(pdf|docx|txt)$/i)?.[1]?.toLowerCase();
-  if (!extension || !file.size || file.size > 12 * 1024 * 1024) {
-    throw new Error('Choose a PDF, DOCX or TXT file up to 12 MB.');
+  const files = Array.from(fileControl.files);
+  if (!files.length || files.length > 10 || files.reduce((sum, file) => sum + file.size, 0) > 12 * 1024 * 1024) {
+    throw new Error('Choose up to 10 candidate documents, up to 12 MB total.');
   }
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += 8192) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+  const documents = [];
+  for (const file of files) {
+    const extension = file.name.match(/\.(pdf|docx|txt|jpg|jpeg|png)$/i)?.[1]?.toLowerCase();
+    if (!extension || !file.size) throw new Error('Choose readable PDF, DOCX, TXT, JPG or PNG documents.');
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = '';
+    for (let offset = 0; offset < bytes.length; offset += 8192) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+    }
+    documents.push({extension, document: btoa(binary)});
   }
-  return {...data, extension, document: btoa(binary)};
+  return {...data, documents};
 }
 
 function progress(stage, value, error = '') {
@@ -226,7 +231,7 @@ function controlFor(message) {
     [/custom role/i, () => customRole],
     [/target role/i, () => role],
     [/consent|confirm the facts/i, () => byId('auto-consent')],
-    [/pdf, docx or txt|uploaded file|resume file|word document|12 mb/i, () => fileControl],
+    [/pdf|docx|candidate documents|uploaded file|resume file|word document|12 mb/i, () => fileControl],
     [/email/i, () => form.elements.email],
     [/experience must be|years/i, () => form.elements.years_of_experience],
     [/work entries|employer and position|work_experience/i, () => form.querySelector('[data-entries="work_experience"]')],
@@ -420,7 +425,7 @@ function explain(error) {
   if (!raw) return error || 'This submission stopped.';
   return (raw[1] === 'experience' ? 'Work entry ' : 'Education entry ') + (Number(raw[2]) + 1) + ' has no ' +
     (FIELD_WORDS[raw[3]] || raw[3]) + '. This upload stopped before ResumeOps could ask you for it; ' +
-    'upload the resume again to answer it.';
+    'upload the document again to answer it.';
 }
 
 // The panel follows only the submission made on this page, or one still running after a reload.
@@ -439,7 +444,7 @@ function answerForm(job) {
   const box = element('form');
   box.className = 'auto-answer';
   box.noValidate = true;
-  box.append(element('p', job.error || 'Your resume does not state some details.'));
+  box.append(element('p', job.error || 'Your documents do not state some required details.'));
   for (const question of job.questions || []) {
     const label = element('label', question.label);
     const field = element(question.field === 'source_text' ? 'textarea' : 'input');
