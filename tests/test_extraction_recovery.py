@@ -26,7 +26,7 @@ TOOLS = all(shutil.which(tool) for tool in ('pdflatex', 'pdftotext'))
 # same text survives TXT, DOCX and a LaTeX-compiled PDF.
 RESUME = """Asha Example
 Backend Engineer
-asha.example@example.com, Pune, India
+asha.example@example.com, +91 90000 00001, Pune, India
 Work Experience
 Example Cloud Pvt Ltd, Senior Backend Engineer, Jan 2022 - Present
 - Built payment APIs in Python and PostgreSQL.
@@ -44,6 +44,7 @@ Skills
 Python, SQL, Django, Kubernetes
 """
 NO_EMAIL = RESUME.replace('asha.example@example.com, ', '')
+NO_PHONE = RESUME.replace('+91 90000 00001, ', '')
 ROLES = [('Example Cloud Pvt Ltd', 'Senior Backend Engineer', 'Jan 2022', 'Present',
           ['Built payment APIs in Python and PostgreSQL.', 'Led migration of batch jobs to Kubernetes.']),
          ('Sample Analytics LLP', 'Backend Engineer', 'Jul 2019', 'Dec 2021',
@@ -219,12 +220,15 @@ class ExtractionRecoveryTests(unittest.TestCase):
         self.assertEqual(gap.draft['experience'][3]['company'], '')
         self.assertEqual(len(gap.draft['experience']), 4)
 
-    def test_missing_email_is_asked_and_no_history_is_reported(self):
-        gap = self.needs_input(NO_EMAIL, QuotingModel(email='', freelance=False))
-        self.assertEqual([q['id'] for q in gap.questions], ['email'])
+    def test_missing_phone_is_asked_missing_email_is_not_and_no_history_is_reported(self):
+        # Contact rule: a phone number is mandatory; email is optional.
+        profile = source_profile(NO_EMAIL, QuotingModel(email='', freelance=False))
+        self.assertEqual((profile['email'], profile['phone']), ('', '+91 90000 00001'))
+        gap = self.needs_input(NO_PHONE, QuotingModel(freelance=False))
+        self.assertEqual([q['id'] for q in gap.questions], ['phone'])
         with self.assertRaises(AnswerError) as caught:
-            apply_answers(gap.draft, gap.questions, {'email': 'not-an-email'})
-        self.assertEqual(caught.exception.field, 'email')
+            apply_answers(gap.draft, gap.questions, {'phone': 'not-a-phone'})
+        self.assertEqual(caught.exception.field, 'phone')
         nothing = QuotingModel(roles=[], freelance=False, padding=1)
         original = nothing.generate
         nothing.generate = lambda *a, **k: {**original(*a, **k), 'education': []}

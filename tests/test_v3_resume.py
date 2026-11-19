@@ -249,7 +249,8 @@ class WorkflowTests(unittest.TestCase):
         self.workspace = Workspace(Path(self.temp.name), code_root=ROOT)
         self.jobs = AutomationJobs(self.workspace)
         self.enqueued = []
-        candidate = {'full_name': 'Arun Sample', 'email': 'arun.sample@example.com', 'years_of_experience': 3,
+        candidate = {'full_name': 'Arun Sample', 'email': 'arun.sample@example.com', 'phone': '+91 90000 00002',
+                     'years_of_experience': 3,
                      'skills': ', '.join(FIXTURE['skills']),
                      'work_experience': [{'company': 'DemoByte Technologies (fictional)', 'position': 'Java Backend Developer',
                                           'start': 'July 2023', 'end': 'October 2026', 'location': '',
