@@ -497,6 +497,7 @@ class NeedsInputPageTests(unittest.TestCase):
                         self.assertEqual(db.execute("SELECT status FROM automation WHERE id=?", ('d' * 64,)).fetchone()[0], 'queued')
                     # A submission error appears once, next to the field it concerns.
                     page.get_by_label('Target role').fill('!!')
+                    page.locator('input[name=method][value=upload]').check()
                     page.locator('#auto-file').set_input_files({'name': 'resume.txt', 'mimeType': 'text/plain',
                                                                 'buffer': RESUME.encode()})
                     page.locator('#auto-consent').check()
