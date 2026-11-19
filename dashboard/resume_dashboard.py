@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import shutil
+import sqlite3
 import subprocess
 import stat
 import sys
@@ -721,13 +722,11 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 if not 0 < size <= 131072 or self.headers.get_content_type() != 'application/json':
                     return self.send_json({'error': 'Invalid request.'}, 413)
                 request = json.loads(self.rfile.read(size))
+                if action == 'delete':
+                    return self.delete_resumes(owner, request)
                 identifier = request.get('id') if isinstance(request, dict) else None
-                if action == 'delete' and request == {'all': True}:
-                    return self.send_json({'removed': automation.hide_history(owner)})
                 if not isinstance(identifier, str) or not re.fullmatch(r'[0-9a-f]{64}', identifier):
                     return self.send_json({'error': 'Invalid resume identifier.'}, 400)
-                if action == 'delete':
-                    return self.send_json({'removed': automation.hide_history(owner, identifier)})
                 if action == 'answer':
                     automation.answer(owner, identifier, request.get('answers'))
                 elif action == 'projects':
@@ -742,6 +741,42 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             except (ValueError, UnicodeError) as exc:
                 return self.send_json({'error': str(exc) if action == 'regenerate' else 'Invalid request.'}, 400)
             return self.send_json({'id': identifier, 'status': 'queued'})
+
+        def delete_resumes(self, owner, request):
+            """Permanent deletion for the signed-in account only. The confirmation is checked here, not
+            only in the page: {"id": <id>, "confirm": "DELETE"} or {"all": true, "confirm": "DELETE ALL"}."""
+            from automation_jobs import (DELETE_ALL_PHRASE, DELETE_ONE_PHRASE, DeleteBusy, DeleteFailed,
+                                         DeleteRefused)
+            if not isinstance(request, dict):
+                return self.send_json({'error': 'Invalid request.'}, 400)
+            everything = request.get('all') is True
+            if everything:
+                if set(request) != {'all', 'confirm'} or request['confirm'] != DELETE_ALL_PHRASE:
+                    return self.send_json({'error': 'Type DELETE ALL to confirm. Nothing was deleted.',
+                                           'field': 'confirm'}, 400)
+                identifier = None
+            else:
+                identifier = request.get('id')
+                if set(request) != {'id', 'confirm'} or not isinstance(identifier, str) \
+                        or not re.fullmatch(r'[0-9a-f]{64}', identifier):
+                    return self.send_json({'error': 'Invalid resume identifier.'}, 400)
+                if request['confirm'] != DELETE_ONE_PHRASE:
+                    return self.send_json({'error': 'Confirm the deletion first. Nothing was deleted.'}, 400)
+            try:
+                result = automation.delete(owner, identifier)
+            except DeleteRefused as exc:
+                return self.send_json({'error': str(exc)}, exc.status)
+            except DeleteBusy as exc:
+                return self.send_json({'error': str(exc)}, 503)
+            except DeleteFailed as exc:
+                return self.send_json({'error': str(exc)}, 500)
+            if everything:
+                try:
+                    result['drafts'] = durable.delete_owner(owner)
+                except sqlite3.Error:
+                    return self.send_json({**result, 'error': 'Your resumes were deleted, but saved import drafts '
+                                                              'could not be removed. Run Delete all again.'}, 500)
+            return self.send_json(result)
 
         def save_roles(self):
             """Operator: replace the managed role catalog after validation. Takes effect immediately."""

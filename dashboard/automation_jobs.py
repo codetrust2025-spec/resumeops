@@ -4,20 +4,179 @@ import binascii
 import hashlib
 import json
 import logging
+import os
 import re
+import secrets
+import shutil
 import sqlite3
+import stat
 import time
-from contextlib import closing
+from contextlib import closing, contextmanager, nullcontext
+from pathlib import Path
 from threading import Event, Lock, Thread
 
 
 DOCUMENT_LIMIT = 12 * 1024 * 1024
 REQUEST_LIMIT = DOCUMENT_LIMIT * 4 // 3 + 65536
 RETRY_LIMIT = 8
+DELETE_ONE_PHRASE = 'DELETE'
+DELETE_ALL_PHRASE = 'DELETE ALL'
+PROTECTED_RECORDS = '.resumeops-protected.json'  # operator-managed: {"records": ["<64 hex id>", ...]}
+BUILDER_LOCK = '.resume-bot-watch.sqlite3'  # the watcher holds it on the private inbox for each scan
+RETRY_DIR = '.resume-bot-retry'
+TRASH = '.deleting-'
 
 
 class AutomationCapacity(ValueError):
     pass
+
+
+class DeleteRefused(ValueError):
+    """This record cannot be deleted by this request; nothing changed."""
+    def __init__(self, message, status):
+        super().__init__(message)
+        self.status = status
+
+
+class DeleteBusy(RuntimeError):
+    """The resume builder is working on a resume; nothing changed."""
+
+
+class DeleteFailed(RuntimeError):
+    """A file or record could not be deleted; everything was put back and nothing changed."""
+
+
+def protected_records(root):
+    """Record ids that are never deleted. An unreadable list stops every deletion (fail closed)."""
+    path = Path(root) / PROTECTED_RECORDS
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except FileNotFoundError:
+        return frozenset()
+    except (OSError, ValueError) as error:
+        raise DeleteFailed('Deletion is unavailable: the protected-records list is unreadable. '
+                           'Nothing was deleted.') from error
+    records = data.get('records') if isinstance(data, dict) else None
+    if not isinstance(records, list) or not all(isinstance(r, str) and re.fullmatch(r'[0-9a-f]{64}', r) for r in records):
+        raise DeleteFailed('Deletion is unavailable: the protected-records list is invalid. Nothing was deleted.')
+    return frozenset(records)
+
+
+@contextmanager
+def builder_paused(private_inbox, wait):
+    """Hold the watcher's private-inbox lock: no build runs and the builder state cannot change meanwhile.
+    The watcher waits at most 5 s for this lock, so it is held only for the short rename-and-commit step."""
+    if not Path(private_inbox).is_dir():
+        yield
+        return
+    connection = sqlite3.connect(Path(private_inbox) / BUILDER_LOCK, timeout=wait)
+    try:
+        try:
+            connection.execute('BEGIN EXCLUSIVE')
+        except sqlite3.OperationalError as error:
+            raise DeleteBusy('ResumeOps is building a resume right now. Nothing was deleted; '
+                             'try again in a minute.') from error
+        yield
+    finally:
+        connection.close()
+
+
+def _read_state(path):
+    try:
+        state = json.loads(Path(path).read_text(encoding='utf-8-sig'))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as error:
+        raise DeleteFailed('The resume builder state could not be read. Nothing was deleted; try again.') from error
+    if not isinstance(state, dict):
+        raise DeleteFailed('The resume builder state is invalid. Nothing was deleted.')
+    return state
+
+
+def _linked(info):
+    return stat.S_ISLNK(info.st_mode) or bool(
+        getattr(info, 'st_file_attributes', 0) & getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0))
+
+
+def _plain_entries(folder):
+    """Directory entries that are not links or junctions; nothing if the folder is missing."""
+    try:
+        with os.scandir(folder) as entries:
+            return [entry for entry in entries if not _linked(entry.stat(follow_symlinks=False))]
+    except (FileNotFoundError, NotADirectoryError):
+        return []
+
+
+def _no_links(path):
+    """Refuse to delete through a link or junction: it could point at shared files or backups."""
+    pending = [Path(path)]
+    while pending:
+        current = pending.pop()
+        info = os.lstat(current)
+        if _linked(info):
+            raise DeleteFailed('A linked folder was found where resume files belong. Nothing was deleted; '
+                               'contact the ResumeOps operator.')
+        if stat.S_ISDIR(info.st_mode):
+            with os.scandir(current) as entries:
+                pending.extend(Path(entry.path) for entry in entries)
+
+
+def _same(path):
+    if not path:
+        return None
+    try:
+        return os.path.normcase(str(Path(path).resolve()))
+    except OSError:
+        return None
+
+
+def _audit_source(folder):
+    """The build request a published folder came from (its audit names it)."""
+    try:
+        source = json.loads((Path(folder) / 'audit.json').read_text(encoding='utf-8')).get('source')
+    except (OSError, ValueError, AttributeError):
+        return None
+    return Path(source).name if isinstance(source, str) and source else None
+
+
+def _rename(source, destination, attempts=10):
+    for attempt in range(attempts):
+        try:
+            os.rename(source, destination)
+            return
+        except PermissionError:  # Windows: a scanner or reader briefly has it open
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.05)
+
+
+def _restore(moved):
+    """Put every moved path back. One that cannot go back is never swept: its holding folder is renamed
+    .undeleted-<token> for the operator to restore, and the error is logged."""
+    stuck = set()
+    for original, destination in reversed(moved):
+        try:
+            _rename(destination, original)
+        except OSError:
+            logging.getLogger('resumeops.automation').exception('Could not put back %s', original)
+            stuck.add(destination.parent)
+    for holding in stuck:
+        try:
+            os.rename(holding, holding.with_name(holding.name.replace(TRASH, '.undeleted-', 1)))
+        except OSError:
+            logging.getLogger('resumeops.automation').exception('Could not protect %s', holding)
+
+
+def _writable_retry(function, path, _error):
+    os.chmod(path, stat.S_IWRITE)
+    function(path)
+
+
+def _remove_tree(path):
+    try:
+        shutil.rmtree(path, onexc=_writable_retry)
+    except OSError:
+        pass  # still open somewhere: retried on the next deletion; nothing in it is reachable
 
 
 def submission(payload):
@@ -90,6 +249,7 @@ class AutomationJobs:
         self.wake = Event()
         self.stopping = Event()
         self.lock = Lock()
+        self.delete_lock = Lock()
         self.thread = None
         with closing(self.connection()) as db, db:
             db.execute('''CREATE TABLE IF NOT EXISTS automation (
@@ -102,8 +262,9 @@ class AutomationJobs:
             # earlier releases select columns by name, so rollback is unaffected.
             columns = {row[1] for row in db.execute('PRAGMA table_info(automation)')}
             # role/candidate: History labels. facts: the verified facts of a finished resume, owner-scoped,
-            # so it can be regenerated for another role without uploading again.
-            for column in ('notice', 'role', 'candidate', 'facts', 'hidden_at'):
+            # so it can be regenerated for another role without uploading again. (A hidden_at column left by
+            # the earlier soft-delete release is no longer read: deletion is permanent, see delete().)
+            for column in ('notice', 'role', 'candidate', 'facts'):
                 if column not in columns:
                     db.execute(f'ALTER TABLE automation ADD COLUMN {column} TEXT')
 
@@ -121,8 +282,6 @@ class AutomationJobs:
         with closing(self.connection()) as db, db:
             db.execute('BEGIN IMMEDIATE')
             old = db.execute('SELECT 1 FROM automation WHERE owner=? AND id=?', (owner, identifier)).fetchone()
-            if old:
-                db.execute('UPDATE automation SET hidden_at=NULL WHERE owner=? AND id=?', (owner, identifier))
             if not old:
                 pending = db.execute("SELECT count(*) FROM automation WHERE status in ('queued','processing','retrying') AND owner=?",
                                      (owner,)).fetchone()[0]
@@ -186,7 +345,7 @@ class AutomationJobs:
         with closing(self.connection()) as db:
             rows = db.execute(f"SELECT {fields}, CASE status WHEN 'needs_input' THEN checkpoints END AS waiting, "
                               'facts IS NOT NULL AS regenerable '
-                              'FROM automation WHERE owner=? AND hidden_at IS NULL AND (? IS NULL OR id=?) ORDER BY created DESC LIMIT 50',
+                              'FROM automation WHERE owner=? AND (? IS NULL OR id=?) ORDER BY created DESC LIMIT 50',
                               (owner, identity, identity)).fetchall()
         state = self.workspace.automation_state()
         jobs = []
@@ -202,18 +361,145 @@ class AutomationJobs:
             jobs.append(job)
         return jobs
 
-    def hide_history(self, owner, identifier=None):
-        """Hide displayed history from its owner while retaining generated files."""
-        with closing(self.connection()) as db, db:
-            db.execute('BEGIN IMMEDIATE')
-            rows = db.execute('SELECT id, status, job FROM automation WHERE owner=? AND hidden_at IS NULL '
-                              'AND (? IS NULL OR id=?)', (owner, identifier, identifier)).fetchall()
-            state = self.workspace.automation_state()
-            ids = [row['id'] for row in rows
-                   if self._status(row, state, owner)['status'] in ('complete', 'blocked')]
-            db.executemany('UPDATE automation SET hidden_at=? WHERE owner=? AND id=?',
-                           ((time.time(), owner, key) for key in ids))
-            return len(ids)
+    # Permanent deletion. One resume (identifier) or every resume of one owner is deleted with everything
+    # built from it: the record, the build request, the builder's state entry, every output folder (PDF,
+    # LaTeX, Overleaf ZIP and PDF, profile, result, audit), the approval records and any retry marker.
+    #
+    # Safety rules:
+    # - Only the owner's own records; ids of other accounts behave as nonexistent.
+    # - Records on the operator's protected list (acceptance reference records) are never deleted.
+    # - A record whose preparation is running right now is kept (its files do not exist yet).
+    # - Anything another remaining record still uses is kept; nothing outside the owner's private folders
+    #   is touched; a link or junction anywhere in a folder stops the whole deletion.
+    # - All or nothing: the builder is paused (its own lock), every path is first renamed into a hidden
+    #   .deleting-<token> folder on the same volume, then the state entry and the records are deleted in one
+    #   transaction. Any failure renames everything back. The hidden folders are then removed; a removal
+    #   that fails (an open file) is retried on the next deletion. Nothing in them is reachable any more.
+    def delete(self, owner, identifier=None, wait=10):
+        with self.delete_lock:  # one deletion at a time: a sweep never meets another deletion's files
+            protected = protected_records(self.workspace.root)
+            self.purge_deleted()
+            try:
+                for paused in (self._needs_builder(owner, identifier), True):
+                    with builder_paused(self.workspace.private_inbox, wait) if paused else nullcontext():
+                        with closing(self.connection()) as db:
+                            db.execute('BEGIN IMMEDIATE')
+                            try:
+                                result = self._delete(db, owner, identifier, protected, paused)
+                            except BaseException:
+                                db.rollback()
+                                raise
+                    if result is not None:
+                        break
+            except sqlite3.OperationalError as error:
+                raise DeleteBusy('ResumeOps is busy saving another change. Nothing was deleted; '
+                                 'try again in a moment.') from error
+            except OSError as error:
+                raise DeleteFailed('Resume files could not be read. Nothing was deleted; try again.') from error
+            self.purge_deleted()
+            return result
+
+    def _needs_builder(self, owner, identifier):
+        """Deleting files the builder may use needs it paused; a record that never reached it does not."""
+        if identifier is None:
+            return True
+        with closing(self.connection()) as db:
+            row = db.execute('SELECT job FROM automation WHERE owner=? AND id=?', (owner, identifier)).fetchone()
+        return bool(row and row['job'])
+
+    def _delete(self, db, owner, identifier, protected, paused):
+        rows = db.execute('SELECT id, status, job FROM automation WHERE owner=? AND (? IS NULL OR id=?)',
+                          (owner, identifier, identifier)).fetchall()
+        if identifier is not None:
+            if not rows:
+                raise DeleteRefused('This resume does not exist or was already deleted.', 404)
+            if identifier in protected:
+                raise DeleteRefused('This record is protected and cannot be deleted.', 403)
+            if rows[0]['status'] == 'processing':
+                raise DeleteRefused('This resume is being prepared right now. Delete it when it finishes.', 409)
+        kept = [{'id': row['id'], 'reason': 'protected' if row['id'] in protected else 'in_progress'}
+                for row in rows if row['id'] in protected or row['status'] == 'processing']
+        targets = {row['id']: row['job'] for row in rows if row['id'] not in protected and row['status'] != 'processing'}
+        if not paused and (identifier is None or any(targets.values())):
+            return None  # it reached the builder meanwhile: start again with the builder paused
+        staying = {row['job'] for row in db.execute('SELECT owner, id, job FROM automation WHERE job IS NOT NULL')
+                   if not (row['owner'] == owner and row['id'] in targets)}
+        state_path = self.workspace.private_inbox / '.resume-bot-state.json'
+        state = _read_state(state_path)
+        # Delete all also clears this owner's leftovers (older builds, interrupted build folders), but not
+        # while one of their resumes is being prepared: that preparation is about to publish its own files.
+        sweep = identifier is None and not any(item['reason'] == 'in_progress' for item in kept)
+        jobs = {job for job in targets.values() if job and job not in staying}
+        paths, drop = self._owned_paths(owner, jobs, state, staying, sweep)
+        token = secrets.token_hex(8)
+        moved = []
+        try:
+            for path, _ in paths:
+                _no_links(path)  # checked for every path before anything moves
+            for path, root in paths:
+                holding = root / (TRASH + token)
+                holding.mkdir(exist_ok=True)
+                destination = holding / str(len(moved))
+                _rename(path, destination)
+                moved.append((path, destination))
+        except (OSError, DeleteFailed) as error:
+            _restore(moved)
+            if isinstance(error, DeleteFailed):
+                raise
+            raise DeleteFailed('A file could not be deleted (it may be open). Nothing was deleted; try again.') from error
+        from resume_bot.storage import write_json
+        try:
+            if drop:
+                write_json(state_path, {key: value for key, value in state.items() if key not in drop})
+            db.executemany('DELETE FROM automation WHERE owner=? AND id=?', ((owner, key) for key in targets))
+            db.commit()
+        except Exception as error:
+            db.rollback()
+            if drop:
+                try:
+                    write_json(state_path, state)
+                except OSError:
+                    logging.getLogger('resumeops.automation').exception('Could not restore the builder state')
+            _restore(moved)
+            raise DeleteFailed('The deletion could not be recorded. Nothing was deleted; try again.') from error
+        return {'deleted': len(targets), 'kept': kept}
+
+    def _owned_paths(self, owner, jobs, state, staying, sweep):
+        """Every file and folder built for the given jobs of one owner, as (path, same-volume root)."""
+        inbox, approvals = self.workspace.private_inbox, self.workspace.approvals
+        output_root = self.workspace.private_output
+        folder_root = output_root / ('private-' + owner)
+        name = re.compile(r'private-' + re.escape(owner) + r'-[0-9a-f]{64}\.json')
+        if sweep:
+            found = set(jobs) | {key for key in state if name.fullmatch(key)}
+            found |= {entry.name for entry in _plain_entries(inbox) if name.fullmatch(entry.name)}
+            found |= {entry.name + '.json' for entry in _plain_entries(approvals) if name.fullmatch(entry.name + '.json')}
+            jobs = {job for job in found if job not in staying}
+        jobs = {job for job in jobs if name.fullmatch(job)}  # never a job of another owner
+        keep = {_same(state[key].get('output')) for key in staying if isinstance(state.get(key), dict)} - {None}
+        current = {_same(state[key].get('output')) for key in jobs if isinstance(state.get(key), dict)} - {None}
+        paths = []
+        for job in sorted(jobs):
+            for path, root in ((inbox / job, inbox), (inbox / RETRY_DIR / job, inbox),
+                               (approvals / job[:-len('.json')], approvals)):
+                if os.path.lexists(path):
+                    paths.append((path, root))
+        for entry in _plain_entries(folder_root):
+            folder = Path(entry.path)
+            if not entry.is_dir(follow_symlinks=False) or _same(folder) in keep:
+                continue
+            source = _audit_source(folder)
+            if (_same(folder) in current or source in jobs
+                    or (sweep and (entry.name.startswith('resume-build-') or (source and source not in staying)))):
+                paths.append((folder, output_root))
+        return paths, [job for job in jobs if job in state]
+
+    def purge_deleted(self):
+        """Remove what deletions moved aside. Their records are already gone; failures retry next time."""
+        for root in (self.workspace.private_inbox, self.workspace.approvals, self.workspace.private_output):
+            for entry in _plain_entries(root):
+                if entry.name.startswith(TRASH) and entry.is_dir(follow_symlinks=False):
+                    _remove_tree(entry.path)
 
     def decide_projects(self, owner, identifier, decisions):
         """Apply the candidate's decision on each suggested project. Only projects they confirm, as
@@ -277,9 +563,6 @@ class AutomationJobs:
                 db.execute('INSERT INTO automation(owner,id,payload,checkpoints,created,updated,role,candidate,percent,stage) '
                            "VALUES (?,?,?,?,?,?,?,?,30,'Verified facts reused from an earlier resume')",
                            (owner, new_id, payload, checkpoints, now, now, role, row['candidate']))
-            else:
-                db.execute('UPDATE automation SET hidden_at=NULL WHERE owner=? AND id=? AND hidden_at IS NOT NULL',
-                           (owner, new_id))
         self.start()
         self.wake.set()
         return new_id

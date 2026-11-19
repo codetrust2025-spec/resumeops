@@ -61,6 +61,20 @@
       <button id="auto-delete-all" type="button" hidden>Delete all</button>
       <span id="auto-delete-status" role="status"></span>
     </div>
+    <dialog id="auto-delete-dialog" class="auto-dialog" aria-labelledby="auto-delete-title" aria-describedby="auto-delete-text">
+      <form id="auto-delete-form">
+        <h3 id="auto-delete-title">Permanently delete all resumes?</h3>
+        <p id="auto-delete-text">This deletes every resume in My resumes, on every page and filter, with its PDF, LaTeX
+          and generated files. It cannot be undone. A resume still being prepared is kept.</p>
+        <label>Type DELETE ALL to confirm
+          <input id="auto-delete-phrase" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
+        <p id="auto-delete-error" class="auto-dialog-error" role="alert"></p>
+        <div class="auto-dialog-actions">
+          <button id="auto-delete-cancel" type="button">Cancel</button>
+          <button id="auto-delete-confirm" type="submit" class="auto-danger" disabled>Permanently delete all</button>
+        </div>
+      </form>
+    </dialog>
     <section id="auto-status" class="auto-status" hidden aria-live="polite">
       <strong id="auto-stage"></strong>
       <div class="auto-progress"><progress id="auto-progress" max="100" value="0" aria-label="Verified processing progress"></progress><span id="auto-percent">0%</span></div>
