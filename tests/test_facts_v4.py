@@ -257,6 +257,55 @@ class DateSpanTests(unittest.TestCase):
         school = self.repaired(self.SOURCE.replace('Technology, 2019', 'Technology, 2015 - 2019'), '2015', '2019')
         self.assertEqual((school['start'], school['end']), ('2015', '2019'))
 
+    def test_a_single_year_read_as_the_start_is_the_completion_year(self):
+        # Production (acceptance of adef0a9): qwen2.5 returned start "2019" and no end for "..., 2019". The same
+        # year also starts a job range ("Jul 2019 - Dec 2021"), which must not count for the degree.
+        school = self.repaired(self.SOURCE, '2019', '')
+        self.assertEqual((school['start'], school['end']), ('', '2019'))
+
+    def test_a_start_year_the_resume_writes_for_the_degree_is_never_moved(self):
+        # The model dropped the end of a written range: the start stays a start (nothing is guessed).
+        school = self.repaired(self.SOURCE.replace('Technology, 2019', 'Technology, 2015 - 2019'), '2015', '')
+        self.assertEqual((school['start'], school['end']), ('2015', ''))
+        for ongoing in ('2023 - Present', '2023 onwards', 'Pursuing, started 2023', 'Expected 2027, started 2023'):
+            school = self.repaired(self.SOURCE.replace('Technology, 2019', f'Technology, {ongoing}'), '2023', '')
+            self.assertEqual((school['start'], school['end']), ('2023', ''), ongoing)
+
+
+class RoleRestatedBulletTests(unittest.TestCase):
+    """Production (acceptance of 0093559): qwen2.5 returned the job title "Frontend Developer" as the role's only
+    bullet. It is verbatim, so it was kept; the evidence gate then saw work activity, never asked the candidate,
+    and the resume printed the title as the candidate's work."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.source = read_resume_text(form_docx(Path(self.temp.name) / 'resume.docx'))
+
+    def test_the_job_title_as_a_bullet_is_not_work_activity(self):
+        class TitleAsBullet(JoinedCellModel):
+            def generate(self, prompt, schema=None, on_progress=None):
+                data = super().generate(prompt, schema, on_progress)
+                data['experience'][0]['bullets'] = [quote('Frontend Developer')]
+                return data
+        profile = source_profile(self.source, TitleAsBullet())
+        self.assertEqual(profile['experience'][0]['bullets'], [])
+
+    def test_only_bullets_that_restate_the_role_are_dropped(self):
+        from resume_bot.ingest import repair
+        job = {'company': 'Example Works Solutions Pvt Ltd', 'position': 'Frontend Developer', 'start': 'July 2023',
+               'end': 'Present', 'location': 'Pune',
+               'bullets': ['Frontend Developer.', 'Frontend Developer at Example Works Solutions Pvt Ltd',
+                           'July 2023 - Present', 'Working as a Frontend Developer in Pune',
+                           'Built React.js screens with Redux Toolkit state for an internal admin portal.',
+                           'Developer tooling: wrote Jest tests for the checkout form']}
+        out = {key: '' for key in ('full_name', 'headline', 'email', 'phone', 'location', 'linkedin', 'github',
+                                   'portfolio', 'current_company', 'summary')}
+        out.update(full_name='Kiran Example', skills=[], certifications=[], projects=[], education=[], experience=[job])
+        self.assertEqual(repair(out, self.source)['experience'][0]['bullets'],
+                         ['Built React.js screens with Redux Toolkit state for an internal admin portal.',
+                          'Developer tooling: wrote Jest tests for the checkout form'])
+
 
 @unittest.skipUnless(all(shutil.which(t) for t in ('pdflatex', 'pdftotext')), 'needs pdfLaTeX and pdftotext')
 class EmDashPdfTests(unittest.TestCase):
