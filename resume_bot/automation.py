@@ -261,6 +261,14 @@ def source_profile(source, ai, on_progress=None, notices=None, identity=None, ev
             r'\b(?:pursuing|planned|unearned|in progress|not earned|not completed|learning)\b', value, re.I)]
 
     draft['skills'] = from_section(draft.get('skills', []), r'(?:technical )?skills', split=True, labelled_row='skills')
+    from .generate import is_job_title, without_note
+    # A designation is never a technical skill, wherever the document mentions it ("Data Analyst").
+    positions = [job.get('position') or '' for job in draft['experience']]
+    draft['skills'] = [skill for skill in draft['skills'] if not is_job_title(skill, positions)]
+    for entry in draft['education']:  # "B.Tech (branch not specified in source)" is the model's note, not the degree
+        for field in ('degree', 'details'):
+            if entry.get(field):
+                entry[field] = without_note(entry[field]) or entry[field]
     draft['certifications'] = from_section(draft.get('certifications', []), r'certifications?')
     if draft.get('projects'):
         draft['projects'] = from_section(draft['projects'], r'(?:completed )?projects')
@@ -475,8 +483,12 @@ def _verified_v3(profile, target, evidence):
     from .generate import summary_problems
     from .workflow import role_name
 
+    from .generate import content_problems
+
     title, years = role_name(target), target.get('experience_years')
     if profile.get('headline') != title or summary_problems(profile.get('summary', ''), evidence, title, years):
+        return False
+    if content_problems(profile, title):  # e.g. a job title listed as a skill: never verified
         return False
     for key in ('skills', 'projects', 'certifications', 'achievements', 'coding_platforms', 'competencies'):
         if Counter(profile.get(key) or []) != Counter(evidence.get(key) or []):

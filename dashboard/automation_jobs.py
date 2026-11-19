@@ -264,7 +264,9 @@ class AutomationJobs:
             # role/candidate: History labels. facts: the verified facts of a finished resume, owner-scoped,
             # so it can be regenerated for another role without uploading again. (A hidden_at column left by
             # the earlier soft-delete release is no longer read: deletion is permanent, see delete().)
-            for column in ('notice', 'role', 'candidate', 'facts'):
+            # origin: the candidate's own work lines (from documents, the form or typed answers), as opposed to AI
+            # drafts, so a role resume never presents drafted target-role work as employment.
+            for column in ('notice', 'role', 'candidate', 'facts', 'origin'):
                 if column not in columns:
                     db.execute(f'ALTER TABLE automation ADD COLUMN {column} TEXT')
 
@@ -503,6 +505,15 @@ class AutomationJobs:
                     _remove_tree(entry.path)
 
     @staticmethod
+    def _legacy_origin(facts, notice):
+        """For a resume finished before origins were recorded: the work lines of every job whose lines were not
+        confirmed from an AI draft (its notices say which were)."""
+        notes = json.loads(notice or '[]')
+        drafted = lambda job: any(note.startswith('Reviewed and confirmed by you (AI draft): Work as ' + job['position'])
+                                  for note in notes)
+        return {'bullets': [line for job in facts['experience'] if not drafted(job) for line in job['bullets']]}
+
+    @staticmethod
     def _draft_question(facts, index, lines, label):
         """The work question for one job: the AI draft for the role pre-filled, or an empty field."""
         entry = facts['experience'][index]
@@ -575,19 +586,22 @@ class AutomationJobs:
         role = select_target(role)
         with closing(self.connection()) as db, db:
             db.execute('BEGIN IMMEDIATE')
-            row = db.execute('SELECT facts, candidate FROM automation WHERE owner=? AND id=?', (owner, identifier)).fetchone()
+            row = db.execute('SELECT facts, candidate, origin, notice FROM automation WHERE owner=? AND id=?',
+                             (owner, identifier)).fetchone()
             if not row or not row['facts']:
                 raise AnswerError('Only a finished resume can be regenerated.')
             facts = json.loads(row['facts'])
+            origin = json.loads(row['origin']) if row['origin'] else self._legacy_origin(facts, row['notice'])
             new_id = hashlib.sha256(json.dumps({'from': identifier, 'role': role.casefold()}).encode()).hexdigest()
             if not db.execute('SELECT 1 FROM automation WHERE owner=? AND id=?', (owner, new_id)).fetchone():
                 payload = json.dumps({'consent': CONSENT_VERSION, 'role': role, 'regenerated_from': identifier})
-                checkpoints = json.dumps({'source': facts, 'facts': facts, 'projects_reviewed': bool(facts.get('projects')),
-                                          'drafts_reviewed': True})  # the finished resume's facts were confirmed
+                # The new role decides again: its skills and projects are suggested when the facts lack them. Work
+                # lines already reviewed are not asked about again.
+                checkpoints = json.dumps({'source': facts, 'facts': facts, 'drafts_reviewed': True})
                 now = time.time()
-                db.execute('INSERT INTO automation(owner,id,payload,checkpoints,created,updated,role,candidate,percent,stage) '
-                           "VALUES (?,?,?,?,?,?,?,?,30,'Verified facts reused from an earlier resume')",
-                           (owner, new_id, payload, checkpoints, now, now, role, row['candidate']))
+                db.execute('INSERT INTO automation(owner,id,payload,checkpoints,created,updated,role,candidate,percent,stage,'
+                           "origin) VALUES (?,?,?,?,?,?,?,?,30,'Verified facts reused from an earlier resume',?)",
+                           (owner, new_id, payload, checkpoints, now, now, role, row['candidate'], json.dumps(origin)))
         self.start()
         self.wake.set()
         return new_id
@@ -599,7 +613,7 @@ class AutomationJobs:
 
         with closing(self.connection()) as db, db:
             db.execute('BEGIN IMMEDIATE')
-            row = db.execute('SELECT status, checkpoints, notice FROM automation WHERE owner=? AND id=?',
+            row = db.execute('SELECT status, checkpoints, notice, origin FROM automation WHERE owner=? AND id=?',
                              (owner, identifier)).fetchone()
             if not row or row['status'] != 'needs_input':
                 raise AnswerError('This resume is not waiting for your answers.')
@@ -630,9 +644,23 @@ class AutomationJobs:
             else:
                 questions = checkpoints.pop('questions')
                 facts = apply_answers(checkpoints.pop('draft'), questions, answers)
+                for question in questions:
+                    if question['field'] == 'skills' and question.get('carry'):
+                        # Skills for other fields stay in the facts (off this role's resume, kept for other roles).
+                        have = {s.casefold() for s in facts['skills']}
+                        facts['skills'] += [s for s in question['carry'] if s.casefold() not in have]
                 checkpoints['facts'] = facts
-                if any(question['field'] in ('bullets', 'skills') for question in questions):
+                if any(question['field'] == 'bullets' for question in questions):
                     checkpoints['drafts_reviewed'] = True  # a job left without lines is not asked about again
+                if any(question['field'] == 'skills' for question in questions):
+                    checkpoints['skills_reviewed'] = checkpoints.pop('skills_review_role', True)
+                typed = [line for question in questions if question['field'] == 'bullets' and not question.get('drafted')
+                         for line in facts['experience'][question['entry']]['bullets']]
+                if typed:  # what the candidate wrote in their own words is their evidence, not an AI draft
+                    origin = json.loads(row['origin']) if row['origin'] else {'bullets': []}
+                    origin['bullets'] = list(dict.fromkeys([*origin['bullets'], *typed]))
+                    db.execute('UPDATE automation SET origin=? WHERE owner=? AND id=?',
+                               (json.dumps(origin), owner, identifier))
                 confirmed = [('Reviewed and confirmed by you (AI draft): ' if question.get('drafted') else
                               'Confirmed by you: ') + question['label'].replace(' (AI draft)', '') + '.'
                              for question in questions]
@@ -729,7 +757,8 @@ class AutomationJobs:
     def _prepare(self, job):
         from resume_bot.automation import (EXTRACTION_VERSION, NeedsInput, inferred_years, role_intelligence,
                                            source_profile, tailor_role, verified_request)
-        from resume_bot.generate import draft_role_content, propose_projects, split_project
+        from resume_bot.generate import (content_problems, draft_role_content, fits_role, is_job_title, lacks_role_core,
+                                         present_for_role, propose_projects, role_projects, split_project, without_note)
         from resume_bot.ollama import Ollama, OllamaError
 
         key = (job['owner'], job['id'])
@@ -832,38 +861,58 @@ class AutomationJobs:
                 progress(26, f'Selected role analysis: {role}')
                 intelligence = checkpoint('role', role_intelligence(role, self.workspace.root))
             target = {'role': intelligence['role'], 'keywords': intelligence['terms']}
-            # What the documents do not say (the work done in a job, the skills) is drafted by AI for the selected
-            # role and shown pre-filled with the project suggestions, for one confirmation. Drafts never become
-            # resume content unconfirmed; the candidate keeps, edits or clears every line.
-            missing = [index for index, entry in enumerate(facts['experience']) if not entry['bullets']]
-            if (missing or not facts['skills']) and not checkpoints.get('drafts_reviewed'):
-                progress(28, f'AI drafting {intelligence["label"]} content for your review')
-                work, skills = draft_role_content(facts, target, intelligence['label'], years, missing,
-                                                  not facts['skills'], model, draft_progress)
-                questions = [self._draft_question(facts, index, work.get(index), intelligence['label'])
-                             for index in missing]
-                if not facts['skills']:
+            label = intelligence['label']
+            # A designation is never a skill, and extraction notes are never resume text (any source, including a
+            # resume regenerated from earlier facts).
+            positions = [entry['position'] for entry in facts['experience']]
+            facts = {**facts, 'skills': [s for s in facts.get('skills', []) if not is_job_title(s, positions)],
+                     'education': [{**entry, 'degree': without_note(entry['degree']) or entry['degree'],
+                                    'details': without_note(entry.get('details', ''))} for entry in facts['education']]}
+            # The candidate's own work lines (documents, form, or typed answers), as opposed to AI drafts.
+            origin = json.loads(job['origin']) if job['origin'] else None
+            if origin is None:
+                origin = {'bullets': [line for entry in facts['experience'] for line in entry['bullets']]}
+                with closing(self.connection()) as db, db:
+                    db.execute('UPDATE automation SET origin=? WHERE owner=? AND id=?', (json.dumps(origin), *key))
+            # The selected role decides the resume. What the documents do not give for it (the work done in a job, the
+            # skills the role needs, projects in its field) is drafted by AI and shown pre-filled with the project
+            # suggestions, for one confirmation. Drafts never become resume content unconfirmed.
+            missing = ([] if checkpoints.get('drafts_reviewed') else
+                       [index for index, entry in enumerate(facts['experience']) if not entry['bullets']])
+            role_skills = [s for s in facts['skills'] if fits_role(s, target)]
+            need_skills = lacks_role_core(role_skills, target) and checkpoints.get('skills_reviewed') != label
+            if missing or need_skills:
+                progress(28, f'AI drafting {label} content for your review')
+                work, skills = draft_role_content(facts, target, label, years, missing, need_skills, model,
+                                                  draft_progress)
+                questions = [self._draft_question(facts, index, work.get(index), label) for index in missing]
+                if need_skills:
+                    value = list(dict.fromkeys([*role_skills, *skills]))
                     questions.append({
                         'id': 'skills', 'section': 'profile', 'entry': None, 'field': 'skills', 'drafted': bool(skills),
-                        'label': f'Skills for {intelligence["label"]}' + (' (AI draft)' if skills else ''),
-                        'explanation': ('AI suggested these for the role. Keep only tools you have used; add or remove any.'
-                                        if skills else 'List the tools and technologies you have used, separated by commas.'),
-                        'value': ', '.join(skills)})
+                        'label': f'Skills for {label}' + (' (with AI suggestions)' if skills else ''),
+                        'explanation': (f'Your skills that fit {label}, plus AI suggestions for the role. Keep only tools '
+                                        'you have used; add or remove any.' if skills else
+                                        'List the tools and technologies you have used, separated by commas.'),
+                        'value': ', '.join(value),
+                        # Skills for other fields stay in the candidate's facts, off this role's resume.
+                        'carry': [s for s in facts['skills'] if s not in role_skills]})
+                    checkpoints['skills_review_role'] = label
                 proposals = []
-                if not facts.get('projects') and not checkpoints.get('projects_reviewed'):
+                if not role_projects(facts, target) and not checkpoints.get('projects_reviewed'):
                     proposals = checkpoints.get('proposals_made')
                     if proposals is None:
                         progress(29, 'Project selection: proposing role-specific projects')
                         proposals = checkpoint('proposals_made', propose_projects(
-                            {**facts, 'skills': facts['skills'] or skills}, target, intelligence['label'], years,
+                            {**facts, 'skills': [*role_skills, *skills]}, target, label, years,
                             model, proposal_progress))
                 checkpoints.update(draft=facts, questions=questions)
                 if proposals:
                     checkpoints['proposals'] = proposals
                 drafted = sum(1 for question in questions if question.get('drafted'))
-                message = (f'AI drafted {intelligence["label"]} content from your job titles and dates. Keep what you '
-                           'actually did, edit anything, then confirm once.' if drafted else
-                           'Add what you did in these jobs, or leave a job without details. Then confirm once.')
+                message = (f'AI drafted {label} content: work lines from your job titles and dates, and skills the role '
+                           'needs. Keep only what is true for you, edit anything, then confirm once.' if drafted else
+                           'Add what you did in these jobs (or leave a job without details) and your skills. Then confirm once.')
                 if proposals:
                     message += ' Choose which suggested projects you have built.'
                 with closing(self.connection()) as db, db:
@@ -876,14 +925,16 @@ class AutomationJobs:
             progress(40, 'Role keywords and skill areas prepared')
             with closing(self.connection()) as db, db:  # History label for a job submitted before roles were recorded
                 db.execute('UPDATE automation SET role=COALESCE(role,?) WHERE owner=? AND id=?', (intelligence['label'], *key))
+            # The role resume: only what fits the selected role, from the candidate's facts (nothing added).
+            presented, left_out = present_for_role(facts, target, label, origin['bullets'])
             tailored = checkpoints.get('tailored')
             if tailored is None:
-                profile, how = tailor_role(facts, intelligence['label'], years, intelligence, model,
+                profile, how = tailor_role(presented, label, years, intelligence, model,
                                            ranking_progress, summary_progress)
                 tailored = checkpoint('tailored', [profile, how])
             profile, how = tailored
             progress(55, 'Role-based summary, skills and evidence order prepared')
-            if not facts.get('projects') and not checkpoints.get('projects_reviewed'):
+            if not role_projects(facts, target) and not checkpoints.get('projects_reviewed'):
                 proposals = checkpoints.get('proposals_made')
                 if proposals is None:
                     progress(56, 'Project selection: proposing role-specific projects')
@@ -900,11 +951,18 @@ class AutomationJobs:
                                     'built, edit them as needed, or skip them.', json.dumps(checkpoints), updated(), *key))
                     return
             confirmed = checkpoints.get('confirmed_projects') or []
+            # Stored facts stay complete (a later resume for another role starts from them); the approval records
+            # exactly the facts this role's resume presents, which the builder checks the PDF against.
             final_facts = {**facts, 'projects': [*(facts.get('projects') or []), *confirmed]}
+            shown_facts = {**presented, 'projects': [*(presented.get('projects') or []), *confirmed]}
             profile = {**profile, 'projects': [*(profile.get('projects') or []), *confirmed]}
-            if not profile['projects']:
-                profile.pop('projects')
-                final_facts.pop('projects')
+            for holder in (final_facts, shown_facts, profile):
+                if not holder['projects']:
+                    holder.pop('projects')
+            problems = content_problems(profile, label)
+            if problems:
+                # Never marked verified: the candidate sees exactly what failed.
+                raise ValueError('Content validation failed: ' + '; '.join(problems) + '.')
             packet, claims = verified_request(profile, role, years, intelligence)
             progress(65, 'Projects confirmed; facts and claims verified')
             source_kind = request.get('extension', 'attested form')
@@ -920,14 +978,18 @@ class AutomationJobs:
                                        'source_sha256': hashlib.sha256(
                                            (source if isinstance(source, str) else
                                             json.dumps(source, sort_keys=True)).encode()).hexdigest(),
-                                       'facts': final_facts, 'summary': how, 'confirmed_projects': confirmed}}
+                                       'facts': shown_facts, 'summary': how, 'confirmed_projects': confirmed}}
             packet['target']['automation_owner'] = job['owner']
             packet['target']['automation_id'] = job['id']
             match = self.workspace.enqueue(json.dumps(packet).encode(), approval=approval)
+            notes = json.loads(job['notice'] or '[]')
+            if left_out:
+                notes.append(f'Not shown on this {label} resume ({len(left_out)}): ' + '; '.join(left_out[:4])
+                             + ('; and more.' if len(left_out) > 4 else '.') + ' Your facts are kept for other roles.')
             with closing(self.connection()) as db, db:
                 db.execute("UPDATE automation SET status='handed_off',stage='Waiting for the resume builder',percent=65,"
-                           "payload=NULL,checkpoints='{}',error=NULL,updated=?,job=?,facts=? WHERE owner=? AND id=?",
-                           (updated(), match['name'], json.dumps(final_facts), *key))
+                           "payload=NULL,checkpoints='{}',error=NULL,updated=?,job=?,facts=?,notice=? WHERE owner=? AND id=?",
+                           (updated(), match['name'], json.dumps(final_facts), json.dumps(notes), *key))
         except NeedsInput as gap:
             # Keep the submission and everything already done; ask only for what the resume lacks.
             checkpoints.update(draft=gap.draft, questions=gap.questions, extraction=EXTRACTION_VERSION)
@@ -948,10 +1010,12 @@ class AutomationJobs:
                             'Ollama or local storage needs attention.',
                             count, updated() + min(3600, 30 * 2 ** count) if available else 0, updated(), *key))
         except ValueError as error:
-            # The resume itself lacks mandatory facts: say exactly which, and stop. Never stay "in progress".
+            # The resume itself lacks mandatory facts, or its content failed validation: say exactly what, and stop.
+            # Never stay "in progress", and never reach 100%.
+            stage = 'Content validation failed' if str(error).startswith('Content validation failed') else 'Needs your input'
             with closing(self.connection()) as db, db:
-                db.execute("UPDATE automation SET status='blocked',stage='Needs your input',error=?,payload=NULL,"
-                           "checkpoints='{}',updated=? WHERE owner=? AND id=?", (str(error), updated(), *key))
+                db.execute("UPDATE automation SET status='blocked',stage=?,error=?,payload=NULL,"
+                           "checkpoints='{}',updated=? WHERE owner=? AND id=?", (stage, str(error), updated(), *key))
         except Exception:
             logging.getLogger('resumeops.automation').exception('Unexpected preparation failure for %s', job['id'][:12])
             with closing(self.connection()) as db, db:
