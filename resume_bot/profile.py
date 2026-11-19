@@ -44,9 +44,10 @@ def validate_profile(data):
            for key in ('full_name', 'headline', 'email', 'phone', 'location', 'linkedin', 'github', 'summary')}
     if out['email'] and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', out['email']):
         raise ProfileError('Invalid email address')
-    phone_digits = re.sub(r'\D', '', out['phone'])
-    if not 7 <= len(phone_digits) <= 15:
-        raise ProfileError('A valid phone number with 7 to 15 digits is required')
+    # Legacy stored profiles may use email as their contact method. New candidate
+    # intake endpoints enforce phone explicitly before a profile reaches this validator.
+    if not out['email'] and not out['phone']:
+        raise ProfileError('A phone number or email address is required')
     for k in ('skills', 'experience', 'education', 'certifications'):
         if not isinstance(data.get(k, []), list):
             raise ProfileError(f'{k}: expected array')
