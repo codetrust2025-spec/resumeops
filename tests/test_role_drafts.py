@@ -86,12 +86,17 @@ class DraftRoleContentTests(unittest.TestCase):
                                    'Wrote unit tests for Angular services and components with TypeScript.'])
         self.assertNotIn(7, work)
         self.assertNotIn('Google Cloud', ' '.join(line for lines in work.values() for line in lines))
-        self.assertEqual(skills[:3], ['React.js', 'TypeScript', 'CSS'])
+        # The role's leading technologies come first, then the model's suggestions that are catalog terms.
+        self.assertEqual(skills, ['JavaScript', 'HTML', 'React.js', 'TypeScript', 'CSS'])
         self.assertNotIn('Underwater Basket Weaving', skills)
 
     def test_gcp_drafts_stay_on_gcp(self):
+        cloud = profile(jobs=[{'company': 'Example Health Pvt Ltd', 'position': 'Cloud Engineer', 'start': 'Jan 2021',
+                               'end': 'Present', 'location': '', 'bullets': []},
+                              {'company': 'Sample Systems', 'position': 'System Administrator', 'start': 'Jun 2019',
+                               'end': 'Dec 2020', 'location': '', 'bullets': []}])
         with patch('resume_bot.generate.generate', Model(GCP_DRAFT)):
-            work, skills = draft_role_content(profile(), GCP, 'GCP Cloud Engineer', 5, [0, 1], True, object())
+            work, skills = draft_role_content(cloud, GCP, 'GCP Cloud Engineer', 5, [0, 1], True, object())
         self.assertEqual(len(work[0]), 2)
         self.assertNotIn('React', ' '.join(work[0]))
         self.assertNotIn(1, work, 'one acceptable line is not enough to draft a job')
@@ -218,7 +223,7 @@ class ReviewOnceTests(unittest.TestCase):
         self.assertEqual([q['id'] for q in job['questions']], ['experience.0.bullets', 'experience.1.bullets', 'skills'])
         self.assertTrue(all(q['drafted'] for q in job['questions']))
         self.assertIn('React.js components', job['questions'][0]['value'])
-        self.assertEqual(job['questions'][2]['value'], 'React.js, TypeScript, CSS')
+        self.assertEqual(job['questions'][2]['value'], 'JavaScript, HTML, React.js, TypeScript, CSS')
         self.assertEqual([p['name'] for p in job['proposals']], ['Practice Catalogue', 'Practice Planner'])
         self.assertIn('AI drafted Frontend Developer content', job['error'])
 

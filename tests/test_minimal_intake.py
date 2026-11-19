@@ -71,12 +71,13 @@ class MinimalIntakeTests(unittest.TestCase):
             with closing(jobs.connection()) as db:
                 waiting = db.execute('SELECT * FROM automation WHERE id=?', (identifier,)).fetchone()
             self.assertEqual(waiting['status'], 'needs_input')
+            # React.js and TypeScript include none of Angular's own stack: the selected role's skills are asked for too.
             self.assertEqual([q['id'] for q in json.loads(waiting['checkpoints'])['questions']],
-                             ['experience.0.bullets'])
+                             ['experience.0.bullets', 'skills'])
             self.assertIsNone(waiting['job'])
             with patch.object(jobs, 'start'):
                 jobs.answer(OWNER, identifier, {'experience.0.bullets':
-                    'Developed React components and TypeScript UI forms for internal tools.'})
+                    'Developed React components and TypeScript UI forms for internal tools.', 'skills': 'TypeScript'})
             with closing(jobs.connection()) as db:
                 updated = db.execute('SELECT * FROM automation WHERE id=?', (identifier,)).fetchone()
             self.assertEqual(updated['status'], 'queued')

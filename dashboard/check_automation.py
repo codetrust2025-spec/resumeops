@@ -1,5 +1,6 @@
 """Browser and HTTP acceptance for one-submit automation with an isolated watcher."""
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -131,8 +132,13 @@ class AutomationContract(unittest.TestCase):
             with patch.object(jobs, 'start'):
                 job_id = jobs.enqueue('a' * 64, payload)
                 self.assertEqual(jobs.enqueue('a' * 64, payload), job_id)
+            # This contract is about retries keeping completed work. The role rules (a UI Developer has none of Azure
+            # Data Engineer's own stack, and JavaScript is not shown for it) are covered by tests/test_role_control.py,
+            # so they are left out here and the job reaches the ranking step this contract interrupts.
             with patch.object(workspace, 'read_automation_source', return_value=SOURCE) as reader, \
                     patch('resume_bot.automation.extract_profile', return_value=make_facts()), \
+                    patch('resume_bot.generate.lacks_role_core', return_value=False), \
+                    patch('resume_bot.generate.fits_role', return_value=True), \
                     patch('resume_bot.automation.generate', side_effect=[OllamaError('transient'), {}]):
                 with closing(jobs.connection()) as db:
                     job = db.execute('SELECT * FROM automation').fetchone()
@@ -224,6 +230,11 @@ def check():
                                               response.request.method == 'POST') as accepted:
                         page.get_by_role('button', name='Create verified resume').click()
                     assert accepted.value.status == 202, accepted.value.text()
+                    # SQL and JavaScript are none of Full Stack Developer's own stack: the role's skills are confirmed
+                    # once (here the fake model suggests nothing, so the candidate's own skills are kept as listed).
+                    skills = page.get_by_label(re.compile(r'^Skills for Full Stack Developer'))
+                    expect(skills).to_have_value('SQL, JavaScript')
+                    skills.locator('xpath=ancestor::form').get_by_role('button', name=re.compile('Continue')).click()
                     expect(page.get_by_text('Waiting for the resume builder', exact=True)).to_be_visible()
                     auth = {'interrupted': False, 'renewed': False}
 
@@ -266,12 +277,20 @@ def check():
                     assert jobs[0] == request('/api/automation', 'alice', docs[0])
                     assert len({job['id'] for job in jobs}) == 3
                     assert request('/api/automation', 'bob')['jobs'] == []
-                    deadline = time.monotonic() + 25
+                    deadline, answered = time.monotonic() + 25, set()
                     while time.monotonic() < deadline:
                         entries = request('/api/automation', 'alice')['jobs']
                         if len(entries) == 3 and all(entry['percent'] == 65 for entry in entries):
                             break
                         assert not any(entry['status'] == 'blocked' for entry in entries), entries
+                        for entry in entries:
+                            # A UI Developer has none of Azure Data Engineer's own stack: the role's skills are
+                            # confirmed once (kept as listed), the only question these documents raise.
+                            if entry['status'] == 'needs_input' and entry['id'] not in answered:
+                                assert [q['id'] for q in entry['questions']] == ['skills'], entry
+                                request('/api/automation/answer', 'alice', {
+                                    'id': entry['id'], 'answers': {'skills': entry['questions'][0]['value']}})
+                                answered.add(entry['id'])
                         time.sleep(.15)
                     else:
                         raise AssertionError(entries)
