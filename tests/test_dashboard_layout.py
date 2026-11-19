@@ -78,6 +78,7 @@ class DashboardLayoutTests(unittest.TestCase):
         self.addCleanup(self.playwright.stop)
         self.addCleanup(self.browser.close)
         self.posts = []
+        self.delete_failures = []
 
     def open(self, **context):
         page = self.browser.new_page(**context)
@@ -92,8 +93,24 @@ class DashboardLayoutTests(unittest.TestCase):
         def regenerate(route):
             self.posts.append(json.loads(route.request.post_data))
             route.fulfill(status=202, content_type='application/json', body=json.dumps({'id': 'r' * 64}))
+
+        def delete(route):
+            # Behaves like the server: deletes what it was asked to, keeps a resume being prepared.
+            body = json.loads(route.request.post_data)
+            self.posts.append(body)
+            if self.delete_failures:
+                error = self.delete_failures.pop(0)
+                return route.fulfill(status=503, content_type='application/json', body=json.dumps({'error': error}))
+            chosen = [j for j in jobs if body.get('all') or j['id'] == body.get('id')]
+            kept = [{'id': j['id'], 'reason': 'in_progress'} for j in chosen if j['status'] == 'processing']
+            removed = [j for j in chosen if j['status'] != 'processing']
+            for job in removed:
+                jobs.remove(job)
+            route.fulfill(status=200, content_type='application/json',
+                          body=json.dumps({'deleted': len(removed), 'kept': kept}))
         page.route('**/api/automation', history)
         page.route('**/api/automation/regenerate', regenerate)
+        page.route('**/api/automation/delete', delete)
         page.goto(self.origin)
         page.locator('#auto-job-list > li').first.wait_for()
         page.locator('#auto-role-options option').first.wait_for(state='attached')
@@ -238,6 +255,61 @@ class DashboardLayoutTests(unittest.TestCase):
         with page.expect_request('**/api/automation/regenerate'):
             row.locator('.auto-regenerate').get_by_role('button', name='Regenerate').click()
         self.assertEqual(self.posts[-1], {'id': '03' + 'f' * 62, 'role': 'Node.js Developer'})
+        page.close()
+
+    def test_delete_one_and_delete_all_need_explicit_confirmation(self):
+        from playwright.sync_api import expect
+        page = self.open(viewport={'width': 1366, 'height': 768})
+        dialogs, answers = [], iter([False, True])
+        page.on('dialog', lambda d: (dialogs.append(d.message), d.accept() if next(answers) else d.dismiss()))
+        rows = page.locator('#auto-job-list > li')
+        for status, has_delete in (('needs_input', True), ('processing', False), ('blocked', True), ('complete', True)):
+            with self.subTest(status=status):
+                row = page.locator(f'#auto-job-list > li[data-status="{status}"]').first
+                self.assertEqual(row.get_by_role('button', name='Delete', exact=False).count() > 0, has_delete)
+        delete_03 = page.locator('#auto-job-list > li[data-id^="03"]').get_by_role('button', name='Delete Candidate 03 Example')
+        delete_03.click()  # cancelled in the browser's confirmation: no request at all
+        page.wait_for_timeout(300)
+        self.assertEqual(self.posts, [])
+        self.assertIn('Permanently delete Candidate 03 Example', dialogs[0])
+        self.assertIn('cannot be undone', dialogs[0])
+        with page.expect_request('**/api/automation/delete'):
+            delete_03.click()  # confirmed
+        expect(page.locator('#auto-delete-status')).to_have_text('Permanently deleted 1 resume.')
+        self.assertEqual(self.posts, [{'id': '03' + 'f' * 62, 'confirm': 'DELETE'}])
+        expect(page.locator('#auto-job-list > li[data-id^="03"]')).to_have_count(0)
+        expect(page.locator('#auto-count')).to_have_text('14 resumes')
+
+        dialog = page.locator('#auto-delete-dialog')
+        confirm = dialog.get_by_role('button', name='Permanently delete all')
+        phrase = dialog.get_by_label('Type DELETE ALL to confirm')
+        page.get_by_role('button', name='Delete all', exact=True).click()
+        expect(dialog).to_be_visible()
+        for typed in ('', 'delete all', 'DELETE AL', 'DELETE ALL '):
+            phrase.fill(typed)
+            expect(confirm).to_be_disabled()
+        phrase.press('Enter')  # submitting without the exact phrase does nothing
+        dialog.get_by_role('button', name='Cancel').click()
+        expect(dialog).to_be_hidden()
+        self.assertEqual(len(self.posts), 1, 'cancel sends nothing')
+        page.get_by_role('button', name='Delete all', exact=True).click()
+        expect(phrase).to_have_value('')
+        phrase.fill('DELETE ALL')
+        expect(confirm).to_be_enabled()
+        self.delete_failures.append('ResumeOps is building a resume right now. Nothing was deleted; try again in a minute.')
+        confirm.click()
+        expect(dialog.locator('#auto-delete-error')).to_have_text(
+            'ResumeOps is building a resume right now. Nothing was deleted; try again in a minute.')
+        expect(dialog).to_be_visible()
+        expect(page.locator('#auto-count')).to_have_text('14 resumes')
+        with page.expect_request('**/api/automation/delete'):
+            confirm.click()
+        expect(dialog).to_be_hidden()
+        self.assertEqual(self.posts[-1], {'all': True, 'confirm': 'DELETE ALL'})
+        expect(page.locator('#auto-delete-status')).to_have_text(
+            'Permanently deleted 13 resumes. 1 resume being prepared was kept; delete it when finished.')
+        expect(rows).to_have_count(1)
+        expect(rows.first).to_have_attribute('data-status', 'processing')
         page.close()
 
     def test_progress_shows_the_real_stage_and_percent(self):

@@ -493,6 +493,63 @@ function answerForm(job) {
 // One compact row per resume: "candidate · role · date" and the ATS score, then the real status and the
 // actions. Questions and project choices stay open on the row; the ATS breakdown and Regenerate open
 // under Details. A row keeps exactly one <strong>: its status.
+// Permanent deletion. The server checks the same confirmation phrases and deletes only this account's
+// resumes; a failure deletes nothing, and its message says so.
+function deletedText({deleted = 0, kept = []}) {
+  let text = deleted ? 'Permanently deleted ' + deleted + (deleted === 1 ? ' resume.' : ' resumes.') : 'Nothing was deleted.';
+  const busy = kept.filter(item => item.reason === 'in_progress').length;
+  const locked = kept.length - busy;
+  if (busy) text += ' ' + busy + (busy === 1 ? ' resume being prepared was kept; delete it' : ' resumes being prepared were kept; delete them') + ' when finished.';
+  if (locked) text += ' ' + locked + (locked === 1 ? ' protected record was' : ' protected records were') + ' kept.';
+  return text;
+}
+
+async function deleteResumes(button, job, phrase) {
+  button.disabled = true;
+  const status = byId('auto-delete-status');
+  status.textContent = '';
+  try {
+    const response = await ResumeAuth.call('/api/automation/delete', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(job ? {id: job.id, confirm: 'DELETE'} : {all: true, confirm: phrase}),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Could not delete. Nothing was deleted; try again.');
+    try { await refresh(); } catch { /* the deletion itself succeeded; the next poll refreshes the list */ }
+    status.textContent = deletedText(result);
+    return '';
+  } catch (error) {
+    status.textContent = error.message;
+    return error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function deleteOne(button, job) {
+  if (!window.confirm('Permanently delete ' + meta(job) + '? Its PDF, LaTeX and generated files are deleted. '
+      + 'This cannot be undone.')) return;
+  deleteResumes(button, job);
+}
+
+function openDeleteAll() {
+  const dialog = byId('auto-delete-dialog');
+  byId('auto-delete-phrase').value = '';
+  byId('auto-delete-error').textContent = '';
+  byId('auto-delete-confirm').disabled = true;
+  dialog.showModal();
+  byId('auto-delete-phrase').focus();
+}
+
+async function confirmDeleteAll(event) {
+  event.preventDefault();
+  const phrase = byId('auto-delete-phrase').value;
+  if (phrase !== 'DELETE ALL') return;
+  const problem = await deleteResumes(byId('auto-delete-confirm'), null, phrase);
+  if (problem) byId('auto-delete-error').textContent = problem;
+  else byId('auto-delete-dialog').close();
+}
+
 function jobItem(job) {
   const item = element('li');
   item.dataset.status = job.status;
@@ -532,6 +589,10 @@ function jobItem(job) {
     if (job.status === 'retrying') state.append(element('span', retryText(job)));
   }
   line.append(state);
+  const remove = element('button', 'Delete');
+  remove.type = 'button';
+  remove.setAttribute('aria-label', 'Delete ' + meta(job));
+  remove.addEventListener('click', () => deleteOne(remove, job));
   for (const notice of job.notice || []) body.append(element('span', notice));
   if (job.status === 'complete') {
     if (job.ats) body.append(atsDetails(job.ats));
@@ -555,8 +616,11 @@ function jobItem(job) {
       actions.append(again);
     }
     if (body.children.length) actions.append(details);
+    actions.append(remove);
     line.append(actions);
     open(false);
+  } else if (job.status !== 'processing') {
+    line.append(remove);  // stopped, waiting for answers or queued; one being prepared right now is kept
   }
   item.append(top, line);
   if (body.children.length) item.append(body);
@@ -592,6 +656,8 @@ function roleOptions(jobs) {
 
 function renderJobs(jobs) {
   allJobs = jobs;
+  const present = new Set(jobs.map(job => job.id));
+  for (const id of rendered.keys()) if (!present.has(id)) rendered.delete(id);  // a deleted resume leaves no row
   roleOptions(jobs);
   const ordered = [...jobs.filter(job => job.status === 'needs_input'), ...jobs.filter(job => job.status !== 'needs_input')];
   const shown = ordered.filter(matches);
@@ -611,6 +677,7 @@ function renderJobs(jobs) {
   });
   while (list.children.length > items.length) list.lastElementChild.remove();
   byId('auto-empty').hidden = jobs.length > 0;
+  byId('auto-delete-all').hidden = jobs.length === 0;
   byId('auto-count').textContent = jobs.length ? jobs.length + (jobs.length === 1 ? ' resume' : ' resumes') : '';
   // Which rows this page holds, e.g. "Page 1 of 3 · 1–6 of 15" ("15 shown" read as if all 15 were on screen).
   const first = page * PAGE_SIZE + 1;
@@ -637,6 +704,12 @@ async function refresh() {
 }
 
 async function init() {
+  byId('auto-delete-all').addEventListener('click', openDeleteAll);
+  byId('auto-delete-phrase').addEventListener('input', event => {
+    byId('auto-delete-confirm').disabled = event.target.value !== 'DELETE ALL';
+  });
+  byId('auto-delete-cancel').addEventListener('click', () => byId('auto-delete-dialog').close());
+  byId('auto-delete-form').addEventListener('submit', confirmDeleteAll);
   byId('auto-basics').append(...required.map(field => input(field, true)));
   byId('auto-optional').append(input(skillsField));
   byId('auto-optional').append(...optional.map(field => input(field)));

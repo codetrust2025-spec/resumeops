@@ -88,6 +88,11 @@ class DurableImports:
         db.execute('PRAGMA secure_delete=ON')
         return db
 
+    def delete_owner(self, owner):
+        """Delete all: the owner's saved import drafts and uploaded documents, except one being read now."""
+        with closing(self.connection()) as db, db:
+            return db.execute("DELETE FROM imports WHERE owner=? AND status IS NOT 'processing'", (owner,)).rowcount
+
     @staticmethod
     def purge(db, now):
         db.execute("DELETE FROM imports WHERE activity < ? AND status IN ('queued','complete','error')",

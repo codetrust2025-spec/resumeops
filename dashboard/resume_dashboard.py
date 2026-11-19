@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import shutil
+import sqlite3
 import subprocess
 import stat
 import sys
@@ -721,6 +722,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 if not 0 < size <= 131072 or self.headers.get_content_type() != 'application/json':
                     return self.send_json({'error': 'Invalid request.'}, 413)
                 request = json.loads(self.rfile.read(size))
+                if action == 'delete':
+                    return self.delete_resumes(owner, request)
                 identifier = request.get('id') if isinstance(request, dict) else None
                 if not isinstance(identifier, str) or not re.fullmatch(r'[0-9a-f]{64}', identifier):
                     return self.send_json({'error': 'Invalid resume identifier.'}, 400)
@@ -738,6 +741,42 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             except (ValueError, UnicodeError) as exc:
                 return self.send_json({'error': str(exc) if action == 'regenerate' else 'Invalid request.'}, 400)
             return self.send_json({'id': identifier, 'status': 'queued'})
+
+        def delete_resumes(self, owner, request):
+            """Permanent deletion for the signed-in account only. The confirmation is checked here, not
+            only in the page: {"id": <id>, "confirm": "DELETE"} or {"all": true, "confirm": "DELETE ALL"}."""
+            from automation_jobs import (DELETE_ALL_PHRASE, DELETE_ONE_PHRASE, DeleteBusy, DeleteFailed,
+                                         DeleteRefused)
+            if not isinstance(request, dict):
+                return self.send_json({'error': 'Invalid request.'}, 400)
+            everything = request.get('all') is True
+            if everything:
+                if set(request) != {'all', 'confirm'} or request['confirm'] != DELETE_ALL_PHRASE:
+                    return self.send_json({'error': 'Type DELETE ALL to confirm. Nothing was deleted.',
+                                           'field': 'confirm'}, 400)
+                identifier = None
+            else:
+                identifier = request.get('id')
+                if set(request) != {'id', 'confirm'} or not isinstance(identifier, str) \
+                        or not re.fullmatch(r'[0-9a-f]{64}', identifier):
+                    return self.send_json({'error': 'Invalid resume identifier.'}, 400)
+                if request['confirm'] != DELETE_ONE_PHRASE:
+                    return self.send_json({'error': 'Confirm the deletion first. Nothing was deleted.'}, 400)
+            try:
+                result = automation.delete(owner, identifier)
+            except DeleteRefused as exc:
+                return self.send_json({'error': str(exc)}, exc.status)
+            except DeleteBusy as exc:
+                return self.send_json({'error': str(exc)}, 503)
+            except DeleteFailed as exc:
+                return self.send_json({'error': str(exc)}, 500)
+            if everything:
+                try:
+                    result['drafts'] = durable.delete_owner(owner)
+                except sqlite3.Error:
+                    return self.send_json({**result, 'error': 'Your resumes were deleted, but saved import drafts '
+                                                              'could not be removed. Run Delete all again.'}, 500)
+            return self.send_json(result)
 
         def save_roles(self):
             """Operator: replace the managed role catalog after validation. Takes effect immediately."""
@@ -772,7 +811,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
         def do_POST(self):
             request_origin = self.request_origin()
             if (self.path not in ('/api/automation', '/api/automation/answer', '/api/automation/projects',
-                                  '/api/automation/regenerate', '/api/roles', '/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry', '/api/ai-draft', '/api/ai-review', '/api/ai-queue') or request_origin is None
+                                  '/api/automation/regenerate', '/api/automation/delete', '/api/roles', '/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry', '/api/ai-draft', '/api/ai-review', '/api/ai-queue') or request_origin is None
                     or self.headers.get('Origin') != request_origin
                     or not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token)):
                 return self.reject_post('Request not authorized.')
@@ -780,7 +819,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return self.reject_post('Dashboard access denied for this session.')
             if self.path == '/api/automation':
                 return self.submit_automation(request_origin)
-            if self.path in ('/api/automation/answer', '/api/automation/projects', '/api/automation/regenerate'):
+            if self.path in ('/api/automation/answer', '/api/automation/projects', '/api/automation/regenerate', '/api/automation/delete'):
                 return self.automation_action(request_origin, self.path.rsplit('/', 1)[1])
             if self.path == '/api/roles':
                 if not self.is_operator(request_origin):
