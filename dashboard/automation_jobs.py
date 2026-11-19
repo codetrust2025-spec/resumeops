@@ -35,6 +35,21 @@ def submission(payload):
         if not isinstance(candidate, dict) or payload.get('extension'):
             raise ValueError('Expected candidate form details.')
         candidate = {**candidate, 'role': role}
+        if not candidate.get('work_experience') and not candidate.get('education'):
+            name, phone = candidate.get('full_name'), candidate.get('phone')
+            email = candidate.get('email') or ''
+            background = candidate.get('background') or ''
+            if not isinstance(name, str) or not name.strip() or len(name) > 250:
+                raise ValueError('Enter the full name.')
+            if not isinstance(phone, str) or not 7 <= len(re.sub(r'\D', '', phone)) <= 15:
+                raise ValueError('Enter a valid phone number.')
+            if not isinstance(email, str) or (email and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email)):
+                raise ValueError('Enter a valid email address if supplied.')
+            if not isinstance(background, str) or len(background) > 7500:
+                raise ValueError('Existing work or education facts must be under 7500 characters.')
+            return {'consent': CONSENT_VERSION, 'role': role,
+                    'identity': {'full_name': name.strip(), 'phone': phone.strip(), 'email': email.strip()},
+                    'background': background.strip()}
         profile = attested_profile(candidate)
         return {'consent': CONSENT_VERSION, 'role': role, 'profile': profile,
                 'years': candidate.get('years_of_experience')}
@@ -245,10 +260,23 @@ class AutomationJobs:
             if not row or row['status'] != 'needs_input':
                 raise AnswerError('This resume is not waiting for your answers.')
             checkpoints = json.loads(row['checkpoints'])
-            questions = checkpoints.pop('questions')
-            facts = apply_answers(checkpoints.pop('draft'), questions, answers)
-            checkpoints['facts'] = facts
-            confirmed = [f'Confirmed by you: {question["label"]}.' for question in questions]
+            if 'identity_intake' in checkpoints:
+                note = answers.get('source_text') if isinstance(answers, dict) else None
+                if not isinstance(note, str) or not 20 <= len(note.strip()) <= 7500:
+                    raise AnswerError('Add a short factual work or education history (20-7500 characters).',
+                                      'source_text')
+                identity = checkpoints.pop('identity_intake')
+                prefix = 'Full name: ' + identity['full_name'] + '\nPhone: ' + identity['phone'] + '\n'
+                if identity.get('email'):
+                    prefix += 'Email: ' + identity['email'] + '\n'
+                checkpoints['source'] = prefix + '\nCandidate-provided facts:\n' + note.strip()
+                checkpoints.pop('questions', None)
+                confirmed = ['Candidate supplied additional source facts for AI extraction.']
+            else:
+                questions = checkpoints.pop('questions')
+                facts = apply_answers(checkpoints.pop('draft'), questions, answers)
+                checkpoints['facts'] = facts
+                confirmed = [f'Confirmed by you: {question["label"]}.' for question in questions]
             db.execute("UPDATE automation SET status='queued',stage='Answers saved; continuing',error=NULL,"
                        'next_retry=0,checkpoints=?,notice=?,updated=? WHERE owner=? AND id=?',
                        (json.dumps(checkpoints), json.dumps(confirmed), time.time(), owner, identifier))
@@ -385,6 +413,31 @@ class AutomationJobs:
 
         try:
             source = checkpoints.get('source')
+            if source is None and 'identity' in request:
+                identity = request['identity']
+                background = request.get('background') or ''
+                if background:
+                    source = 'Full name: ' + identity['full_name'] + '\nPhone: ' + identity['phone'] + '\n'
+                    if identity.get('email'):
+                        source += 'Email: ' + identity['email'] + '\n'
+                    source += '\nCandidate-provided facts:\n' + background
+                    source = checkpoint('source', source)
+                else:
+                    checkpoints['identity_intake'] = identity
+                    checkpoints['questions'] = [{'id': 'source_text', 'section': 'profile', 'entry': None,
+                                                 'field': 'source_text',
+                                                 'label': 'Your actual work or education',
+                                                 'explanation': 'Share your actual employer, title, dates, college '
+                                                                'or completed project details. AI writes the resume '
+                                                                'but cannot discover your career from a phone number.',
+                                                 'value': ''}]
+                    with closing(self.connection()) as db, db:
+                        db.execute("UPDATE automation SET status='needs_input',stage='Awaiting real work or education facts',"
+                                   "percent=20,error=?,checkpoints=?,updated=? WHERE owner=? AND id=?",
+                                   ('A name and phone cannot establish work history or education. '
+                                    'Add a short factual note or upload an existing resume.',
+                                    json.dumps(checkpoints), updated(), *key))
+                    return
             if source is None:
                 source = checkpoint('source', extract())
             facts = checkpoints.get('facts')
@@ -396,7 +449,9 @@ class AutomationJobs:
                 db.execute('UPDATE automation SET candidate=? WHERE owner=? AND id=?', (facts.get('full_name'), *key))
             progress(30, 'Candidate facts validated')
             role = request['role']
-            years = request.get('years', inferred_years(facts))
+            years = request.get('years')
+            if years is None:
+                years = inferred_years(facts)
             intelligence = checkpoints.get('role')
             if intelligence is None:
                 progress(33, f'Selected role analysis: {role}')
