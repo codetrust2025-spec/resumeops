@@ -38,6 +38,7 @@ def attested_profile(candidate):
     if not isinstance(candidate, dict):
         raise ValueError('Expected candidate form details.')
     candidate = deepcopy(candidate)
+    candidate.pop('background', None)  # Optional freeform facts belong to minimal intake.
     extras = {key: _form_lines(candidate.pop(key, ''), label, limit, commas=key == 'skills')
               for key, (label, limit) in SCRATCH_TEXT.items()}
     duties = [_form_lines(entry.pop('responsibilities', '') if isinstance(entry, dict) else '',
@@ -78,7 +79,7 @@ def select_target(title):
     return ' '.join(title.split())
 
 
-FIELD_NAMES = {'full_name': 'full name', 'email': 'email address', 'company': 'employer',
+FIELD_NAMES = {'full_name': 'full name', 'email': 'email address', 'bullets': 'work activity', 'company': 'employer',
                'position': 'job title', 'start': 'start date', 'end': 'end date',
                'institution': 'institution', 'degree': 'degree'}
 ANSWER_LIMIT = 250
@@ -151,9 +152,11 @@ def source_profile(source, ai, on_progress=None, notices=None):
                           'entry': index, 'field': field, 'label': label, 'explanation': explanation,
                           'value': (holder.get(field) or '') if suggest else ''})
 
-    for field in ('full_name', 'email'):
+    for field in ('full_name',):
         if not (draft.get(field) or '').strip():
             ask('profile', None, field, f"The resume does not state the candidate's {FIELD_NAMES[field]}.")
+    if not (draft.get('email') or '').strip() and not (draft.get('phone') or '').strip():
+        ask('profile', None, 'email', 'The resume has no contact details. Enter a reachable email address.')
     if (draft.get('email') or '').strip() and not EMAIL_FORMAT.fullmatch(draft['email'].strip()):
         ask('profile', None, 'email', 'The email address in the resume could not be read clearly. Confirm or correct it.',
             suggest=True)
@@ -303,7 +306,7 @@ def apply_answers(draft, questions, answers):
             # A year typed into "Degree" would print as the degree; names are written in words.
             raise AnswerError(NAMED_FIELDS[question['field']], qid)
         target = draft if question['entry'] is None else draft[question['section']][question['entry']]
-        target[question['field']] = value
+        target[question['field']] = [value] if question['field'] == 'bullets' else value
     try:
         return validate_profile(draft)
     except ValueError as exc:
