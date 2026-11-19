@@ -80,9 +80,14 @@ class DashboardLayoutTests(unittest.TestCase):
         self.posts = []
         self.delete_failures = []
 
-    def open(self, **context):
+    def open(self, jobs=None, **context):
         page = self.browser.new_page(**context)
-        jobs = fake_jobs()
+        jobs = jobs if jobs is not None else fake_jobs()
+
+        def answer(route):
+            self.posts.append(json.loads(route.request.post_data))
+            route.fulfill(status=200, content_type='application/json', body=json.dumps({'id': 'a' * 64, 'status': 'queued'}))
+        page.route('**/api/automation/answer', answer)
 
         def history(route):
             if route.request.method == 'GET':
@@ -255,6 +260,44 @@ class DashboardLayoutTests(unittest.TestCase):
         with page.expect_request('**/api/automation/regenerate'):
             row.locator('.auto-regenerate').get_by_role('button', name='Regenerate').click()
         self.assertEqual(self.posts[-1], {'id': '03' + 'f' * 62, 'role': 'Node.js Developer'})
+        page.close()
+
+    def test_ai_drafts_and_projects_are_reviewed_in_one_card(self):
+        from playwright.sync_api import expect
+        jobs = fake_jobs(4)
+        jobs[0].update(stage='Review AI drafts for GCP Cloud Engineer', role='GCP Cloud Engineer',
+                       error='AI drafted GCP Cloud Engineer content from your job titles and dates. Keep what you '
+                             'actually did, edit anything, then confirm once.',
+                       questions=[{'id': 'experience.0.bullets', 'field': 'bullets', 'drafted': True,
+                                   'label': 'Work as Cloud Engineer at Example Health (AI draft)', 'explanation': 'Keep only what you did.',
+                                   'value': 'Deployed services to Cloud Run with Terraform.\nProvisioned Compute Engine instances.'},
+                                  {'id': 'experience.1.bullets', 'field': 'bullets', 'drafted': True,
+                                   'label': 'Work as Associate Engineer at Sample Systems (AI draft)', 'explanation': 'Keep only what you did.',
+                                   'value': 'Maintained Docker images on Google Cloud.\nWrote Terraform modules.'},
+                                  {'id': 'skills', 'field': 'skills', 'drafted': True, 'label': 'Skills for GCP Cloud Engineer (AI draft)',
+                                   'explanation': 'Keep only tools you have used.', 'value': 'Google Cloud, Terraform, Cloud Run'}],
+                       proposals=[{'name': 'Practice API on Cloud Run', 'problem': 'Fictional.', 'architecture': 'Cloud Run.',
+                                   'features': [], 'responsibilities': 'Build it.', 'stack': ['Cloud Run', 'Terraform'],
+                                   'bullets': ['Deployed a practice API to Cloud Run with Terraform.']}])
+        page = self.open(jobs=jobs, viewport={'width': 1366, 'height': 768})
+        row = page.locator('#auto-job-list > li[data-status="needs_input"]')
+        work = row.get_by_label('Work as Cloud Engineer at Example Health (AI draft)')
+        expect(work).to_have_value('Deployed services to Cloud Run with Terraform.\nProvisioned Compute Engine instances.')
+        self.assertEqual(work.evaluate('el => el.tagName'), 'TEXTAREA')
+        self.assertEqual(row.locator('form').count(), 1, 'drafts and projects share one card')
+        self.assertEqual(row.get_by_role('button', name='Confirm and continue').count(), 1)
+        self.assertTrue(row.locator('label.auto-drafted').first.is_visible(), 'drafts are marked as AI drafts')
+        work.fill('Deployed services to Cloud Run with Terraform.')
+        row.get_by_label('Work as Associate Engineer at Sample Systems (AI draft)').fill('')  # leave this job without lines
+        row.get_by_role('button', name='Confirm and continue').click()
+        expect(row.locator('.auto-proposal input[type=radio]').first).to_have_attribute('aria-invalid', 'true')
+        self.assertEqual(self.posts, [], 'a project still needs a decision')
+        row.get_by_label('Skip').check()
+        with page.expect_request('**/api/automation/answer'):
+            row.get_by_role('button', name='Confirm and continue').click()
+        self.assertEqual(self.posts[-1], {'id': jobs[0]['id'], 'answers': {
+            'experience.0.bullets': 'Deployed services to Cloud Run with Terraform.', 'experience.1.bullets': '',
+            'skills': 'Google Cloud, Terraform, Cloud Run'}, 'decisions': [{'include': False}]})
         page.close()
 
     def test_delete_one_and_delete_all_need_explicit_confirmation(self):

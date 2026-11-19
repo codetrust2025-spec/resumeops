@@ -308,12 +308,9 @@ function atsDetails(ats) {
 }
 
 // Suggested projects: never resume content until the candidate includes (and may edit) one.
-function proposalsForm(job) {
-  const box = element('form');
-  box.className = 'auto-answer auto-proposals';
-  box.noValidate = true;
-  box.append(element('p', job.error || 'Suggested projects are ready for your review.'));
-  job.proposals.forEach((proposal, index) => {
+// One reviewable card per suggested project; the candidate includes (as edited) or skips each.
+function proposalCards(job) {
+  return job.proposals.map((proposal, index) => {
     const card = element('fieldset');
     card.className = 'auto-proposal';
     card.dataset.index = index;
@@ -338,8 +335,26 @@ function proposalsForm(job) {
       option.append(radio, ' ' + text); choice.append(option);
     }
     card.append(nameLabel, facts, stackLabel, bulletsLabel, choice);
-    box.append(card);
+    return card;
   });
+}
+
+// The decisions on the project cards, or null after marking the first one left undecided.
+function projectDecisions(cards) {
+  const undecided = cards.find(card => !card.querySelector('input[type=radio]:checked'));
+  if (undecided) { fieldError(undecided.querySelector('input[type=radio]'), 'Choose include or skip.'); return null; }
+  return cards.map(card => {
+    const include = card.querySelector('input[type=radio]:checked').value === 'include';
+    return include ? {include, name: card.querySelector('[name=name]').value, stack: card.querySelector('[name=stack]').value,
+      bullets: card.querySelector('[name=bullets]').value} : {include};
+  });
+}
+
+function proposalsForm(job) {
+  const box = element('form');
+  box.className = 'auto-answer auto-proposals';
+  box.noValidate = true;
+  box.append(element('p', job.error || 'Suggested projects are ready for your review.'), ...proposalCards(job));
   const submit = element('button', 'Save project choices');
   submit.type = 'submit';
   submit.className = 'primary';
@@ -348,13 +363,8 @@ function proposalsForm(job) {
     event.preventDefault();
     clearFieldErrors(box);
     const cards = [...box.querySelectorAll('.auto-proposal')];
-    const undecided = cards.find(card => !card.querySelector('input[type=radio]:checked'));
-    if (undecided) { fieldError(undecided.querySelector('input[type=radio]'), 'Choose include or skip.'); return; }
-    const decisions = cards.map(card => {
-      const include = card.querySelector('input[type=radio]:checked').value === 'include';
-      return include ? {include, name: card.querySelector('[name=name]').value, stack: card.querySelector('[name=stack]').value,
-        bullets: card.querySelector('[name=bullets]').value} : {include};
-    });
+    const decisions = projectDecisions(cards);
+    if (!decisions) return;
     submit.disabled = true;
     try {
       const response = await ResumeAuth.call('/api/automation/projects', {method: 'POST',
@@ -434,11 +444,16 @@ function showCurrent(jobs) {
   if (!tracked) tracked = jobs.find(job => ACTIVE.has(job.status))?.id || null;
   const job = jobs.find(item => item.id === tracked);
   if (!job || pending) { if (!pending && !requestRunning) byId('auto-status').hidden = true; return; }
-  if (job.status === 'needs_input') progress('Needs your input', null, (job.proposals || []).length ?
-    'Review the suggested projects under My resumes to continue.' : 'Answer the questions under My resumes to continue.');
+  if (job.status === 'needs_input') progress('Needs your input', null,
+    (job.questions || []).some(question => question.drafted) ? 'Review the AI drafts under My resumes, then confirm once.'
+      : (job.questions || []).length ? 'Answer the questions under My resumes to continue.'
+        : 'Review the suggested projects under My resumes to continue.');
   else if (job.status === 'blocked') progress('Stopped', null, 'See My resumes for the reason.');
   else progress(job.stage, job.percent, job.status === 'retrying' ? retryText(job) : '');
 }
+
+// Work lines and skills arrive as AI drafts for the selected role: several lines, editable, and optional.
+const DRAFTED = new Set(['bullets', 'skills']);
 
 function answerForm(job) {
   const box = element('form');
@@ -447,35 +462,45 @@ function answerForm(job) {
   box.append(element('p', job.error || 'Your documents do not state some required details.'));
   for (const question of job.questions || []) {
     const label = element('label', question.label);
-    const field = element(question.field === 'source_text' ? 'textarea' : 'input');
+    if (question.drafted) label.classList.add('auto-drafted');
+    const multiline = question.field === 'source_text' || DRAFTED.has(question.field);
+    const field = element(multiline ? 'textarea' : 'input');
     field.name = question.id;
     if (field.tagName === 'INPUT') field.type = question.field === 'email' ? 'email' : 'text';
-    field.maxLength = question.field === 'source_text' ? 7500 : 250;
-    field.required = true;
+    else field.rows = question.field === 'bullets' ? 4 : question.field === 'skills' ? 2 : 3;
+    field.maxLength = question.field === 'source_text' ? 7500 : DRAFTED.has(question.field) ? 1500 : 250;
+    field.required = !DRAFTED.has(question.field);
     field.value = question.value || '';
     const hint = element('span', question.explanation);
     hint.className = 'field-hint';
     label.append(field, hint);
     box.append(label);
   }
-  const submit = element('button', 'Continue');
+  const cards = (job.proposals || []).length ? proposalCards(job) : [];
+  box.append(...cards);
+  const submit = element('button', cards.length || (job.questions || []).some(q => q.drafted) ? 'Confirm and continue' : 'Continue');
   submit.type = 'submit';
   submit.className = 'primary';
   box.append(submit);
   box.addEventListener('submit', async event => {
     event.preventDefault();
     clearFieldErrors(box);
-    const fields = [...box.querySelectorAll('input, textarea')];
-    const empty = fields.find(field => !field.value.trim());
+    const fields = [...box.querySelectorAll('input, textarea')].filter(field => !field.closest('.auto-proposal'));
+    const empty = fields.find(field => field.required && !field.value.trim());
     if (empty) { fieldError(empty, 'Enter this detail to continue.'); return; }
+    const decisions = cards.length ? projectDecisions(cards) : undefined;
+    if (cards.length && !decisions) return;
     submit.disabled = true;
     try {
       const response = await ResumeAuth.call('/api/automation/answer', {method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({id: job.id, answers: Object.fromEntries(fields.map(field => [field.name, field.value]))})});
+        body: JSON.stringify({id: job.id, answers: Object.fromEntries(fields.map(field => [field.name, field.value])),
+          ...(decisions ? {decisions} : {})})});
       const result = await response.json();
       if (!response.ok) {
-        const target = result.field && fields.find(field => field.name === result.field);
+        const card = /^project\.(\d+)$/.exec(result.field || '');
+        const target = card ? cards[Number(card[1])]?.querySelector('[name=bullets]')
+          : result.field && fields.find(field => field.name === result.field);
         fieldError(target || submit, result.error || 'Could not save your answers.');
         return;
       }
@@ -574,7 +599,7 @@ function jobItem(job) {
   body.id = 'auto-body-' + job.id.slice(0, 16);
   if (job.status === 'needs_input') {
     state.append(element('strong', 'Needs your input'));
-    body.append((job.proposals || []).length ? proposalsForm(job) : answerForm(job));
+    body.append((job.questions || []).length ? answerForm(job) : proposalsForm(job));  // drafts and projects: one card
   } else if (job.status === 'blocked') {
     state.append(element('strong', 'Needs attention'), element('span', explain(job.error)));
   } else if (job.status === 'complete') {

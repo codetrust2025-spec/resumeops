@@ -728,7 +728,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 if not isinstance(identifier, str) or not re.fullmatch(r'[0-9a-f]{64}', identifier):
                     return self.send_json({'error': 'Invalid resume identifier.'}, 400)
                 if action == 'answer':
-                    automation.answer(owner, identifier, request.get('answers'))
+                    automation.answer(owner, identifier, request.get('answers'), request.get('decisions'))
                 elif action == 'projects':
                     automation.decide_projects(owner, identifier, request.get('decisions'))
                 else:
