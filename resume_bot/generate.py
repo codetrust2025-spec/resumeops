@@ -182,7 +182,18 @@ def _families(title):
 
 
 def same_track(profile, role_title):
-    """True when a past job title is in the target role's family (or is the same title)."""
+    """A shared job family does not establish years in a named technology."""
+    documented_work = ' '.join((job.get('position', '') + ' ' + ' '.join(job.get('bullets', [])))
+                               for job in profile['experience'])
+    named_stacks = {
+        'angular': r'\bangular\b', 'react': r'\breact(?:\.js)?\b',
+        'node': r'\bnode(?:\.js)?\b', 'python': r'\bpython\b',
+        'java': r'\bjava\b(?!script)', 'django': r'\bdjango\b',
+        'spring': r'\bspring(?: boot)?\b',
+    }
+    for marker in named_stacks.values():
+        if re.search(marker, role_title, re.IGNORECASE) and not re.search(marker, documented_work, re.IGNORECASE):
+            return False
     target = _families(role_title)
     for job in profile['experience']:
         title = job.get('position') or ''
