@@ -83,16 +83,18 @@ class DraftRoleContentTests(unittest.TestCase):
         model = Model(FRONTEND_DRAFT)
         with patch('resume_bot.generate.generate', model):
             work, skills = draft_role_content(profile(), FRONTEND, 'Frontend Developer', 5, [0, 1], True, object())
-        self.assertEqual(work[0], ['Built reusable React.js components with TypeScript for internal dashboards and forms.',
-                                   'Styled responsive page layouts with HTML and CSS across desktop and mobile browsers.',
-                                   'Integrated REST APIs into React.js pages with shared TypeScript types for order tracking screens.'])
-        self.assertEqual(work[1], ['Fixed JavaScript defects in Angular screens reported by the QA team.',
-                                   'Wrote unit tests for Angular services and components with TypeScript.',
-                                   'Built Angular forms with reactive validation and TypeScript models for internal tools.'])
+        # Detailed lines first; the shorter one only fills the job up.
+        self.assertEqual(work[0], ['Styled responsive page layouts with HTML and CSS across desktop and mobile browsers.',
+                                   'Integrated REST APIs into React.js pages with shared TypeScript types for order tracking screens.',
+                                   'Built reusable React.js components with TypeScript for internal dashboards and forms.'])
+        self.assertEqual(work[1], ['Built Angular forms with reactive validation and TypeScript models for internal tools.',
+                                   'Fixed JavaScript defects in Angular screens reported by the QA team.',
+                                   'Wrote unit tests for Angular services and components with TypeScript.'])
         self.assertNotIn(7, work)
         self.assertNotIn('Google Cloud', ' '.join(line for lines in work.values() for line in lines))
-        # The role's leading technologies come first, then the model's suggestions that are catalog terms.
-        self.assertEqual(skills, ['JavaScript', 'HTML', 'React.js', 'TypeScript', 'CSS'])
+        # The role's leading technologies come first, then the model's catalog-term suggestions, then the role tools
+        # the drafted lines use (Angular), so the suggested skills match the drafted work.
+        self.assertEqual(skills, ['JavaScript', 'HTML', 'React.js', 'TypeScript', 'CSS', 'Angular'])
         self.assertNotIn('Underwater Basket Weaving', skills)
 
     def test_gcp_drafts_stay_on_gcp(self):
@@ -173,7 +175,7 @@ class DraftedAnswerTests(unittest.TestCase):
         self.assertEqual(facts['skills'], ['React.js', 'TypeScript', 'CSS'])
 
     def test_limits_name_the_field(self):
-        for answers, field in (({'experience.0.bullets': '\n'.join(f'Line {i}' for i in range(7))}, 'experience.0.bullets'),
+        for answers, field in (({'experience.0.bullets': '\n'.join(f'Line {i}' for i in range(11))}, 'experience.0.bullets'),
                                ({'experience.0.bullets': 'x' * 241}, 'experience.0.bullets'),
                                ({'skills': 'y' * 61}, 'skills')):
             with self.subTest(field=field), self.assertRaises(AnswerError) as error:
@@ -234,11 +236,11 @@ class ReviewOnceTests(unittest.TestCase):
         self.assertEqual([q['id'] for q in job['questions']], ['experience.0.bullets', 'experience.1.bullets', 'skills'])
         self.assertTrue(all(q['drafted'] for q in job['questions']))
         self.assertIn('React.js components', job['questions'][0]['value'])
-        self.assertEqual(job['questions'][2]['value'], 'JavaScript, HTML, React.js, TypeScript, CSS')
+        self.assertEqual(job['questions'][2]['value'], 'JavaScript, HTML, React.js, TypeScript, CSS, Angular')
         self.assertEqual([p['name'] for p in job['proposals']], ['Practice Catalogue', 'Practice Planner'])
         self.assertEqual(job['error'], 'AI drafted work lines from your job titles and dates and skill suggestions for '
                                        'Frontend Developer. Keep only what is true for you and edit anything. Then '
-                                       'confirm once. Choose which suggested projects you have built.')
+                                       'confirm once. Suggested projects are included as drafts: skip any you have not built.')
 
         with self.assertRaises(AnswerError):  # the projects are decided together with the drafts
             self.jobs.decide_projects(OWNER, self.id, [{'include': False}, {'include': False}])
@@ -280,7 +282,7 @@ class ReviewOnceTests(unittest.TestCase):
                                           'experience.1.bullets': '', 'skills': 'Angular'})
         self.assertEqual(self.row()['status'], 'queued')
 
-    def test_regenerating_a_finished_resume_does_not_ask_again(self):
+    def test_regenerating_a_finished_resume_drafts_work_for_the_new_role(self):
         facts = {**profile(skills=['React.js']), 'experience': [
             {'company': 'Example Health Pvt Ltd', 'position': 'Software Engineer', 'start': 'Jan 2021', 'end': 'Present',
              'location': '', 'bullets': []}]}
@@ -290,7 +292,7 @@ class ReviewOnceTests(unittest.TestCase):
         new = self.jobs.regenerate(OWNER, self.id, 'Angular Developer')
         with closing(self.jobs.connection()) as db:
             checkpoints = json.loads(db.execute('SELECT checkpoints FROM automation WHERE id=?', (new,)).fetchone()[0])
-        self.assertTrue(checkpoints['drafts_reviewed'])
+        self.assertNotIn('drafts_reviewed', checkpoints, 'the new role decides the work lines again')
 
 
 if __name__ == '__main__':

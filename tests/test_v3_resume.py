@@ -387,11 +387,14 @@ class PageTests(unittest.TestCase):
                     item = page.locator('#auto-job-list li[data-status="needs_input"]')
                     item.wait_for()
                     self.assertIn('Arun Sample · Java Backend Developer', item.inner_text())
-                    self.assertIn('AI proposal, not yet confirmed', item.inner_text())
-                    item.get_by_role('button', name='Save project choices').click()
-                    self.assertEqual(item.locator('.field-error').count(), 1, 'every proposal needs a decision')
+                    self.assertIn('AI draft, not yet confirmed', item.inner_text())
                     cards = item.locator('.auto-proposal')
-                    cards.nth(0).get_by_label('I built this: include it').check()
+                    # Like the drafted work lines, each suggestion starts included; its background stays folded.
+                    for index in range(2):
+                        self.assertTrue(cards.nth(index).get_by_label('I built this: include it').is_checked())
+                        self.assertTrue(cards.nth(index).locator('dl').is_hidden(), 'background folded on a phone')
+                    cards.nth(0).get_by_text('About this project').click()
+                    self.assertTrue(cards.nth(0).locator('dl').is_visible())
                     cards.nth(0).locator('[name=name]').fill('Order Tracking Service')
                     cards.nth(1).get_by_label('Skip').check()
                     with page.expect_response(lambda r: r.url.endswith('/api/automation/projects')) as saved:
