@@ -221,7 +221,7 @@ FORM_LABELS = [(key, re.compile(pattern, re.I)) for key, pattern in (
     ('period', r'(?:employment |work(?:ing)? |service |job |experience )?(?:period|duration|tenure|dates?)|working since|'
                r'date of joining|joining date'),
     ('degree', r'(?:highest |educational |education )?(?:qualification|degree)(?: name)?'),
-    ('institution', r'(?:college|university|institute|institution|school)(?: name)?'),
+    ('institution', r'(?:college(?:\s*/\s*university)?|university(?:\s*/\s*college)?|institute|institution|school)(?: name)?'),
     ('education_end', r'(?:education |degree )?(?:completion|passing|passed[- ]?out|pass[- ]?out|graduation)(?: year)?|'
                       r'year of (?:passing|graduation|completion)|education (?:completion |passing |passed[- ]?out )?year'),
     ('skills', r'(?:(?:primary|key|core|main|technical|it|professional)\s+)*skills(?: set)?|technolog(?:y|ies)|'
