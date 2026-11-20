@@ -42,7 +42,7 @@ const ResumeRecovery = (() => {
   const put = (key,value) => run('readwrite',(store,owner) => store.put({saved:Date.now(),value},owner+':'+key));
   const remove = key => run('readwrite',(store,owner) => store.delete(owner+':'+key));
   async function download(action, key = 'download') {
-    const result = await ResumeAuth.call(action.url);
+    const result = await ResumeAuth.call(action.url, {}, 120000);
     if (!result.ok) throw new Error('Download is unavailable. Try again after signing in.');
     const blob = await result.blob();
     if (!blob.size) throw new Error('The download was empty.');
