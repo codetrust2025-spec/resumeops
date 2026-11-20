@@ -87,8 +87,9 @@ def score(profile, target, keywords, *, role_title, matched_terms, experience, e
     else:
         _check(checks, 4, bool(profile['experience']) and all(job['start'] for job in profile['experience']),
                'Give every role its start date.', 'Every role has dates.')
-        _check(checks, 4, bool(profile['experience']) and all(job['bullets'] for job in profile['experience']),
-               'Describe responsibilities for every role.', 'Every role describes the work done.')
+        # Depth, not just presence: a single line per role reads as an underdeveloped experience section.
+        _check(checks, 4, bool(profile['experience']) and all(len(job['bullets']) >= 3 for job in profile['experience']),
+               'Describe at least three responsibilities for every role.', 'Every role describes the work in depth.')
         dated = experience.get('dated_years')
         _check(checks, 4, experience.get('supported', False),
                f"Selected {experience.get('claimed')} years, but dated roles show "

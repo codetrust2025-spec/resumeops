@@ -515,16 +515,19 @@ class AutomationJobs:
 
     @staticmethod
     def _draft_question(facts, index, lines, label):
-        """The work question for one job: the AI draft for the role pre-filled, or an empty field."""
+        """The work question for one job: the candidate's own lines first, then the AI drafts for the role, all
+        editable; or an empty field when nothing could be drafted."""
         entry = facts['experience'][index]
+        own = entry.get('bullets') or []
         place = ' at ' + entry['company'] if entry.get('company') else ''
+        explanation = (f'AI drafted {label} lines from your job title and dates' + (' below your own lines' if own else '')
+                       + '. Keep only what you actually did; edit or delete any line. These are drafts until you '
+                       'confirm them.' if lines else 'In your own simple words, what did you do? One line each. Leave '
+                       'it empty to list this job without details.')
         return {'id': f'experience.{index}.bullets', 'section': 'experience', 'entry': index, 'field': 'bullets',
-                'drafted': bool(lines), 'value': '\n'.join(lines or []),
+                'drafted': bool(lines), 'value': '\n'.join([*own, *(lines or [])]),
                 'label': f'Work as {entry["position"]}{place}' + (' (AI draft)' if lines else ''),
-                'explanation': (f'AI drafted these {label} lines from your job title and dates. Keep only what you '
-                                'actually did; edit or delete any line. Leave it empty to list this job without details.'
-                                if lines else 'In your own simple words, what did you do? One line each. Leave it empty '
-                                'to list this job without details.')}
+                'explanation': explanation}
 
     @staticmethod
     def _project_choices(checkpoints, notes, decisions):
@@ -654,9 +657,11 @@ class AutomationJobs:
                     checkpoints['drafts_reviewed'] = True  # a job left without lines is not asked about again
                 if any(question['field'] == 'skills' for question in questions):
                     checkpoints['skills_reviewed'] = checkpoints.pop('skills_review_role', True)
-                typed = [line for question in questions if question['field'] == 'bullets' and not question.get('drafted')
+                # What the candidate confirmed for a job (their own words, or AI drafts they reviewed and kept) is their
+                # attested work. An unconfirmed draft never reaches the resume: it only ever lives in the review card.
+                typed = [line for question in questions if question['field'] == 'bullets'
                          for line in facts['experience'][question['entry']]['bullets']]
-                if typed:  # what the candidate wrote in their own words is their evidence, not an AI draft
+                if typed:
                     origin = json.loads(row['origin']) if row['origin'] else {'bullets': []}
                     origin['bullets'] = list(dict.fromkeys([*origin['bullets'], *typed]))
                     db.execute('UPDATE automation SET origin=? WHERE owner=? AND id=?',
@@ -758,8 +763,10 @@ class AutomationJobs:
     def _prepare(self, job):
         from resume_bot.automation import (EXTRACTION_VERSION, NeedsInput, inferred_years, role_intelligence,
                                            source_profile, tailor_role, verified_request)
-        from resume_bot.generate import (content_problems, draft_role_content, fits_role, is_job_title, lacks_role_core,
-                                         present_for_role, propose_projects, role_projects, split_project, without_note)
+        from resume_bot.generate import (GENERIC_TOOLS, content_problems, draft_role_content, fits_role, is_job_title,
+                                         lacks_role_core, present_for_role, propose_projects, role_projects,
+                                         role_vocabulary, same_field, split_project, technical_job, without_note)
+        from resume_bot.workflow import matched_terms
         from resume_bot.ollama import Ollama, OllamaError
 
         key = (job['owner'], job['id'])
@@ -878,15 +885,24 @@ class AutomationJobs:
             # The selected role decides the resume. What the documents do not give for it (the work done in a job, the
             # skills the role needs, projects in its field) is drafted by AI and shown pre-filled with the project
             # suggestions, for one confirmation. Drafts never become resume content unconfirmed.
+            # Jobs to draft: those without lines, and (a career change) technical jobs in another field whose lines
+            # barely touch the selected role: the selected role decides the experience section.
+            core = [t for t in role_vocabulary(target) if not matched_terms(GENERIC_TOOLS, t)]
+            thin = lambda entry: (technical_job(entry['position']) and not same_field(entry['position'], label)
+                                  and sum(bool(matched_terms(core, line)) for line in entry['bullets']) < 2)
             missing = ([] if checkpoints.get('drafts_reviewed') else
-                       [index for index, entry in enumerate(facts['experience']) if not entry['bullets']])
+                       [index for index, entry in enumerate(facts['experience']) if not entry['bullets'] or thin(entry)])
             role_skills = [s for s in facts['skills'] if fits_role(s, target)]
             need_skills = lacks_role_core(role_skills, target) and checkpoints.get('skills_reviewed') != label
+            questions = []
             if missing or need_skills:
                 progress(28, f'AI drafting {label} content for your review')
                 work, skills = draft_role_content(facts, target, label, years, missing, need_skills, model,
                                                   draft_progress)
-                questions = [self._draft_question(facts, index, work.get(index), label) for index in missing]
+                # A job without lines is always asked about; a thin job that already has lines only when there are
+                # drafts to review (asking it again with nothing new would be an unnecessary question).
+                questions = [self._draft_question(facts, index, work.get(index), label) for index in missing
+                             if not facts['experience'][index]['bullets'] or work.get(index)]
                 if need_skills:
                     value = list(dict.fromkeys([*role_skills, *skills]))
                     questions.append({
@@ -899,6 +915,7 @@ class AutomationJobs:
                         # Skills for other fields stay in the candidate's facts, off this role's resume.
                         'carry': [s for s in facts['skills'] if s not in role_skills]})
                     checkpoints['skills_review_role'] = label
+            if questions:
                 proposals = []
                 if not role_projects(facts, target) and not checkpoints.get('projects_reviewed'):
                     proposals = checkpoints.get('proposals_made')

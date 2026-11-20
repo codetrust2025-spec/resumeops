@@ -45,7 +45,7 @@ class Model:
         self.prompts.append(prompt)
         if self.fail:
             raise RuntimeError('model unavailable')
-        if prompt.startswith('Draft resume content'):
+        if prompt.startswith('Draft the professional experience'):
             return self.drafts
         if 'portfolio projects' in prompt:
             return {'projects': self.projects or []}
@@ -56,11 +56,13 @@ FRONTEND_DRAFT = {
     'roles': [{'index': 0, 'bullets': [
         'Built reusable React.js components with TypeScript for internal dashboards and forms.',
         'Styled responsive page layouts with HTML and CSS across desktop and mobile browsers.',
+        'Integrated REST APIs into React.js pages with shared TypeScript types for order tracking screens.',
         'Deployed frontend containers to Google Cloud Run with Terraform for each release.',  # off-role: rejected
         'Improved page load time by 40 percent through code splitting.']},  # metric: rejected
         {'index': 1, 'bullets': [
             'Fixed JavaScript defects in Angular screens reported by the QA team.',
             'Wrote unit tests for Angular services and components with TypeScript.',
+            'Built Angular forms with reactive validation and TypeScript models for internal tools.',
             'Worked at Sample Systems on JavaScript UI tickets for 3 teams.']},  # employer name and number: rejected
         {'index': 7, 'bullets': ['Not a job of this candidate, so never accepted as anything.']}],
     'skills': ['React.js', 'typescript', 'CSS', 'Google Cloud', 'Underwater Basket Weaving']}
@@ -69,6 +71,7 @@ GCP_DRAFT = {
     'roles': [{'index': 0, 'bullets': [
         'Deployed containerized services to Cloud Run using Docker images and Terraform modules.',
         'Provisioned Compute Engine instances and networking with Terraform for development environments.',
+        'Configured Cloud Monitoring alerts for Cloud Run services and Compute Engine instances.',
         'Built React.js admin screens for the operations team.']},  # off-role for GCP: rejected
         {'index': 1, 'bullets': ['Maintained Docker images for build agents running on Google Cloud.',
                                  'Delivered a scalable platform for every product team on Google Cloud.']}],  # inflated
@@ -81,9 +84,11 @@ class DraftRoleContentTests(unittest.TestCase):
         with patch('resume_bot.generate.generate', model):
             work, skills = draft_role_content(profile(), FRONTEND, 'Frontend Developer', 5, [0, 1], True, object())
         self.assertEqual(work[0], ['Built reusable React.js components with TypeScript for internal dashboards and forms.',
-                                   'Styled responsive page layouts with HTML and CSS across desktop and mobile browsers.'])
+                                   'Styled responsive page layouts with HTML and CSS across desktop and mobile browsers.',
+                                   'Integrated REST APIs into React.js pages with shared TypeScript types for order tracking screens.'])
         self.assertEqual(work[1], ['Fixed JavaScript defects in Angular screens reported by the QA team.',
-                                   'Wrote unit tests for Angular services and components with TypeScript.'])
+                                   'Wrote unit tests for Angular services and components with TypeScript.',
+                                   'Built Angular forms with reactive validation and TypeScript models for internal tools.'])
         self.assertNotIn(7, work)
         self.assertNotIn('Google Cloud', ' '.join(line for lines in work.values() for line in lines))
         # The role's leading technologies come first, then the model's suggestions that are catalog terms.
@@ -97,7 +102,7 @@ class DraftRoleContentTests(unittest.TestCase):
                                'end': 'Dec 2020', 'location': '', 'bullets': []}])
         with patch('resume_bot.generate.generate', Model(GCP_DRAFT)):
             work, skills = draft_role_content(cloud, GCP, 'GCP Cloud Engineer', 5, [0, 1], True, object())
-        self.assertEqual(len(work[0]), 2)
+        self.assertEqual(len(work[0]), 3)
         self.assertNotIn('React', ' '.join(work[0]))
         self.assertNotIn(1, work, 'one acceptable line is not enough to draft a job')
         self.assertIn('Terraform', skills)
@@ -105,10 +110,14 @@ class DraftRoleContentTests(unittest.TestCase):
 
     def test_a_job_that_ended_gets_past_tense_lines_after_one_retry(self):
         replies = iter([
-            {'roles': [{'index': 1, 'bullets': ['Contributes to Angular screens with TypeScript and CSS.',
-                                                'Writes unit tests for Angular services with TypeScript.']}], 'skills': []},
-            {'roles': [{'index': 1, 'bullets': ['Contributed to Angular screens with TypeScript and CSS.',
-                                                'Wrote unit tests for Angular services with TypeScript.']}], 'skills': []}])
+            {'roles': [{'index': 1, 'bullets': ['Contributes to Angular screens with TypeScript and CSS styling.',
+                                                'Writes unit tests for Angular services with TypeScript and Jest.',
+                                                'Builds Angular forms with reactive validation for internal tools.']}],
+             'skills': []},
+            {'roles': [{'index': 1, 'bullets': ['Contributed to Angular screens with TypeScript and CSS styling.',
+                                                'Wrote unit tests for Angular services with TypeScript and Jest.',
+                                                'Built Angular forms with reactive validation for internal tools.']}],
+             'skills': []}])
         prompts = []
 
         def model(ai, prompt, **_):
@@ -116,8 +125,9 @@ class DraftRoleContentTests(unittest.TestCase):
             return next(replies)
         with patch('resume_bot.generate.generate', model):
             work, _ = draft_role_content(profile(), FRONTEND, 'Frontend Developer', 5, [1], False, object())
-        self.assertEqual(work[1], ['Contributed to Angular screens with TypeScript and CSS.',
-                                   'Wrote unit tests for Angular services with TypeScript.'])
+        self.assertEqual(work[1], ['Contributed to Angular screens with TypeScript and CSS styling.',
+                                   'Wrote unit tests for Angular services with TypeScript and Jest.',
+                                   'Built Angular forms with reactive validation for internal tools.'])
         self.assertEqual(len(prompts), 2)
         self.assertIn('jobs that ended use past-tense verbs', prompts[1])
 

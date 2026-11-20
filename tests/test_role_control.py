@@ -122,7 +122,9 @@ class SelectedRoleControlsTheResumeTests(unittest.TestCase):
         origin = [line for job in facts['experience'] for line in job['bullets']]
         shown, left = present_for_role(facts, target, 'Java Backend Developer', origin)
         self.assertEqual(sorted(shown['skills']), ['Git', 'REST APIs', 'SQL'])
-        self.assertEqual(shown['experience'][0]['bullets'], ['Integrated REST APIs with the backend team.',
+        # React-only lines are left out only while the job keeps three lines: the first one is kept (in order).
+        self.assertEqual(shown['experience'][0]['bullets'], ['Built React.js components with Redux for the checkout flow.',
+                                                            'Integrated REST APIs with the backend team.',
                                                             'Reviewed pull requests and mentored two interns.'])
         self.assertNotIn('projects', shown, 'a React project is not a Java Backend project')
         self.assertEqual(shown['experience'][0]['position'], 'React.js UI Developer', 'the designation stays')
@@ -178,12 +180,14 @@ class SelectedRoleControlsTheResumeTests(unittest.TestCase):
         facts['experience'] = [{**job, 'bullets': []} for job in facts['experience']]
         draft = {'roles': [{'index': 1, 'bullets': ['Integrated Pub/Sub with Dataflow for streaming data ingestion.',
                                                     'Reconciled customer payments against open invoices each month.',
-                                                    'Prepared aging reports for overdue customer accounts.']}],
+                                                    'Prepared aging reports for overdue customer accounts and followed up.',
+                                                    'Coordinated with the sales team to resolve billing disputes on invoices.']}],
                  'skills': ['Python', 'SQL', 'BigQuery', 'Dataflow', 'Pub/Sub', 'Cloud Storage', 'Data Analyst']}
         with patch('resume_bot.generate.generate', lambda ai, prompt, **_: draft):
             work, skills = draft_role_content(facts, role('GCP Data Engineer'), 'GCP Data Engineer', 9, [1], True, object())
         self.assertEqual(work[1], ['Reconciled customer payments against open invoices each month.',
-                                   'Prepared aging reports for overdue customer accounts.'])
+                                   'Prepared aging reports for overdue customer accounts and followed up.',
+                                   'Coordinated with the sales team to resolve billing disputes on invoices.'])
         self.assertEqual(skills, ['Python', 'SQL', 'BigQuery', 'Dataflow', 'Pub/Sub', 'Cloud Storage'])
 
 
@@ -213,7 +217,7 @@ class RegenerationTests(unittest.TestCase):
         suggestions = {'roles': [], 'skills': ['Python', 'SQL', 'BigQuery', 'Dataflow', 'Pub/Sub', 'Cloud Storage']}
 
         def model(ai, prompt, **_):
-            if prompt.startswith('Draft resume content'):
+            if prompt.startswith('Draft the professional experience'):
                 return suggestions
             raise RuntimeError('summary falls back to the composed one')
         with patch('resume_bot.generate.generate', model), patch('resume_bot.automation.generate', return_value={}), \
