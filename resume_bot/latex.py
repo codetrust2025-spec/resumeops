@@ -45,6 +45,42 @@ def _bullet(text):
     return LIST_MARKER.sub('', text).strip()
 
 
+def emphasized(text, terms, limit):
+    """LaTeX for ``text`` with the first ``limit`` distinct ``terms`` it names (in reading order) set in bold.
+    Only typesetting changes: the words, and so the PDF text check, stay exactly the same."""
+    spans = []
+    for term in sorted({t for t in terms if len(t) >= 2}, key=len, reverse=True):
+        flags = 0 if len(term) <= 3 else re.IGNORECASE  # "Go", "Git": exact case, never "go" or "digit"
+        match = re.search(r'(?<![\w.+#/-])' + re.escape(term) + r'(?![\w+#/-]|\.\w)', text, flags)
+        if match and not any(start < match.end() and match.start() < end for start, end in spans):
+            spans.append((match.start(), match.end()))
+    spans = sorted(spans)[:max(0, limit)]
+    out, position = [], 0
+    for start, end in spans:
+        out += [paragraph(text[position:start]), r'\textbf{' + paragraph(text[start:end]) + '}']
+        position = end
+    return ''.join(out) + paragraph(text[position:])
+
+
+# CGPA is printed only above 8.0 (on a 10-point scale, or its equivalent on another stated scale).
+GRADE = re.compile(r'\b(?:CGPA|GPA|CPI)\b\s*[:=-]?\s*(\d+(?:\.\d+)?)(?:\s*(?:/|out of)\s*(\d+(?:\.\d+)?))?', re.IGNORECASE)
+
+
+def education_details(details):
+    """Education details without a CGPA of 8.0 or less; nothing else is changed or added."""
+    parts = [part.strip() for part in str(details or '').split(' | ')]
+    kept = []
+    for part in parts:
+        grade = GRADE.search(part)
+        if grade:
+            value, scale = float(grade.group(1)), float(grade.group(2) or 10)
+            if not scale or value / scale * 10 <= 8.0:
+                continue
+        if part:
+            kept.append(part)
+    return ' | '.join(kept)
+
+
 class _Doc:
     """Collects LaTeX and the plain reading-order text side by side."""
 
@@ -58,15 +94,17 @@ class _Doc:
     def section(self, title):
         self.raw(r'\section*{' + title + '}\n', title)
 
-    def bullets(self, items):
+    def bullets(self, items, terms=(), limit=2):
+        """One bullet per item; up to ``limit`` of ``terms`` (the resume's technologies) bold in each."""
         items = [_bullet(item) for item in items if _bullet(item)]
         if items:
-            self.raw(r'\begin{itemize}' + '\n' + ''.join(r'\item ' + paragraph(i) + '\n' for i in items) +
+            self.raw(r'\begin{itemize}' + '\n' + ''.join(r'\item ' + emphasized(i, terms, limit) + '\n' for i in items) +
                      r'\end{itemize}' + '\n', *items)
 
-    def entry(self, title, place, dates, extra=''):
+    def entry(self, title, place, dates, extra='', muted_place=False):
         """'Title | Place' left, dates right; an optional muted second line."""
-        left = r'\textbf{' + paragraph(title) + '}' + (r' \textbar{} ' + paragraph(place) if place else '')
+        place_tex = r'{\small\color{ink}' + paragraph(place) + '}' if muted_place else paragraph(place)
+        left = r'\textbf{' + paragraph(title) + '}' + (r' \textbar{} ' + place_tex if place else '')
         right = r'\hfill{\small\color{ink}' + paragraph(dates) + '}' if dates else ''
         self.raw(left + right + r'\par' + '\n', title, place, dates)
         if extra:
@@ -95,10 +133,22 @@ def _build(profile, template='standard', years=None):
     if employer and not any(item['company'].casefold() == employer.casefold() for item in profile['experience']):
         doc.raw(r'{\small Current company: ' + paragraph(employer) + r'}\par' + '\n', 'Current company:', employer)
 
+    # The technologies to highlight: the listed skills that are tools, not concepts or practices.
+    concept_groups = {'concepts', 'architecture & practices', 'practices'}
+    concepts = {item for group in profile.get('skill_groups') or [] if group['name'].casefold() in concept_groups
+                for item in group['items']}
+    terms = [skill for skill in profile.get('skills') or [] if skill not in concepts]
+
     def summary():
         if profile.get('summary'):
-            doc.section('Professional Summary')
-            doc.raw(paragraph(profile['summary']) + r'\par' + '\n', profile['summary'])
+            doc.section('Career Objective')
+            # Selective emphasis: the selected role, and one technology per sentence. The words stay exactly as
+            # approved (sentences are rejoined with the single space they had).
+            lead = [profile['headline']] if profile.get('headline') else []
+            sentences = re.split(r'(?<=[.!?]) (?=[A-Z0-9])', profile['summary'])
+            tex = ' '.join(emphasized(s, lead + terms if i == 0 else terms, 2 if i == 0 and lead else 1)
+                           for i, s in enumerate(sentences))
+            doc.raw(tex + r'\par' + '\n', profile['summary'])
 
     def skills():
         if profile.get('skills'):
@@ -114,10 +164,10 @@ def _build(profile, template='standard', years=None):
     def experience():
         if not profile['experience']:
             return
-        doc.section('Professional Experience')
+        doc.section('Professional Work Experience')
         for x in profile['experience']:
             doc.entry(x['position'], x['company'], ' -- '.join(p for p in (x['start'], x['end']) if p), x.get('location', ''))
-            doc.bullets(x['bullets'])
+            doc.bullets(x['bullets'], terms)
             doc.raw(r'\vspace{2pt}' + '\n')
 
     def projects():
@@ -126,26 +176,33 @@ def _build(profile, template='standard', years=None):
         doc.section('Projects')
         for project in profile['projects']:
             name, stack, details = _split_project(project)
-            doc.entry(name, '', '', 'Tech stack: ' + ', '.join(stack) if stack else '')
-            doc.bullets(details)
+            # The technologies sit beside the project title, comma-separated.
+            doc.entry(name, ', '.join(stack), '', muted_place=True)
+            doc.bullets(details, terms)
 
     def education():
         if not profile['education']:
             return
         doc.section('Education')
         for x in profile['education']:
-            doc.entry(x['degree'], x['institution'], ' -- '.join(p for p in (x['start'], x['end']) if p), x.get('details', ''))
+            doc.entry(x['degree'], x['institution'], ' -- '.join(p for p in (x['start'], x['end']) if p),
+                      education_details(x.get('details', '')))
 
     def listed(field, title):
         if profile.get(field):
             doc.section(title)
             doc.bullets(profile[field])
 
+    def certifications():
+        listed('certifications', 'Certifications')
+
+    # Career Objective, Technical Skills, Professional Work Experience, Projects, Certifications, Education
+    # (a fresher's projects and education come before an internship).
     fresher = years is not None and years < 1
-    order = (summary, skills, projects, education, experience) if fresher else (summary, skills, experience, projects, education)
+    order = ((summary, skills, projects, certifications, education, experience) if fresher else
+             (summary, skills, experience, projects, certifications, education))
     for part in order:
         part()
-    listed('certifications', 'Certifications')
     listed('achievements', 'Achievements')
     listed('coding_platforms', 'Coding Platforms')
     doc.raw(r'\end{document}' + '\n')

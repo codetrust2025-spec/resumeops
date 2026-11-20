@@ -728,9 +728,10 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 if not isinstance(identifier, str) or not re.fullmatch(r'[0-9a-f]{64}', identifier):
                     return self.send_json({'error': 'Invalid resume identifier.'}, 400)
                 if action == 'answer':
-                    automation.answer(owner, identifier, request.get('answers'), request.get('decisions'))
+                    automation.answer(owner, identifier, request.get('answers'), request.get('decisions'),
+                                      request.get('certifications'))
                 elif action == 'projects':
-                    automation.decide_projects(owner, identifier, request.get('decisions'))
+                    automation.decide_projects(owner, identifier, request.get('decisions'), request.get('certifications'))
                 else:
                     if not workspace.automation_ready():
                         return self.send_json({'error': 'The resume watcher version is not ready. Retry shortly.'}, 503)

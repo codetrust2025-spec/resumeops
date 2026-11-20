@@ -25,6 +25,11 @@
 .auto-choice legend{width:100%}
 .auto-choice label,.auto-card label.auto-consent{display:flex;align-items:center;gap:8px}
 .auto-choice label{min-height:36px}
+.auto-certs{border:1px solid var(--line)!important;border-radius:8px;padding:10px!important;display:grid;gap:4px}
+.auto-certs legend{font-weight:600;padding:0 4px;font-size:.88rem}
+.auto-certs label{display:flex;align-items:flex-start;gap:8px;font-size:.86rem;font-weight:500;min-height:32px}
+.auto-certs label:last-child{display:grid;gap:3px;font-weight:600}
+.auto-certs input[type=checkbox]{margin-top:3px;flex:none}
 .auto-card label.auto-consent{align-items:flex-start;font-weight:500;font-size:.82rem;color:var(--muted)}
 .auto-consent input{margin-top:3px}
 #auto-submit{width:100%;min-height:42px}

@@ -223,7 +223,10 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn(r'\item - ', tex)
         tex = render(self.v3_profile(), years=3)
         self.assertIn(r'\textbf{Frameworks:} Spring Boot', tex)
-        self.assertIn('Tech stack: Java 17, Spring Boot', tex)
+        # The technologies sit beside the project title; bullets highlight them; the six-section headings.
+        self.assertIn(r'\textbf{Order Service} \textbar{} {\small\color{ink}Java 17, Spring Boot}', tex)
+        self.assertIn(r'\item Wrote \textbf{JUnit 5} tests.', tex)
+        self.assertIn(r'\section*{Career Objective}', tex)
         self.assertNotIn('Target role:', tex)
 
     @unittest.skipUnless(TOOLS, 'TeX/PDF tools missing')

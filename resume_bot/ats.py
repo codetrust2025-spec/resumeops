@@ -8,6 +8,8 @@ Missing role keywords are reported as suggestions to add only if the candidate h
 import re
 from collections import Counter
 
+from .certifications import recommended_certifications
+
 FIRST_PERSON = re.compile(r'\b(?:I|me|my|mine|myself|we|our)\b')
 CLICHES = re.compile(r'\b(?:results[- ]driven|proven track record|go-getter|rock ?star|ninja|guru|synergy|'
                      r'dynamic professional|passionate about|seasoned professional|hard[- ]working|team player|'
@@ -49,7 +51,7 @@ def score(profile, target, keywords, *, role_title, matched_terms, experience, e
            f'Use the target role "{role_title}" as the resume headline.', 'Headline names the target role.')
     _check(checks, 3, bool(profile.get('summary')) and (role_title.casefold() in profile['summary'].casefold()
                                                        or bool(matched_terms(keywords, profile['summary']))),
-           'Let the summary describe the confirmed experience that fits the role.', 'Summary is written for the role.')
+           'Let the career objective describe the confirmed experience that fits the role.', 'Career objective is written for the role.')
     work_text = ' '.join([*bullets, *(job['position'] for job in profile['experience']), *projects])
     _check(checks, 4, bool(matched_terms(keywords, work_text)),
            'Show role-relevant work in experience or project bullets.', 'Experience or projects use role technology.')
@@ -111,7 +113,7 @@ def score(profile, target, keywords, *, role_title, matched_terms, experience, e
     checks = []
     _check(checks, 3, bool(profile['full_name'] and profile['email']), 'Include the candidate name and email.',
            'Name and email present.')
-    _check(checks, 2, bool(profile.get('summary')), 'Add a professional summary.', 'Professional summary present.')
+    _check(checks, 2, bool(profile.get('summary')), 'Add a career objective.', 'Career objective present.')
     _check(checks, 2, bool(skills), 'Add a technical skills section.', 'Technical skills section present.')
     _check(checks, 2, bool(profile['experience'] or profile['education']), 'Add experience or education.',
            'Experience or education present.')
@@ -155,6 +157,8 @@ def score(profile, target, keywords, *, role_title, matched_terms, experience, e
         'suggestions': tips, 'recommendations': tips, 'matched': matched, 'missing': missing,
         'source_backed_skills': skills, 'role_relevant_skills': relevant_skills,
         'suggested_skills': missing[:15],
+        # Advice only: a certification is printed once the candidate states they have completed it.
+        'recommended_certifications': recommended_certifications(target, profile.get('certifications') or []),
         'method': ('ResumeOps explainable rubric: role relevance 15, keyword coverage 20, skills alignment 15, '
                    'experience 15, projects 10, structure 10, content quality 10, evidence 5. Scores only stated, '
                    'candidate-supported content; employer ATS rankings can differ.'),

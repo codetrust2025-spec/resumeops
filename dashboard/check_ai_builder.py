@@ -63,9 +63,9 @@ def verify_completed(page, workspace, candidate, *, education_first, builder):
                      'Unearned certification', 'Testing', DRAFT['professional_summary']):
         assert excluded not in text, (excluded, text)
     if education_first:
-        assert 'education' in text.casefold() and 'professional experience' not in text.casefold()
+        assert 'education' in text.casefold() and 'professional work experience' not in text.casefold()
     else:
-        assert text.casefold().index('professional experience') < text.casefold().index('education')
+        assert text.casefold().index('professional work experience') < text.casefold().index('education')
     page.locator('[data-tab="tab-latex"]').click()
     with page.expect_download() as latex:
         page.locator('#download-latex').click()

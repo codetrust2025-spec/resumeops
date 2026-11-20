@@ -80,7 +80,7 @@ GCP_MODEL = lambda: Model(GCP_DRAFTS, ['Python', 'SQL', 'BigQuery', 'Dataflow', 
         'Added Cloud Composer alerts for failed loads so the next run can retry the missing sales files.']}])
 JAVA_MODEL = lambda: Model(JAVA_DRAFTS, ['Java', 'Spring Boot', 'Spring Data JPA', 'JUnit'], [  # noqa: E731
     {'name': 'Order Management Service', 'stack': ['Java', 'Spring Boot', 'Spring Data JPA', 'MySQL'], 'bullets': [
-        'Built Spring Boot REST endpoints to create, update and cancel orders with validated request bodies.',
+        'Exposed Spring Boot REST endpoints to create, update and cancel orders with validated request bodies.',
         'Stored orders and order lines in MySQL through Spring Data JPA repositories with paging for order history.',
         'Handled duplicate order requests in Spring Boot with an idempotency key stored beside each order in MySQL.']},
     {'name': 'Inventory Event Service', 'stack': ['Java', 'Spring Boot', 'Kafka', 'Redis'], 'bullets': [
@@ -262,9 +262,13 @@ class SummaryTests(unittest.TestCase):
         keywords = role('GCP Data Engineer')['keywords']
         text = composed_summary(facts, 'GCP Data Engineer', 3, keywords)
         self.assertEqual(text, 'GCP Data Engineer with hands-on experience in streaming using Apache Beam, BigQuery, '
-                               'Cloud Composer, Cloud Storage and Dataflow. Works with Python, SQL and Git. 3 years of '
-                               'professional experience and a B.Tech in Information Technology.')
+                               'Cloud Composer, Cloud Storage and Dataflow. Recent work includes building streaming '
+                               'pipelines with Apache Beam on Dataflow that read Pub/Sub events and load cleaned rows into '
+                               'BigQuery, along with scheduling Cloud Composer DAGs that rebuild partitioned BigQuery '
+                               'reporting tables after each nightly batch load. Works with Python, SQL and Git. 3 years '
+                               'of professional experience and a B.Tech in Information Technology.')
         self.assertEqual(summary_problems(text, facts, 'GCP Data Engineer', 3), [])
+        self.assertTrue(55 <= len(text.split()) <= 80, 'one paragraph of about four lines')
 
     def test_years_are_never_tied_to_a_title_not_held_and_no_transition_story(self):
         facts = self.profile(GCP_DRAFTS[:3])
@@ -317,7 +321,9 @@ class DraftQualityTests(unittest.TestCase):
         self.assertEqual(len(prompts), 2)
         self.assertIn('previous draft was rejected', prompts[1])
         self.assertIn('Configured Cloud Composer to automate ETL processes', prompts[1], 'the retry sees kept lines')
-        self.assertEqual(lines, GCP_DRAFTS[:5])
+        # The current job is drafted to eight lines: the five detailed lines first, the thinner ones fill it up.
+        self.assertEqual(lines[:5], GCP_DRAFTS[:5])
+        self.assertEqual(lines[5:], self.WEAK)
 
     def test_short_or_vague_lines_still_fill_the_job_when_nothing_better_comes(self):
         lines, prompts = self.draft(self.WEAK, self.WEAK)

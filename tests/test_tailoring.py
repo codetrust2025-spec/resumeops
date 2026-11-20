@@ -148,8 +148,8 @@ class ExperienceTests(unittest.TestCase):
 
     def test_fresher_layout_puts_education_first(self):
         fresher, experienced = render(SAMPLE, years=0), render(SAMPLE, years=4)
-        self.assertLess(fresher.index(r'\section*{Education}'), fresher.index(r'\section*{Professional Experience}'))
-        self.assertLess(experienced.index(r'\section*{Professional Experience}'), experienced.index(r'\section*{Education}'))
+        self.assertLess(fresher.index(r'\section*{Education}'), fresher.index(r'\section*{Professional Work Experience}'))
+        self.assertLess(experienced.index(r'\section*{Professional Work Experience}'), experienced.index(r'\section*{Education}'))
 
 
 @unittest.skipUnless(shutil.which('pdflatex') and shutil.which('pdftotext'), 'TeX/PDF tools missing')

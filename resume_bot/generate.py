@@ -243,6 +243,15 @@ def other_field_tools(text, tools, target):
     return [t for t in named if not fits_role(t, target)]
 
 
+def project_off_role(project, tools, target):
+    """The other fields' tools of a project that is mostly about another field ([] when it is the role's): a
+    FastAPI, PostgreSQL and Celery booking API that also uses Docker is not a DevOps Engineer project."""
+    named = [t for t in matched_terms(tools, project) if not matched_terms(GENERIC_TOOLS, t)]
+    own = [t for t in named if fits_role(t, target)]
+    foreign = [t for t in named if not fits_role(t, target)]
+    return foreign if foreign and len(own) < len(foreign) else []
+
+
 def role_skill_fit(skill, role_title):
     """fits_role by role title (used by production acceptance)."""
     from .ai_review import role_intelligence
@@ -326,7 +335,7 @@ def present_for_role(facts, target, role_title, origin_bullets=None):
         shown.extend(restored)
     projects = []
     for project in facts.get('projects', []):
-        if other_field_tools(project, tools, target):
+        if other_field_tools(project, tools, target) or project_off_role(project, tools, target):
             left.append(f'project "{project.split(" - ")[0]}": not about {role_title}')
         else:
             projects.append(project)
@@ -343,7 +352,8 @@ def present_for_role(facts, target, role_title, origin_bullets=None):
 def role_projects(facts, target):
     """The candidate's projects that are about the selected role's technologies."""
     tools = sorted(set(named_tools()) | set(catalog_terms()))
-    return [p for p in facts.get('projects', []) if not other_field_tools(p, tools, target)]
+    return [p for p in facts.get('projects', [])
+            if not other_field_tools(p, tools, target) and not project_off_role(p, tools, target)]
 
 
 def work_skills(profile, target):
@@ -414,7 +424,9 @@ def skill_groups(skills, role):
     for name in names:
         items = [s for s in skills if assignment.get(s) == name and s not in placed]
         if items:
-            groups.append({'name': name, 'items': items})
+            # The catalog's "Concepts" (REST APIs, Microservices, ETL, Unit Testing) are the role's architecture and
+            # development practices, and are labelled so on the resume.
+            groups.append({'name': 'Architecture & Practices' if name == 'Concepts' else name, 'items': items})
             placed.update(items)
     rest = [s for s in skills if s not in placed]
     if rest:
@@ -585,14 +597,77 @@ def _degree_phrase(degree):
     return re.sub(r'^([A-Z][A-Za-z]{0,4}\.[\w.]{0,6})\s+(?=[A-Z][a-z])', r'\1 in ', degree)
 
 
+ING = {'built': 'building', 'wrote': 'writing', 'led': 'leading', 'ran': 'running', 'made': 'making',
+       'set': 'setting', 'kept': 'keeping', 'took': 'taking', 'drove': 'driving', 'held': 'holding', 'used': 'using',
+       'brought': 'bringing', 'did': 'doing', 'began': 'beginning', 'chose': 'choosing', 'grew': 'growing',
+       'rebuilt': 'rebuilding', 'oversaw': 'overseeing', 'rewrote': 'rewriting', 'put': 'putting', 'cut': 'cutting',
+       'met': 'meeting', 'sent': 'sending', 'found': 'finding', 'taught': 'teaching', 'spent': 'spending'}
+
+
+def _gerund(line):
+    """'Built X with Y, ensuring Z.' -> 'building X with Y' (the line's own words; a generic closing clause dropped),
+    or None when the line does not open with a past-tense verb."""
+    line = GENERIC_TAIL.sub('.', line.strip()).rstrip(' .')
+    words = line.split()
+    if len(words) < 4:
+        return None
+    first = words[0].casefold()
+    if first in ING:
+        verb = ING[first]
+    elif first.endswith('ied') and len(first) > 4:
+        verb = first[:-3] + 'ying'
+    elif first.endswith('ed') and len(first) > 4:
+        verb = first[:-2] + 'ing'  # configured -> configuring, created -> creating, modelled -> modelling
+    else:
+        return None
+    return ' '.join([verb, *words[1:]])
+
+
+def _work_sentence(lines, keywords, opening='Recent work includes'):
+    """'Recent work includes building X, along with configuring Y.' from the first confirmed lines (in the resume's
+    role-ranked order) that name the role's own technologies, kept under 40 words; '' when none fits. A line that
+    only lists tools ("Used Git, Maven and Postman ...") says nothing about the work, so it is never chosen."""
+    tools = named_tools()
+    phrases = []
+    for line in lines:
+        named = matched_terms(tools, line)
+        own = [t for t in named if matched_terms(keywords, t) and not matched_terms(GENERIC_TOOLS, t)]
+        foreign = [t for t in named if not matched_terms([*keywords, *GENERIC_TOOLS], t)]
+        phrase = _gerund(line) if own and not foreign and not line.casefold().startswith('used ') else None
+        if phrase and len(phrase.split()) <= 20 and not VAGUE.search(phrase) \
+                and not any(_near_duplicate(phrase, [p]) for p in phrases):
+            phrases.append(phrase)
+    if not phrases:
+        return ''
+    if len(phrases) > 1 and len(phrases[0].split()) + len(phrases[1].split()) <= 33:
+        return f'{opening} {phrases[0]}, along with {phrases[1]}.'
+    return f'{opening} {phrases[0]}.'
+
+
+def _fit(sentences, optional, limit=80):
+    """The objective as one paragraph of at most ``limit`` words: optional sentences are dropped, last first."""
+    sentences = list(sentences)
+    while len(' '.join(sentences).split()) > limit and any(s in optional for s in sentences):
+        drop = next(s for s in reversed(sentences) if s in optional)
+        sentences.remove(drop)
+    return ' '.join(sentences)
+
+
 def composed_summary(profile, role_title, years, keywords):
-    """A plain, defensible summary built only from verified facts (used when the AI draft fails)."""
+    """A plain, defensible career objective built only from verified facts (used when the AI draft fails): one
+    paragraph of about four lines, focused on the selected role and the work the candidate confirmed."""
     skills = role_focus(profile, keywords)[:6]
     positions = list(dict.fromkeys(job['position'] for job in profile['experience']))
     degree = profile['education'][0]['degree'] if profile['education'] else ''
-    sentences = []
+    lines = [b for job in profile['experience'] for b in job['bullets']]
+    sentences, optional = [], []
     if not positions or years == 0:
         sentences.append((f'{degree} graduate' if degree else 'Early-career candidate') + f' seeking a {role_title} role.')
+        project_lines = [b for p in profile.get('projects') or [] for b in split_project(p)[2]]
+        work = _work_sentence(lines + project_lines, keywords, 'Hands-on work includes')
+        if work:
+            sentences.append(work)
+            optional.append(work)
         if skills:
             sentences.append(f'Hands-on with {_join(skills)}.')
     elif same_track(profile, role_title):
@@ -600,8 +675,13 @@ def composed_summary(profile, role_title, years, keywords):
         if positions[0].casefold() != role_title.casefold():
             lead += f', most recently as {positions[0]}'
         sentences.append(lead + '.')
-        if skills:
-            sentences.append(f'Works with {_join(skills)}.')
+        work = _work_sentence(lines, keywords)
+        if work:
+            sentences.append(work)
+            optional.append(work)
+        listed = [s for s in skills if not matched_terms([s], work)] if work else skills
+        if listed:
+            sentences.append(f'Works with {_join(listed)}.')
     else:
         # A career change. When the confirmed work lines describe the role's work (two or more name its
         # technologies, as after reviewed drafts), the selected role leads and the summary presents that work: never
@@ -617,7 +697,12 @@ def composed_summary(profile, role_title, years, keywords):
                      and matched_terms([k], work)][:3]
             sentences.append(f'{role_title} with hands-on experience' + (f' in {_join(areas)}' if areas else '')
                              + f' using {_join(used)}.')
-            rest = [s for s in skills if s not in used and not any(matched_terms([s], a) for a in areas)]
+            work_sentence = _work_sentence(lines, keywords)
+            if work_sentence:
+                sentences.append(work_sentence)
+                optional.append(work_sentence)
+            rest = [s for s in skills if s not in used and not any(matched_terms([s], a) for a in areas)
+                    and not matched_terms([s], work_sentence)]
             if rest:
                 sentences.append(f'Works with {_join(rest)}.')
             if years and degree:
@@ -637,7 +722,7 @@ def composed_summary(profile, role_title, years, keywords):
                 sentences.append(f'Transferable, hands-on skills include {_join(rest)}.')
     if degree and positions and years:
         sentences.append(f'Holds a {_degree_phrase(degree)}.')
-    text = ' '.join(sentences)
+    text = _fit(sentences, optional)
     if len(text.split()) >= 18:
         return text
     return text + (f' Focused on {role_title} work.' if text.startswith(role_title + ' with hands-on')
@@ -666,7 +751,9 @@ def write_summary(profile, role_title, years, keywords, ai, on_progress=None):
                f'begin with the target role, for example "{role_title} with <years> years of experience", followed by '
                'the responsibilities in their own verbs ("maintaining" for "Maintained", never an added verb such as '
                '"building and maintaining")')
-    rules = ('Write a 2-3 sentence professional resume summary for the target role using ONLY these verified facts. '
+    rules = ('Write the career objective of a resume for the target role: one paragraph of 3-4 sentences and 55-80 '
+             'words (about four lines), using ONLY these verified facts; it describes the technical strengths and '
+             'practical work the responsibilities show, naturally, without listing keywords. '
              f'Write it the way a recruiter-ready resume reads: {opening}; no pronouns at all '
              '(no I, my, they, this candidate), plain concrete wording about the work and tools. Rules: no numbers '
              'except the verified years of experience; mention only the confirmed skills listed; never describe past '
@@ -686,6 +773,8 @@ def write_summary(profile, role_title, years, keywords, ai, on_progress=None):
             break
         text = plain(draft.get('summary', '')) if isinstance(draft, dict) else ''
         problems = summary_problems(text, profile, role_title, years)
+        if text and len(text.split()) < 45:
+            problems.append('write one paragraph of 55-80 words (about four lines)')
         other = [t for t in matched_terms(named_tools(), re.sub(re.escape(role_title), ' ', text, flags=re.IGNORECASE))
                  if not matched_terms([*keywords, *GENERIC_TOOLS], t)]
         if other:
@@ -757,8 +846,10 @@ def proposal_problems(text):
     return problems
 
 
-def propose_projects(profile, target, role_title, years, ai, on_progress=None):
-    """2-3 validated project proposals for the role, or [] if the model cannot produce acceptable ones."""
+def propose_projects(profile, target, role_title, years, ai, on_progress=None, avoid=()):
+    """2-3 validated project proposals for the role, or [] if the model cannot produce acceptable ones. A bullet
+    repeating a work line (``avoid``: the candidate's lines and the drafted experience) is dropped: projects
+    describe different work from the experience section."""
     role = role_entry(target)
     vocabulary = role_vocabulary(target)
     # Only the candidate's skills that fit the role: a Frontend resume gets frontend projects, not cloud ones.
@@ -775,10 +866,12 @@ def propose_projects(profile, target, role_title, years, ai, on_progress=None):
               "project is about the target role's own work and uses its technologies; prefer the candidate's skills "
               'listed here, which fit the role. Use compatible, current versions. Each project: a '
               'name; the business problem; a technology stack of real tools; a short architecture overview; key '
-              'features; the candidate responsibilities; and 4 bullets. Each bullet is one complete sentence of 14-25 '
+              'features; the candidate responsibilities; and 5 bullets. Each bullet is one complete sentence of 14-25 '
               'words that starts with an action verb, ends with a period and says what was built, with which tools, '
-              'how (a specific technique, data flow, configuration or check) and why; the bullets cover different '
-              'parts of the project; a bullet names only tools listed in that project\'s stack. No vague wording '
+              'how (a specific technique, data flow, integration, configuration or check) and why; the bullets cover '
+              'different parts of the project (features, architecture, integrations, testing, deployment); a bullet '
+              'names only tools listed in that project\'s stack. A stack never combines alternatives for the same job '
+              '(two web frameworks, two relational databases, two CI servers, two cloud providers). No vague wording '
               '(efficiently, complex, various, large datasets). Do NOT '
               'state metrics, percentages, user counts, revenue, production deployments or employers. These are '
               'proposals the candidate must confirm. Write bullets in plain resume style without pronouns or filler '
@@ -791,13 +884,50 @@ def propose_projects(profile, target, role_title, years, ai, on_progress=None):
             data = generate(ai, prompt + retry, schema=PROPOSAL_SCHEMA, on_progress=on_progress)
         except Exception:
             return proposals
-        proposals = _checked_proposals(data, profile, role)[:wanted]
+        proposals = _checked_proposals(data, profile, role, avoid)[:wanted]
         if proposals:
             break
     return proposals
 
 
-def _checked_proposals(data, profile, role):
+# Alternatives for the same job: a project stack uses one of each (React.js and Angular in one frontend, or MySQL
+# and PostgreSQL as one store, is incoherent without a reason the proposal never gives).
+ALTERNATIVES = [
+    ['React.js', 'React', 'Angular', 'Vue.js', 'Vue', 'Svelte'],
+    ['Django', 'Flask', 'FastAPI'],
+    ['Express.js', 'NestJS', 'Fastify'],
+    ['Spring Boot', 'Quarkus', 'Micronaut'],
+    ['MySQL', 'PostgreSQL', 'Oracle', 'SQL Server', 'MariaDB'],
+    ['Maven', 'Gradle'],
+    ['Jenkins', 'GitHub Actions', 'GitLab CI', 'CircleCI', 'Azure DevOps'],
+    ['Amazon Web Services', 'AWS', 'Microsoft Azure', 'Azure', 'Google Cloud', 'GCP'],
+    ['Redux', 'MobX', 'Zustand'],
+    ['Jest', 'Mocha', 'Vitest'],
+    ['Selenium', 'Cypress', 'Playwright'],
+    ['TensorFlow', 'PyTorch'],
+]
+
+
+def conflicting_tools(stack):
+    """The stack items that are a second choice for a job another item already does (in stack order)."""
+    dropped = []
+    for group in ALTERNATIVES:
+        # Variants of one product ("React" and "React.js", "AWS" and "Amazon Web Services") are one choice.
+        chosen = None
+        for item in stack:
+            hit = next((alt for alt in group if matched_terms([alt], item) or item.casefold() == alt.casefold()), None)
+            if not hit:
+                continue
+            key = {'react': 'react.js', 'vue': 'vue.js', 'aws': 'amazon web services', 'azure': 'microsoft azure',
+                   'gcp': 'google cloud'}.get(hit.casefold(), hit.casefold())
+            if chosen is None:
+                chosen = key
+            elif key != chosen:
+                dropped.append(item)
+    return dropped
+
+
+def _checked_proposals(data, profile, role, avoid=()):
     """The model's project proposals that pass validation, in its order; malformed or unsupported ones are dropped."""
     proposals, names = [], set()
     skills, tools = profile.get('skills', []), named_tools()
@@ -808,6 +938,9 @@ def _checked_proposals(data, profile, role):
             continue
         name = plain(item.get('name', ''))[:70]
         stack = _known_stack(item.get('stack', []), profile, role)
+        # One choice per job in the stack; a bullet that relies on a dropped alternative is dropped with it.
+        clash = conflicting_tools(stack)
+        stack = [s for s in stack if s not in clash]
         bullets = []
         for bullet in (plain_words(clean_bullet(plain(b))).rstrip(' ;,') for b in item.get('bullets', [])):
             if bullet and bullet[-1] not in '.!?':
@@ -818,14 +951,20 @@ def _checked_proposals(data, profile, role):
                 continue
             # A bullet may name only tools in this project's stack or the candidate's confirmed skills
             # ("onboarding flow with Formik" is invented when the candidate never listed Formik).
-            if tools_outside(bullet, stack + skills, tools):
+            if tools_outside(bullet, stack + skills, tools) or (clash and matched_terms(clash, bullet)):
+                continue
+            # Projects describe different work from the experience section, and from each other. Against the
+            # experience only a restated line counts (a shared opening such as "Configured Pub/Sub topics" is not).
+            if _near_duplicate(bullet, [*avoid, *bullets]) or _same_start(bullet, bullets):
+                continue
+            if conflicting_tools([*stack, *(t for t in tools_outside(bullet, stack, tools))]):
                 continue
             for term in tools_outside(bullet, stack, tools):  # a confirmed skill it uses joins the reviewed stack
                 if len(stack) < 8:
                     stack.append(next((s for s in skills if matched_terms([term], s)), term))
             bullets.append(bullet)
-        # Up to four, the detailed ones first choice; the model's order is kept.
-        best = sorted(bullets, key=lambda b: bool(draft_weakness(b)))[:4]
+        # Up to five, the detailed ones first choice; the model's order is kept.
+        best = sorted(bullets, key=lambda b: bool(draft_weakness(b)))[:5]
         bullets = [b for b in bullets if b in best]
         texts = [plain(item.get(k, '')) for k in ('problem', 'architecture', 'responsibilities')]
         # Descriptions are review context (never printed): only invented metrics or production claims disqualify.
@@ -846,7 +985,7 @@ DRAFT_SCHEMA = {
         'roles': {'type': 'array', 'maxItems': 12, 'items': {
             'type': 'object', 'additionalProperties': False, 'required': ['index', 'bullets'],
             'properties': {'index': {'type': 'integer', 'minimum': 0, 'maximum': 19},
-                           'bullets': {'type': 'array', 'maxItems': 6,
+                           'bullets': {'type': 'array', 'maxItems': 10,
                                        'items': {'type': 'string', 'minLength': 75, 'maxLength': 220}}}}},
         'skills': {'type': 'array', 'maxItems': 12, 'items': {'type': 'string', 'maxLength': 40}}}}
 # Inflated qualities a draft must not assert about work the candidate has not described.
@@ -870,7 +1009,17 @@ def technical_job(position):
     return bool(_families(position)) or bool(GENERIC_TECH_TITLE.search(position) and not NON_SOFTWARE_TITLE.search(position))
 
 
-DRAFT_LINES = 5  # per job, whatever the years of experience
+DRAFT_LINES = 8  # the most recent job; earlier and shorter jobs take fewer (draft_lines)
+# Lines per job by recency: about eight for the current job and seven for the one before, then fewer for older
+# jobs, whose details the candidate supports least, so a long career still fits the two-page limit.
+LINES_BY_RANK = (8, 7, 5, 4)
+SHORT_STINT = re.compile(r'\b(?:intern|internship|trainee|apprentice|freelance|part[- ]time)\b', re.IGNORECASE)
+
+
+def draft_lines(rank, position):
+    """How many lines the job at ``rank`` (0 = most recent) is drafted to, whatever the years of experience."""
+    lines = LINES_BY_RANK[min(rank, len(LINES_BY_RANK) - 1)]
+    return min(lines, 4) if SHORT_STINT.search(position or '') else lines
 
 
 def draft_role_content(profile, target, role_title, years, missing, need_skills, ai, on_progress=None):
@@ -899,6 +1048,7 @@ def draft_role_content(profile, target, role_title, years, missing, need_skills,
         job = jobs[i]
         roles.append({'index': i, 'job_title': job['position'],
                       'dates': ' - '.join(v for v in (job.get('start'), job.get('end')) if v),
+                      'bullets_wanted': draft_lines(i, job['position']),
                       'kind': 'role' if technical_job(job['position']) else 'own',
                       # Lines about another field's work are never shown to the model: drafts copied their tools
                       # ("Built Dataflow pipelines using Java" for a Java Backend resume).
@@ -927,7 +1077,9 @@ def draft_role_content(profile, target, role_title, years, missing, need_skills,
                  'focus_technologies': focus, 'candidate_skills': on_role[:25],
                  'education': [entry['degree'] for entry in profile['education']][:2], 'jobs_to_draft': asked}
         prompt = ('Draft the professional experience of a candidate applying for the target role. For each job in '
-                  f'jobs_to_draft write {DRAFT_LINES} bullets. kind "role": the selected target role decides the content: '
+                  'jobs_to_draft write the number of bullets in its bullets_wanted. Every job describes different '
+                  'work: never reuse a task, sentence or opening from another job. kind "role": the selected target '
+                  'role decides the content: '
                   'describe realistic, practical work a person with that exact job title could do as '
                   f'{role_title} work with the target_role_technologies. Each bullet centres on a different '
                   'focus_technologies item, covers a different part of the role (for example ingestion, '
@@ -974,7 +1126,9 @@ def draft_role_content(profile, target, role_title, years, missing, need_skills,
             if not isinstance(item, dict) or item.get('index') not in wanted or not isinstance(item.get('bullets'), list):
                 continue
             role, kept = by_index[item['index']], pool[item['index']]
-            for raw in item['bullets'][:DRAFT_LINES + 1]:
+            others = [line for index, lines in pool.items() if index != item['index'] for line in lines] + \
+                [line for other in roles if other['index'] != item['index'] for line in other['existing_lines']]
+            for raw in item['bullets'][:role['bullets_wanted'] + 2]:
                 line = plain_words(clean_bullet(plain(raw))).rstrip(' ;,')
                 if line and line[-1] not in '.!?':
                     line += '.'  # a complete sentence, never a fragment
@@ -984,6 +1138,8 @@ def draft_role_content(profile, target, role_title, years, missing, need_skills,
                 if not reason and (line.casefold() in seen or _near_duplicate(line, [*kept, *role['existing_lines']])
                                    or _same_start(line, [*kept, *role['existing_lines']])):
                     reason = 'a repeated line'
+                if not reason and (_near_duplicate(line, others) or _same_start(line, others)):
+                    reason = 'each job describes different work from the other jobs'
                 if reason:
                     rejected.add(reason)
                     continue
@@ -996,7 +1152,7 @@ def draft_role_content(profile, target, role_title, years, missing, need_skills,
         pending = [role for role in pending if len([line for line in pool[role['index']] if not draft_weakness(line)])
                    < _room(role, tools, target)]
         feedback = ('\nThe previous draft was rejected (' + ', '.join(sorted(rejected)) + '). Fix this.' if rejected
-                    else f'\nThe previous draft had too few acceptable bullets. Write {DRAFT_LINES} for each job.')
+                    else '\nThe previous draft had too few acceptable bullets. Write bullets_wanted for each job.')
     for role in roles:
         # Detailed lines first; short or vague ones only fill the job up. A job is never left without lines for
         # wording alone, and is offered at least three lines whenever three acceptable lines exist.
@@ -1019,9 +1175,10 @@ def draft_role_content(profile, target, role_title, years, missing, need_skills,
 
 
 def _room(role, tools, target):
-    """How many drafted lines a job takes: up to DRAFT_LINES beside the candidate's own lines for the role (their
-    lines about another field's work never count: they are not shown for this role), and at least two."""
-    return max(2, DRAFT_LINES - len([line for line in role['existing_lines'] if not other_field_tools(line, tools, target)]))
+    """How many drafted lines a job takes: up to its bullets_wanted beside the candidate's own lines for the role
+    (their lines about another field's work never count: they are not shown for this role), and at least two."""
+    wanted = role.get('bullets_wanted', DRAFT_LINES)
+    return max(2, wanted - len([line for line in role['existing_lines'] if not other_field_tools(line, tools, target)]))
 
 # Wording that says nothing concrete about the work ("to process large datasets efficiently").
 VAGUE = re.compile(r'\b(?:efficient(?:ly)?|effective(?:ly)?|successfully|complex|various|variety of|usable format|'

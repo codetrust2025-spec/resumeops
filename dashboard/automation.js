@@ -296,7 +296,8 @@ function atsDetails(ats) {
   }
   const lists = [['Recommendations', ats.recommendations || ats.suggestions || []],
     ['Your skills that match the role', ats.role_relevant_skills || ats.matched || []],
-    ['Suggested keywords (add only if you have used them)', ats.suggested_skills || ats.missing || []]];
+    ['Suggested keywords (add only if you have used them)', ats.suggested_skills || ats.missing || []],
+    ['Recommended certifications (list one only after completing it)', ats.recommended_certifications || []]];
   for (const [title, values] of lists) {
     if (!values.length) continue;
     box.append(element('h4', title));
@@ -305,6 +306,32 @@ function atsDetails(ats) {
     box.append(list);
   }
   return box;
+}
+
+// Certifications worth earning for the role: unticked, because a certification is printed only once completed.
+// The candidate ticks the ones they have, or types others; nothing else is added.
+function certificationChoices(job) {
+  if (!(job.certifications || []).length) return null;
+  const box = element('fieldset');
+  box.className = 'auto-certs';
+  box.append(element('legend', 'Certifications (optional): tick only those you have completed'));
+  for (const name of job.certifications) {
+    const option = element('label'); const box_ = element('input');
+    box_.type = 'checkbox'; box_.value = name; box_.name = 'certification';
+    option.append(box_, ' ' + name); box.append(option);
+  }
+  const other = element('textarea'); other.name = 'other_certifications'; other.rows = 2; other.maxLength = 900;
+  const otherLabel = element('label', 'Other completed certifications (one per line)'); otherLabel.append(other);
+  box.append(otherLabel);
+  return box;
+}
+
+function chosenCertifications(form) {
+  const box = form.querySelector('.auto-certs');
+  if (!box) return undefined;
+  const ticked = [...box.querySelectorAll('input[type=checkbox]:checked')].map(item => item.value);
+  const typed = box.querySelector('[name=other_certifications]').value.split('\n').map(line => line.trim()).filter(Boolean);
+  return [...new Set([...ticked, ...typed])];
 }
 
 // Suggested projects: never resume content until the candidate confirms the card. Like the drafted work lines,
@@ -360,6 +387,8 @@ function proposalsForm(job) {
   box.className = 'auto-answer auto-proposals';
   box.noValidate = true;
   box.append(element('p', job.error || 'Suggested projects are ready for your review.'), ...proposalCards(job));
+  const certs = certificationChoices(job);
+  if (certs) box.append(certs);
   const submit = element('button', 'Save project choices');
   submit.type = 'submit';
   submit.className = 'primary';
@@ -372,12 +401,16 @@ function proposalsForm(job) {
     if (!decisions) return;
     submit.disabled = true;
     try {
+      const certifications = chosenCertifications(box);
       const response = await ResumeAuth.call('/api/automation/projects', {method: 'POST',
-        headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id: job.id, decisions})});
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({id: job.id, decisions, ...(certifications ? {certifications} : {})})});
       const result = await response.json();
       if (!response.ok) {
         const card = /^project\.(\d+)$/.exec(result.field || '');
-        fieldError(card ? cards[Number(card[1])].querySelector('[name=bullets]') : submit, result.error || 'Could not save.');
+        const certField = result.field === 'certifications' ? box.querySelector('[name=other_certifications]') : null;
+        fieldError(card ? cards[Number(card[1])].querySelector('[name=bullets]') : certField || submit,
+          result.error || 'Could not save.');
         return;
       }
       tracked = job.id;
@@ -486,6 +519,8 @@ function answerForm(job) {
   }
   const cards = (job.proposals || []).length ? proposalCards(job) : [];
   box.append(...cards);
+  const certs = certificationChoices(job);
+  if (certs) box.append(certs);
   const submit = element('button', cards.length || (job.questions || []).some(q => q.drafted) ? 'Confirm and continue' : 'Continue');
   submit.type = 'submit';
   submit.className = 'primary';
@@ -493,21 +528,24 @@ function answerForm(job) {
   box.addEventListener('submit', async event => {
     event.preventDefault();
     clearFieldErrors(box);
-    const fields = [...box.querySelectorAll('input, textarea')].filter(field => !field.closest('.auto-proposal'));
+    const fields = [...box.querySelectorAll('input, textarea')]
+      .filter(field => !field.closest('.auto-proposal') && !field.closest('.auto-certs'));
     const empty = fields.find(field => field.required && !field.value.trim());
     if (empty) { fieldError(empty, 'Enter this detail to continue.'); return; }
     const decisions = cards.length ? projectDecisions(cards) : undefined;
     if (cards.length && !decisions) return;
+    const certifications = chosenCertifications(box);
     submit.disabled = true;
     try {
       const response = await ResumeAuth.call('/api/automation/answer', {method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({id: job.id, answers: Object.fromEntries(fields.map(field => [field.name, field.value])),
-          ...(decisions ? {decisions} : {})})});
+          ...(decisions ? {decisions} : {}), ...(certifications ? {certifications} : {})})});
       const result = await response.json();
       if (!response.ok) {
         const card = /^project\.(\d+)$/.exec(result.field || '');
         const target = card ? cards[Number(card[1])]?.querySelector('[name=bullets]')
+          : result.field === 'certifications' ? box.querySelector('[name=other_certifications]')
           : result.field && fields.find(field => field.name === result.field);
         fieldError(target || submit, result.error || 'Could not save your answers.');
         return;
