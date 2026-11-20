@@ -493,6 +493,18 @@ function certificationChoices(job) {
     const option = element('label'); const box_ = element('input');
     box_.type = 'checkbox'; box_.value = name; box_.name = 'certification';
     option.append(box_, ' ' + name); box.append(option);
+    // A course's title changes with each edition ("... 2025 Edition"): a ticked course is printed with the title
+    // exactly as on the candidate's certificate, which they confirm or correct here.
+    const course = /^Udemy: (.+)$/.exec(name);
+    if (course) {
+      const title = element('input'); title.name = 'certification_title'; title.maxLength = 110; title.value = course[1];
+      title.setAttribute('aria-label', 'Course title exactly as on your certificate');
+      const titleLabel = element('label', 'Title exactly as on your Udemy certificate');
+      titleLabel.className = 'auto-cert-title'; titleLabel.hidden = true; titleLabel.append(title);
+      box_.titleField = title;
+      box_.addEventListener('change', () => { titleLabel.hidden = !box_.checked; if (box_.checked) title.select(); });
+      box.append(titleLabel);
+    }
   }
   const other = element('textarea'); other.name = 'other_certifications'; other.rows = 2; other.maxLength = 900;
   const otherLabel = element('label', 'Other certifications (one per line)'); otherLabel.append(other);
@@ -503,7 +515,16 @@ function certificationChoices(job) {
 function chosenCertifications(form) {
   const box = form.querySelector('.auto-certs');
   if (!box) return undefined;
-  const ticked = [...box.querySelectorAll('input[type=checkbox]:checked')].map(item => item.value);
+  const ticked = [...box.querySelectorAll('input[type=checkbox]:checked')].map(item => {
+    if (!item.titleField) return item.value;
+    const title = item.titleField.value.trim().replace(/^Udemy:\s*/i, '');
+    if (!title) {
+      const error = new Error('Enter the course title exactly as on your certificate, or untick the course.');
+      error.control = item.titleField;
+      throw error;
+    }
+    return 'Udemy: ' + title;
+  });
   const typed = box.querySelector('[name=other_certifications]').value.split('\n').map(line => line.trim()).filter(Boolean);
   return [...new Set([...ticked, ...typed])];
 }
@@ -589,7 +610,7 @@ function proposalsForm(job) {
       }
       tracked = job.id;
       await refresh();
-    } catch (error) { fieldError(submit, error.message); }
+    } catch (error) { fieldError(error.control || submit, error.message); }
     finally { submit.disabled = false; }
   });
   return box;
@@ -720,7 +741,9 @@ function answerForm(job) {
     if (empty) { fieldError(empty, 'Enter this detail to continue.'); return; }
     const decisions = cards.length ? projectDecisions(cards) : undefined;
     if (cards.length && !decisions) return;
-    const certifications = chosenCertifications(box);
+    let certifications;
+    try { certifications = chosenCertifications(box); }
+    catch (error) { fieldError(error.control || submit, error.message); return; }
     submit.disabled = true;
     try {
       const response = await ResumeAuth.call('/api/automation/answer', {method: 'POST',

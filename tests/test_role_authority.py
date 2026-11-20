@@ -315,20 +315,22 @@ class DraftQualityTests(unittest.TestCase):
     WEAK = ['Configured Cloud Composer to automate ETL processes, reducing manual intervention.',
             'Developed data models using Apache Spark for efficient data processing and analysis.',
             'Automated data ingestion into Cloud Storage using Dataflow.']
+    # As offered: a fill line loses its generic ending (tests/test_writing_quality.py).
+    FILLED = ['Configured Cloud Composer to automate ETL processes.', *WEAK[1:]]
 
     def test_detailed_lines_from_the_retry_come_first(self):
         lines, prompts = self.draft(self.WEAK, GCP_DRAFTS[:5])
-        self.assertEqual(len(prompts), 2)
+        self.assertEqual(len(prompts), 3, 'a job still short of its lines is asked twice more')
         self.assertIn('previous draft was rejected', prompts[1])
         self.assertIn('Configured Cloud Composer to automate ETL processes', prompts[1], 'the retry sees kept lines')
         # The current job is drafted to eight lines: the five detailed lines first, the thinner ones fill it up.
         self.assertEqual(lines[:5], GCP_DRAFTS[:5])
-        self.assertEqual(lines[5:], self.WEAK)
+        self.assertEqual(lines[5:], self.FILLED)
 
     def test_short_or_vague_lines_still_fill_the_job_when_nothing_better_comes(self):
         lines, prompts = self.draft(self.WEAK, self.WEAK)
-        self.assertEqual(len(prompts), 2)
-        self.assertEqual(lines, self.WEAK)
+        self.assertEqual(len(prompts), 3)
+        self.assertEqual(lines, self.FILLED)
 
     def test_a_word_added_only_for_length_is_rejected(self):
         self.assertIn('padding words at the end',

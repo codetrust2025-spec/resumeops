@@ -130,7 +130,7 @@ class DraftRoleContentTests(unittest.TestCase):
         self.assertEqual(work[1], ['Contributed to Angular screens with TypeScript and CSS styling.',
                                    'Wrote unit tests for Angular services with TypeScript and Jest.',
                                    'Built Angular forms with reactive validation for internal tools.'])
-        self.assertEqual(len(prompts), 2)
+        self.assertEqual(len(prompts), 3, 'still short of its lines after the retry, so asked once more')
         self.assertIn('jobs that ended use past-tense verbs', prompts[1])
 
     def test_the_model_never_sees_employer_names_and_failures_leave_fields_empty(self):
