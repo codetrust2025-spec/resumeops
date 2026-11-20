@@ -657,11 +657,16 @@ def composed_summary(profile, role_title, years, keywords):
     """A plain, defensible career objective built only from verified facts (used when the AI draft fails): one
     paragraph of about four lines, focused on the selected role and the work the candidate confirmed."""
     skills = role_focus(profile, keywords)[:6]
-    positions = list(dict.fromkeys(job['position'] for job in profile['experience']))
+    positions = list(dict.fromkeys(job['position'] for job in profile['experience'] if job['position']))
     degree = profile['education'][0]['degree'] if profile['education'] else ''
     lines = [b for job in profile['experience'] for b in job['bullets']]
     sentences, optional = [], []
-    if not positions or years == 0:
+    if profile['experience'] and not positions:
+        lead = f'{role_title} candidate with {_years_text(years)} of documented employment history' if years else f'{role_title} candidate with documented employment history'
+        sentences.append(lead + '.')
+        if skills:
+            sentences.append(f'Documented skills include {_join(skills)}.')
+    elif not positions or years == 0:
         sentences.append((f'{degree} graduate' if degree else 'Early-career candidate') + f' seeking a {role_title} role.')
         project_lines = [b for p in profile.get('projects') or [] for b in split_project(p)[2]]
         work = _work_sentence(lines + project_lines, keywords, 'Hands-on work includes')
@@ -1047,7 +1052,7 @@ def draft_role_content(profile, target, role_title, years, missing, need_skills,
         roles.append({'index': i, 'job_title': job['position'],
                       'dates': ' - '.join(v for v in (job.get('start'), job.get('end')) if v),
                       'bullets_wanted': draft_lines(i, job['position']),
-                      'kind': 'role' if technical_job(job['position']) else 'own',
+                      'kind': 'role' if not job['position'] or technical_job(job['position']) else 'own',
                       # Lines about another field's work are never shown to the model: drafts copied their tools
                       # ("Built Dataflow pipelines using Java" for a Java Backend resume).
                       'existing_lines': [line for line in job.get('bullets', [])
@@ -1078,7 +1083,9 @@ def draft_role_content(profile, target, role_title, years, missing, need_skills,
                   'jobs_to_draft write the number of bullets in its bullets_wanted. Every job describes different '
                   'work: never reuse a task, sentence or opening from another job. kind "role": the selected target '
                   'role decides the content: '
-                  'describe realistic, practical work a person with that exact job title could do as '
+                  'If a historical job title is absent, do not invent one; draft examples for the selected role, '
+                  'labelled as unverified until the candidate confirms actually doing that work. '
+                  'Describe realistic, practical work a person with the listed job title (when present) could do as '
                   f'{role_title} work with the target_role_technologies. Each bullet centres on a different '
                   'focus_technologies item, covers a different part of the role (for example ingestion, '
                   'transformation, APIs, data access, orchestration, testing, monitoring, deployment) and states '
