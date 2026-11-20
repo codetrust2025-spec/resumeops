@@ -310,7 +310,7 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
         folder.mkdir(parents=True,exist_ok=True)
         for item in ('main.tex','profile.json','resume.pdf','overleaf-project.zip','audit.json','result.json'):
             _replace(working/item,folder/item)
-    _verify_upload_source(folder, profile, template, years)
+    _verify_upload_source(folder, profile, template, years, complete_sections=complete_sections)
     if overleaf:
         report = _sync_overleaf(folder, report, profile, browser_profile, max_pages, refresh_overleaf, t)
     else:
