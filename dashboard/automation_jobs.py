@@ -219,16 +219,26 @@ def submission(payload):
             raise ValueError('Enter a valid phone number.')
         if not isinstance(email, str) or (email and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email)):
             raise ValueError('Enter a valid email address if supplied.')
-        if not candidate.get('work_experience') and not candidate.get('education'):
-            background = candidate.get('background') or ''
-            if not isinstance(background, str) or len(background) > 7500:
-                raise ValueError('Work or education facts must be under 7500 characters.')
-            return {'consent': CONSENT_VERSION, 'role': role,
-                    'identity': {'full_name': name.strip(), 'phone': phone.strip(), 'email': email.strip()},
-                    'background': background.strip()}
-        profile = attested_profile(candidate)
-        return {'consent': CONSENT_VERSION, 'role': role, 'profile': profile,
-                'years': candidate.get('years_of_experience')}
+        background = candidate.get('background') or ''
+        if not isinstance(background, str) or len(background) > 7500:
+            raise ValueError('Work or education facts must be under 7500 characters.')
+        # Every typed field, attested as on the form-only path (the note itself is read by the extraction).
+        typed = attested_profile(candidate, entries_required=False)
+        years = candidate.get('years_of_experience')
+        if (candidate.get('work_experience') or candidate.get('education')) and not background.strip():
+            return {'consent': CONSENT_VERSION, 'role': role, 'profile': typed, 'years': years}
+        # A note is read by the extraction, and the typed fields travel beside it so neither is dropped
+        # (merge_attested joins them). Earlier, a note discarded every optional field when no entry was
+        # typed, and a typed entry discarded the note.
+        request = {'consent': CONSENT_VERSION, 'role': role,
+                   'identity': {'full_name': name.strip(), 'phone': phone.strip(), 'email': email.strip()},
+                   'background': background.strip()}
+        extra = {key: value for key, value in typed.items() if key not in ('full_name', 'phone', 'email') and value}
+        if extra:
+            request['attested'] = extra
+        if years is not None:
+            request['years'] = years
+        return request
     if payload.get('extension') not in ('pdf', 'docx', 'txt', 'jpg', 'jpeg', 'png') or not isinstance(document, str):
         raise ValueError('Choose PDF, DOCX, TXT, JPG or PNG documents.')
     try:
@@ -802,8 +812,8 @@ class AutomationJobs:
                            'WHERE owner=? AND id=?', (role, candidate, row['owner'], row['id']))
 
     def _prepare(self, job):
-        from resume_bot.automation import (EXTRACTION_VERSION, NeedsInput, inferred_years, role_intelligence,
-                                           source_profile, tailor_role, verified_request)
+        from resume_bot.automation import (EXTRACTION_VERSION, NeedsInput, inferred_years, merge_attested,
+                                           role_intelligence, source_profile, tailor_role, verified_request)
         from resume_bot.generate import (GENERIC_TOOLS, content_problems, draft_role_content, is_job_title,
                                          lacks_role_core, present_for_role, propose_projects, role_projects,
                                          role_vocabulary, same_field, skill_fits_role, skill_groups, split_project,
@@ -910,7 +920,10 @@ class AutomationJobs:
                 facts = checkpoint('facts', source if isinstance(source, dict) else
                                    source_profile(source, model, extraction_progress,
                                                   identity=request.get('identity'),
-                                                  evidence_documents='documents' in request))
+                                                  evidence_documents='documents' in request,
+                                                  attested=request.get('attested')))
+            if request.get('attested'):
+                facts = merge_attested(facts, request['attested'])  # idempotent: safe after answers and retries
             with closing(self.connection()) as db, db:
                 db.execute('UPDATE automation SET candidate=? WHERE owner=? AND id=?', (facts.get('full_name'), *key))
             role = request['role']
