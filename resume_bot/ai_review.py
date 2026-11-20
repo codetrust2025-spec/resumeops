@@ -18,13 +18,17 @@ def role_intelligence(role, root=None):
     match = ROLES.get(title.casefold()) or role_by_title(title)
     exact = match['id'] if match else None
     if exact:
-        # A catalog role uses its curated, role-specific keywords. Market listings are kept only as
-        # reference, so a Java role is never scored against Node.js or Django terms.
         title = ROLES[exact]['name']
         keywords = ROLES[exact]['keywords']
-        return {'label': title, 'role': exact, 'terms': keywords[:40],
-                'sources': [{'label': 'ResumeOps role catalog (curated)', 'url': '', 'terms': keywords}],
-                'keyword_relevance': {term: 1 for term in keywords[:40]}}
+        sources = relevant_sources(title, root) if root is not None else []
+        relevance = {
+            term: sum(source['relevance'] for source in sources if matched_terms([term], ' '.join(source['terms'])))
+            for term in keywords
+        }
+        terms = sorted(keywords, key=relevance.__getitem__, reverse=True)[:40]
+        return {'label': title, 'role': exact, 'terms': terms,
+                'sources': [*sources, {'label': 'ResumeOps role catalog (curated)', 'url': '', 'terms': keywords}],
+                'keyword_relevance': {term: relevance[term] or 1 for term in terms}}
     sources = relevant_sources(title, root)
     keywords = list(dict.fromkeys(term for row in sources for term in row['terms']))
     if not keywords:
