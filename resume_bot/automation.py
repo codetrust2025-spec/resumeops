@@ -239,23 +239,24 @@ def source_profile(source, ai, on_progress=None, notices=None, identity=None, ev
     for index, job in enumerate(draft['experience']):
         if job.get('company') and phrase(job['company']) == phrase(job.get('position') or ''):
             job['company'] = ''  # the model copied the job title into the employer: none is stated
-        absent = [field for field in ('company', 'position', 'start') if not (job.get(field) or '').strip()]
+        absent = [field for field in ('company', 'start') if not (job.get(field) or '').strip()]
         for field in absent:
             ask('experience', index, field, f'The document does not state the {FIELD_NAMES[field]} for this role.', job)
         if absent:
             continue
-        employer, title = phrase(job['company']), phrase(job['position'])
-        if employer == labelled('company') and title == labelled('position'):
+        employer, title = phrase(job['company']), phrase(job.get('position') or '')
+        if title and employer == labelled('company') and title == labelled('position'):
             anchors[index] = min(form['company'][1], form['position'][1])
             form_tied.add(index)
             continue
         employers = [i for i, line in enumerate(lines) if employer in line]
         titles = [i for i, line in enumerate(lines) if title in line]
-        pairs = [(abs(a-b), min(a,b)) for a in employers for b in titles if abs(a-b) <= 2]
+        pairs = ([(abs(a-b), min(a,b)) for a in employers for b in titles if abs(a-b) <= 2]
+                 if title else [(0, a) for a in employers])
         if not pairs or min(pairs)[1] in anchors.values():
             why = ('The resume shows this employer and job title in different places.' if not pairs else
                    'Two roles were read from the same line of the resume.')
-            for field in ('company', 'position'):
+            for field in (('company', 'position') if title else ('company',)):
                 ask('experience', index, field, why + ' Confirm or correct it.', job, suggest=True)
             continue
         anchors[index] = min(pairs)[1]
