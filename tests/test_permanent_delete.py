@@ -399,8 +399,8 @@ class DeleteEndpointTests(unittest.TestCase):
         lock.execute('BEGIN EXCLUSIVE')
         original = AutomationJobs.delete
         try:
-            with patch.object(AutomationJobs, 'delete', lambda jobs, owner, identifier=None:
-                              original(jobs, owner, identifier, wait=0.2)):
+            with patch.object(AutomationJobs, 'delete', lambda jobs, owner, identifier=None, **kwargs:
+                              original(jobs, owner, identifier, wait=0.2, **kwargs)):
                 status, body = self.post({'id': ident(1), 'confirm': 'DELETE'})
         finally:
             lock.close()

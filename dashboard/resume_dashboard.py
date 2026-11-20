@@ -619,6 +619,13 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 operation = query.get('id', [None])[0]
                 return self.send_json({'jobs': automation.list(owner, operation),
                                        'ready': workspace.automation_ready()})
+            if url.path == '/api/automation/audit':
+                # Deletion records: an account sees its own; the operator sees every account's.
+                owner = self.session_owner(request_origin)
+                if not owner:
+                    return self.send_json({'error': 'Sign in to access your resumes.'}, 403)
+                everyone = self.is_operator(request_origin) and query.get('all', [''])[0] == '1'
+                return self.send_json({'records': automation.audit_log(None if everyone else owner)})
             if url.path == '/api/revision':
                 key = query.get('key', [''])[0]
                 revision = workspace.revision(key) if self.can_read_job(key, request_origin) else None
@@ -723,7 +730,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                     return self.send_json({'error': 'Invalid request.'}, 413)
                 request = json.loads(self.rfile.read(size))
                 if action == 'delete':
-                    return self.delete_resumes(owner, request)
+                    return self.delete_resumes(owner, request, request_origin)
                 identifier = request.get('id') if isinstance(request, dict) else None
                 if not isinstance(identifier, str) or not re.fullmatch(r'[0-9a-f]{64}', identifier):
                     return self.send_json({'error': 'Invalid resume identifier.'}, 400)
@@ -743,9 +750,19 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return self.send_json({'error': str(exc) if action == 'regenerate' else 'Invalid request.'}, 400)
             return self.send_json({'id': identifier, 'status': 'queued'})
 
-        def delete_resumes(self, owner, request):
+        def audit_client(self, request_origin):
+            """Who asked, for the deletion record: the access path, the client address (Cloudflare's view of it on
+            the public site) and the browser, without the session token or any request body."""
+            kind = ('web' if request_origin == web_origin else 'phone' if request_origin == phone_origin
+                    else 'loopback')
+            address = (self.headers.get('Cf-Connecting-IP') if kind == 'web' else None) or self.client_address[0]
+            return {'via': kind, 'address': str(address)[:64],
+                    'agent': ' '.join(str(self.headers.get('User-Agent', '')).split())[:200]}
+
+        def delete_resumes(self, owner, request, request_origin=None):
             """Permanent deletion for the signed-in account only. The confirmation is checked here, not
-            only in the page: {"id": <id>, "confirm": "DELETE"} or {"all": true, "confirm": "DELETE ALL"}."""
+            only in the page: {"id": <id>, "confirm": "DELETE"} or {"all": true, "confirm": "DELETE ALL"}.
+            Every deletion request that reaches the deletion itself is recorded (automation.audit)."""
             from automation_jobs import (DELETE_ALL_PHRASE, DELETE_ONE_PHRASE, DeleteBusy, DeleteFailed,
                                          DeleteRefused)
             if not isinstance(request, dict):
@@ -764,7 +781,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 if request['confirm'] != DELETE_ONE_PHRASE:
                     return self.send_json({'error': 'Confirm the deletion first. Nothing was deleted.'}, 400)
             try:
-                result = automation.delete(owner, identifier)
+                result = automation.delete(owner, identifier, client=self.audit_client(request_origin))
             except DeleteRefused as exc:
                 return self.send_json({'error': str(exc)}, exc.status)
             except DeleteBusy as exc:

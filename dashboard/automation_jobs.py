@@ -324,6 +324,30 @@ class AutomationJobs:
             for column in ('notice', 'role', 'candidate', 'facts', 'origin'):
                 if column not in columns:
                     db.execute(f'ALTER TABLE automation ADD COLUMN {column} TEXT')
+            # Who deleted what, and when: one row per Delete or Delete all request, kept when the resumes go (it
+            # holds no resume content: the account key, the resume identifier, counts and the requesting client).
+            db.execute('''CREATE TABLE IF NOT EXISTS audit (
+                at REAL NOT NULL, owner TEXT NOT NULL, action TEXT NOT NULL, target TEXT, outcome TEXT NOT NULL,
+                deleted INTEGER NOT NULL DEFAULT 0, kept INTEGER NOT NULL DEFAULT 0, client TEXT NOT NULL DEFAULT '{}')''')
+
+    def audit(self, owner, identifier, outcome, client=None, db=None, deleted=0, kept=0):
+        """Record one deletion request. With ``db`` the row joins that transaction (a deletion and its record
+        commit together); without, it is written on its own (refused or failed requests)."""
+        row = (time.time(), owner, 'delete_all' if identifier is None else 'delete', identifier, outcome,
+               deleted, kept, json.dumps(client or {}, sort_keys=True))
+        sql = 'INSERT INTO audit (at, owner, action, target, outcome, deleted, kept, client) VALUES (?,?,?,?,?,?,?,?)'
+        if db is not None:
+            db.execute(sql, row)
+            return
+        with closing(self.connection()) as own, own:
+            own.execute(sql, row)
+
+    def audit_log(self, owner=None, limit=200):
+        """The latest deletion records, newest first (one account, or all for the operator)."""
+        with closing(self.connection()) as db:
+            rows = db.execute('SELECT * FROM audit WHERE ? IS NULL OR owner=? ORDER BY at DESC LIMIT ?',
+                              (owner, owner, limit)).fetchall()
+        return [{**dict(row), 'client': json.loads(row['client'] or '{}')} for row in rows]
 
     def connection(self):
         db = sqlite3.connect(self.path, timeout=5)
@@ -434,27 +458,37 @@ class AutomationJobs:
     #   .deleting-<token> folder on the same volume, then the state entry and the records are deleted in one
     #   transaction. Any failure renames everything back. The hidden folders are then removed; a removal
     #   that fails (an open file) is retried on the next deletion. Nothing in them is reachable any more.
-    def delete(self, owner, identifier=None, wait=10):
+    def delete(self, owner, identifier=None, wait=10, client=None):
+        """Permanently delete one resume (``identifier``) or every resume of ``owner``. Every request is recorded
+        in the audit table: a deletion together with its record, a refusal or failure on its own."""
         with self.delete_lock:  # one deletion at a time: a sweep never meets another deletion's files
             protected = protected_records(self.workspace.root)
             self.purge_deleted()
             try:
-                for paused in (self._needs_builder(owner, identifier), True):
-                    with builder_paused(self.workspace.private_inbox, wait) if paused else nullcontext():
-                        with closing(self.connection()) as db:
-                            db.execute('BEGIN IMMEDIATE')
-                            try:
-                                result = self._delete(db, owner, identifier, protected, paused)
-                            except BaseException:
-                                db.rollback()
-                                raise
-                    if result is not None:
-                        break
-            except sqlite3.OperationalError as error:
-                raise DeleteBusy('ResumeOps is busy saving another change. Nothing was deleted; '
-                                 'try again in a moment.') from error
-            except OSError as error:
-                raise DeleteFailed('Resume files could not be read. Nothing was deleted; try again.') from error
+                try:
+                    for paused in (self._needs_builder(owner, identifier), True):
+                        with builder_paused(self.workspace.private_inbox, wait) if paused else nullcontext():
+                            with closing(self.connection()) as db:
+                                db.execute('BEGIN IMMEDIATE')
+                                try:
+                                    result = self._delete(db, owner, identifier, protected, paused, client)
+                                except BaseException:
+                                    db.rollback()
+                                    raise
+                        if result is not None:
+                            break
+                except sqlite3.OperationalError as error:
+                    raise DeleteBusy('ResumeOps is busy saving another change. Nothing was deleted; '
+                                     'try again in a moment.') from error
+                except OSError as error:
+                    raise DeleteFailed('Resume files could not be read. Nothing was deleted; try again.') from error
+            except (DeleteRefused, DeleteBusy, DeleteFailed) as error:
+                outcome = {DeleteRefused: 'refused', DeleteBusy: 'busy'}.get(type(error), 'failed')
+                try:
+                    self.audit(owner, identifier, f'{outcome}: {error}', client)
+                except sqlite3.Error:
+                    logging.getLogger('resumeops.automation').exception('Could not record a refused deletion')
+                raise
             self.purge_deleted()
             return result
 
@@ -466,7 +500,7 @@ class AutomationJobs:
             row = db.execute('SELECT job FROM automation WHERE owner=? AND id=?', (owner, identifier)).fetchone()
         return bool(row and row['job'])
 
-    def _delete(self, db, owner, identifier, protected, paused):
+    def _delete(self, db, owner, identifier, protected, paused, client=None):
         rows = db.execute('SELECT id, status, job FROM automation WHERE owner=? AND (? IS NULL OR id=?)',
                           (owner, identifier, identifier)).fetchall()
         if identifier is not None:
@@ -511,6 +545,7 @@ class AutomationJobs:
             if drop:
                 write_json(state_path, {key: value for key, value in state.items() if key not in drop})
             db.executemany('DELETE FROM automation WHERE owner=? AND id=?', ((owner, key) for key in targets))
+            self.audit(owner, identifier, 'deleted', client, db=db, deleted=len(targets), kept=len(kept))
             db.commit()
         except Exception as error:
             db.rollback()
