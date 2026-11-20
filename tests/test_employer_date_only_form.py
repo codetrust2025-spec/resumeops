@@ -173,7 +173,12 @@ class EmployerDateOnlyTests(unittest.TestCase):
             self.assertNotEqual(result['status'], 'needs_input')
             queued = list(workspace.private_inbox.glob('*.json'))
             self.assertEqual(len(queued), 1, result)
-            profile = json.loads(queued[0].read_text(encoding='utf-8'))['profile']
+            from resume_bot.automation import verified_automation
+            from resume_bot.claim_audit import records_for
+            packet = json.loads(queued[0].read_text(encoding='utf-8'))
+            profile = packet['profile']
+            [approval] = records_for(workspace.root / 'approvals', queued[0].name)
+            self.assertTrue(verified_automation(profile, packet['target'], approval), profile['summary'])
             self.assertEqual(profile['headline'], 'GCP Cloud Engineer')
             self.assertEqual(len(profile['experience']), 4)
             self.assertTrue(all(not job['position'] for job in profile['experience']))
