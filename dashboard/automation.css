@@ -36,6 +36,9 @@
 .auto-card{display:grid;gap:14px;margin-top:20px;container:auto-form/inline-size}
 .auto-page .auto-card label{display:grid;gap:7px;margin:0;font-size:.95rem;font-weight:600;color:var(--a-ink)}
 .auto-req{color:#d02f3d;margin-left:3px}
+.auto-basics-optional .auto-req{display:none}
+.auto-sum-hint{display:none}
+.auto-extra>.auto-note{display:block;margin:2px 0 10px;white-space:normal}
 .auto-card .auto-note{color:var(--a-muted);font-weight:500;font-size:.86rem}
 .auto-page input:not([type=radio],[type=checkbox],[type=file]),.auto-page select,.auto-page textarea{min-height:40px;min-width:0;width:100%;
   margin:0;padding:8px 12px;border:1px solid var(--a-field);border-radius:8px;background:#fff;color:var(--a-ink);font-size:.95rem;font-weight:400}
@@ -364,8 +367,22 @@ li[data-status=blocked] .auto-state strong{background:var(--a-red-bg);color:var(
 }
 @media (max-width:520px){
   .auto-head{gap:12px}
-  .auto-tile{width:48px;height:48px}.auto-tile .ic{width:26px;height:26px}
+  .auto-tile{width:40px;height:40px;border-radius:12px}.auto-tile .ic{width:24px;height:24px}
   .auto-head h1{font-size:1.3rem}
+  /* The create form fits a phone screen: Work experience, Education, Projects and Coding platforms open with
+     "More details" (they show once it is open), and the vertical rhythm is tighter. */
+  .auto-accordions:has(> details:first-child:not([open])) #auto-lists{display:none}
+  .auto-accordions > details:first-child:not([open]) .auto-sum-hint{display:inline;margin-left:-4px;color:var(--a-muted);
+    font-size:.84rem;font-weight:400;overflow:hidden;text-overflow:ellipsis}
+  .auto-dash{padding-top:10px}
+  .auto-panel.auto-create{padding-top:12px;padding-bottom:14px}
+  .auto-card{gap:8px;margin-top:10px}
+  .auto-card fieldset{gap:8px}
+  .auto-grid.auto-basics{gap:8px}
+  .auto-page .auto-card label{gap:5px}
+  .auto-page #auto-background{height:48px}
+  .auto-page .auto-choice label{min-height:44px}
+  .auto-bar{height:52px}
   .auto-head p{font-size:.88rem}
   .auto-grid{grid-template-columns:minmax(0,1fr)}
   .auto-grid.auto-basics{gap:12px}

@@ -65,6 +65,10 @@
       <label id="auto-upload" class="auto-field"><span class="auto-lbl">Documents<span class="auto-req" aria-hidden="true">*</span> <span class="auto-note">PDF, DOCX, TXT, JPG, PNG · max 10 files, 12 MB</span></span>
         <input type="file" id="auto-file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png" multiple required>
       </label>
+      <details id="auto-extra" class="auto-extra"><summary><svg class="ic auto-chev" aria-hidden="true"><use href="#i-chevron-right"/></svg><svg class="ic" aria-hidden="true"><use href="#i-user"/></svg><span class="auto-sum">Add details (optional)</span></summary>
+        <p class="auto-note">Typed details are added to what your documents say. A typed name, phone or email replaces theirs.</p>
+        <div id="auto-extra-slot"></div>
+      </details>
       <label class="auto-field"><span class="auto-lbl">Target role<span class="auto-req" aria-hidden="true">*</span></span>
         <span class="auto-input auto-input-search">
           <svg class="ic auto-lead" aria-hidden="true"><use href="#i-search"/></svg>
@@ -86,7 +90,7 @@
             placeholder="Company, title, dates, education, projects"></textarea>
         </label>
         <div class="auto-accordions">
-          <details><summary><svg class="ic auto-chev" aria-hidden="true"><use href="#i-chevron-right"/></svg><svg class="ic" aria-hidden="true"><use href="#i-user"/></svg><span class="auto-sum">More details</span></summary><div class="auto-grid" id="auto-optional"></div></details>
+          <details><summary><svg class="ic auto-chev" aria-hidden="true"><use href="#i-chevron-right"/></svg><svg class="ic" aria-hidden="true"><use href="#i-user"/></svg><span class="auto-sum">More details</span><span class="auto-sum-hint">jobs, education, projects</span></summary><div class="auto-grid" id="auto-optional"></div></details>
           <div id="auto-lists"></div>
         </div>
       </fieldset>

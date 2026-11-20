@@ -336,7 +336,7 @@ def source_profile(source, ai, on_progress=None, notices=None, identity=None, ev
     draft['certifications'] = from_section(draft.get('certifications', []), r'certifications?')
     if draft.get('projects'):
         draft['projects'] = from_section(draft['projects'], r'(?:completed )?projects')
-    if evidence_documents and not draft['experience'] and not draft['education']:
+    if evidence_documents and not typed_entries and not draft['experience'] and not draft['education']:
         raise NeedsInput(draft, [{'id': 'source_text', 'section': 'profile', 'entry': None,
                                  'field': 'source_text', 'label': 'Additional candidate facts',
                                  'explanation': 'Your documents provide partial evidence. Add your full name, phone, '

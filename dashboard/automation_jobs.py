@@ -179,6 +179,48 @@ def _remove_tree(path):
         pass  # still open somewhere: retried on the next deletion; nothing in it is reachable
 
 
+def _typed_beside_documents(candidate, role):
+    """Details typed in the form beside uploaded documents: every field is optional (the documents may state it)
+    and is checked now, so a mistake is reported on submit. Typed values are the candidate's own statements and are
+    attested as on the form-only path; a typed name, phone or email replaces what the documents say. A note is read
+    with the documents. Nothing typed gives the same request as documents alone."""
+    from resume_bot.automation import attested_profile
+
+    if not isinstance(candidate, dict):
+        raise ValueError('Expected candidate form details.')
+    identity = {}
+    for key in ('full_name', 'phone', 'email'):
+        value = candidate.get(key) or ''
+        if not isinstance(value, str):
+            raise ValueError('Expected candidate form details.')
+        if value.strip():
+            identity[key] = value.strip()
+    if len(identity.get('full_name', '')) > 250:
+        raise ValueError('Enter the full name.')
+    if 'phone' in identity and not 7 <= len(re.sub(r'\D', '', identity['phone'])) <= 15:
+        raise ValueError('Enter a valid phone number.')
+    if 'email' in identity and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', identity['email']):
+        raise ValueError('Enter a valid email address if supplied.')
+    background = candidate.get('background') or ''
+    if not isinstance(background, str) or len(background) > 7500:
+        raise ValueError('Work or education facts must be under 7500 characters.')
+    # Stand-ins only let the form check run when the documents supply the name or phone; they are never kept.
+    typed = attested_profile({**candidate, 'role': role, 'full_name': identity.get('full_name', 'Stand In'),
+                              'phone': identity.get('phone', '+91 90000 00000'), 'email': identity.get('email', '')},
+                             entries_required=False)
+    extra = {key: value for key, value in typed.items() if key not in ('full_name', 'phone', 'email') and value}
+    request = {}
+    if identity:
+        request['identity'] = {key: typed[key] for key in identity}
+    if extra:
+        request['attested'] = extra
+    if background.strip():
+        request['background'] = background.strip()
+    if candidate.get('years_of_experience') is not None:
+        request['years'] = candidate['years_of_experience']
+    return request
+
+
 def submission(payload):
     from resume_bot.automation import CONSENT_VERSION, attested_profile, select_target
 
@@ -189,7 +231,7 @@ def submission(payload):
     role = select_target(payload.get('role'))
     candidate, document = payload.get('candidate'), payload.get('document')
     if 'documents' in payload:
-        if candidate is not None or document is not None or payload.get('extension'):
+        if document is not None or payload.get('extension'):
             raise ValueError('Submit candidate documents or a candidate form.')
         documents = payload['documents']
         if not isinstance(documents, list) or not 1 <= len(documents) <= 10:
@@ -203,7 +245,10 @@ def submission(payload):
             if total > DOCUMENT_LIMIT:
                 raise ValueError('Candidate documents must total 12 MB or less.')
             normalized.append({'extension': accepted['extension'], 'document': accepted['document']})
-        return {'consent': payload['consent'], 'role': role, 'documents': normalized}
+        request = {'consent': payload['consent'], 'role': role, 'documents': normalized}
+        if candidate is not None:
+            request.update(_typed_beside_documents(candidate, role))
+        return request
     if (candidate is None) == (document is None):
         raise ValueError('Submit a candidate form or one candidate evidence document.')
     if candidate is not None:
@@ -855,6 +900,10 @@ class AutomationJobs:
                     sources.append(f'Candidate evidence document {index}\n{text}')
                     if sum(map(len, sources)) > 75000:
                         raise ValueError('The combined document text is too long. Submit fewer documents.')
+                if request.get('background'):  # the note typed beside the documents is read with them
+                    sources.append('Candidate-provided facts\n' + request['background'])
+                    if sum(map(len, sources)) > 75000:
+                        raise ValueError('The combined document text is too long. Submit fewer documents.')
                 return '\n\n'.join(sources)
             progress(12, 'File extraction: reading the resume')
             return self.workspace.read_automation_source(request['extension'], base64.b64decode(request['document']))
@@ -887,7 +936,7 @@ class AutomationJobs:
 
         try:
             source = checkpoints.get('source')
-            if source is None and 'identity' in request:
+            if source is None and 'identity' in request and 'documents' not in request:
                 identity = request['identity']
                 background = request.get('background') or ''
                 if background:

@@ -31,7 +31,9 @@ class EvidenceDocumentTests(unittest.TestCase):
     def test_bundle_validation_rejects_mixed_modes_and_preserves_legacy_jobs(self):
         payload = self.bundle()
         self.assertEqual(len(submission(payload)['documents']), 2)
-        for fields in ({'candidate': {}}, {'document': 'eA==', 'extension': 'txt'},
+        # Typed details may go with the documents (tests/test_documents_plus_typed.py); an empty form adds nothing.
+        self.assertEqual(submission({**payload, 'candidate': {}}), submission(payload))
+        for fields in ({'candidate': 'not a form'}, {'document': 'eA==', 'extension': 'txt'},
                        {'documents': []}, {'documents': payload['documents'] * 6}):
             with self.assertRaises(ValueError):
                 submission({**payload, **fields})
