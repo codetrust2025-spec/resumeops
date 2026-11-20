@@ -19,7 +19,7 @@ from resume_bot.generate import (_checked_proposals, composed_summary, conflicti
                                  draft_role_content, role_entry, skill_groups, summary_problems)
 from resume_bot.latex import education_details, expected_text, render
 from resume_bot.profile import validate_profile
-from resume_bot.workflow import ROLES, analyze, load_roles
+from resume_bot.workflow import ROLES, analyze, load_roles, normalize_request
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'dashboard'))
@@ -74,6 +74,18 @@ class LayoutTests(unittest.TestCase):
         text = ' '.join(expected_text(profile, 0, complete_sections=True))
         self.assertTrue(matches_pdf_text(text, profile, 0, complete_sections=True))
         self.assertFalse(matches_pdf_text(text, profile, 0))
+
+    def test_new_target_requests_enable_all_six_sections_without_private_automation(self):
+        profile = resume(experience=[], projects=[], certifications=[])
+        normalized_profile, target = normalize_request({
+            'profile': profile,
+            'target': {'role': 'java-backend-developer', 'experience_years': 0},
+        })
+        self.assertNotIn('automation_id', target)
+        self.assertTrue(target['complete_sections'])
+        tex = render(normalized_profile, years=0, complete_sections=target['complete_sections'])
+        positions = [tex.index(r'\section*{' + name + '}') for name in SECTIONS]
+        self.assertEqual(positions, sorted(positions))
 
     def test_technologies_are_bold_selectively_and_the_text_is_unchanged(self):
         profile = resume()

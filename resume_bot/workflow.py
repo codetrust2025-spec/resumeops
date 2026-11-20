@@ -165,10 +165,10 @@ def normalize_request(payload):
                 for key in private):
             raise ProfileError('Invalid private automation request')
         normalized.update({key: target[key] for key in private})
-    if 'complete_sections' in target:
-        if target['complete_sections'] is not True or 'automation_id' not in normalized:
-            raise ProfileError('Complete sections require a private automation request')
-        normalized['complete_sections'] = True
+    if 'complete_sections' in target and target['complete_sections'] is not True:
+        raise ProfileError('Complete sections cannot be disabled for a new resume')
+    # Every newly queued target-role resume uses the six-section layout, including manual and AI-reviewed jobs.
+    normalized['complete_sections'] = True
     return validate_profile(payload['profile']), normalized
 
 

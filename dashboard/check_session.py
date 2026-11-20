@@ -226,6 +226,25 @@ def main():
         fresh.wait_for_function("ResumeRecovery.read('download').then(action => !action)")
         results['download_after_expiry'] = True
 
+        # Artifact downloads get a two-minute request deadline, unlike ordinary API calls.
+        with fresh.expect_download(timeout=20000) as download:
+            timeouts = fresh.evaluate('''async () => {
+                const original = AbortSignal.timeout;
+                const observed = [];
+                AbortSignal.timeout = ms => { observed.push(ms); return original(ms); };
+                try {
+                    const action = {url: '/api/session', name: 'download-timeout-probe.json'};
+                    await ResumeRecovery.put('timeout-probe', action);
+                    await ResumeRecovery.download(action, 'timeout-probe');
+                    return observed;
+                } finally {
+                    AbortSignal.timeout = original;
+                }
+            }''')
+        download.value.cancel()
+        assert 120000 in timeouts, timeouts
+        results['download_timeout_120s'] = True
+
         # When pop-ups are blocked, keep the same browser tab and restore work from IndexedDB.
         drafts.clear()
         imports.close()
