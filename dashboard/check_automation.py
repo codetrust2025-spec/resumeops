@@ -207,6 +207,8 @@ def check():
             try:
                 with patch('resume_bot.automation.generate', side_effect=evidence_model),                         patch('resume_bot.generate.generate', side_effect=evidence_model), \
                         patch('resume_bot.automation.extract_profile', return_value=make_facts()), \
+                        patch('resume_bot.certifications.recommended_certifications',
+                              return_value=['Udemy: Example Stack - The Complete Guide (fictional)']), \
                         patch('resume_bot.pipeline.import_zip', side_effect=fake_overleaf), sync_playwright() as pw:
                     browser = pw.chromium.launch()
                     page = browser.new_page(**pw.devices['iPhone 13'])
@@ -261,7 +263,18 @@ def check():
                     # once (here the fake model suggests nothing, so the candidate's own skills are kept as listed).
                     skills = page.get_by_label(re.compile(r'^Skills for Full Stack Developer'))
                     expect(skills).to_have_value('SQL, JavaScript')
-                    skills.locator('xpath=ancestor::form').get_by_role('button', name=re.compile('Continue')).click()
+                    # A ticked Udemy course asks for its title exactly as on the certificate (titles change with
+                    # each edition); unticked, nothing is asked and nothing is printed.
+                    card = skills.locator('xpath=ancestor::form')
+                    course = card.get_by_role('checkbox', name=re.compile(r'Udemy: ')).first
+                    title = card.get_by_label('Course title exactly as on your certificate').first
+                    expect(title).to_be_hidden()
+                    course.check()
+                    expect(title).to_be_visible()
+                    expect(title).to_have_value(re.compile(r'\S'))
+                    course.uncheck()
+                    expect(title).to_be_hidden()
+                    card.get_by_role('button', name=re.compile('Continue')).click()
                     expect(page.get_by_text('Waiting for the resume builder', exact=True)).to_be_visible()
                     auth = {'interrupted': False, 'renewed': False}
 

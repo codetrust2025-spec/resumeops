@@ -152,7 +152,9 @@ class ProposalTests(unittest.TestCase):
         self.assertIn('Integrated Redis for caching and session management.', kept[0]['bullets'])
         self.assertNotIn('Ensured database consistency with PostgreSQL.', kept[0]['bullets'])
         self.assertTrue(prompts[0].startswith('Propose 3 '), 'one spare, so a rejected proposal leaves two')
-        self.assertEqual(len(prompts), 1)
+        # One more call only asks for the bullets a kept proposal is short of (tests/test_writing_quality.py).
+        self.assertEqual(len(prompts), 2)
+        self.assertTrue(prompts[1].startswith('Complete these portfolio project proposals'))
 
     def test_an_experienced_candidate_gets_two_and_a_fresher_three(self):
         kept, _ = self.propose([self.SHORT, self.THIRD, {**self.THIRD, 'name': 'Invoice Export Service'}])
@@ -164,7 +166,7 @@ class ProposalTests(unittest.TestCase):
     def test_when_every_proposal_is_rejected_the_model_is_asked_once_more(self):
         kept, prompts = self.propose([self.REJECTED], [self.SHORT])
         self.assertEqual([p['name'] for p in kept], ['Microservices Ecosystem'])
-        self.assertEqual(len(prompts), 2)
+        self.assertEqual(len(prompts), 3, 'the retry, then the top-up for missing bullets')
         self.assertIn('previous proposals were rejected', prompts[1])
         kept, prompts = self.propose([self.REJECTED], [self.REJECTED])
         self.assertEqual((kept, len(prompts)), ([], 2), 'no project rather than an unsupported one; one retry only')
