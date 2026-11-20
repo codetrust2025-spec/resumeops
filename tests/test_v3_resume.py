@@ -389,7 +389,8 @@ class PageTests(unittest.TestCase):
                     self.assertTrue(page.locator('#auto-custom-wrap').is_hidden())
                     item = page.locator('#auto-job-list li[data-status="needs_input"]')
                     item.wait_for()
-                    self.assertIn('Arun Sample · Java Backend Developer', item.inner_text())
+                    self.assertIn('Arun Sample', item.locator('.auto-name').inner_text())
+                    self.assertIn('Java Backend Developer', item.locator('.auto-role').inner_text())
                     self.assertIn('AI draft, not yet confirmed', item.inner_text())
                     cards = item.locator('.auto-proposal')
                     # Like the drafted work lines, each suggestion starts included; its background stays folded.

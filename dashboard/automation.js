@@ -36,13 +36,44 @@ function element(tag, text) {
   return node;
 }
 
+// Icons come from the page's SVG sprite (<symbol id="i-…">); they are decorative, so screen readers skip them.
+function icon(name, extra = '') {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', extra ? 'ic ' + extra : 'ic');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', '#i-' + name);
+  svg.append(use);
+  return svg;
+}
+
+// A button or link with an icon and a visible text label (in a span, so the label can change).
+function iconControl(tag, name, text, className) {
+  const node = element(tag);
+  if (tag === 'button') node.type = 'button';
+  node.className = className;
+  node.append(icon(name), element('span', text));
+  return node;
+}
+
 function input([key, label, type = 'text'], mandatory = false) {
-  const node = element('label', label);
+  const node = element('label');
+  const text = element('span', label);
+  text.className = 'auto-lbl';
+  if (mandatory) {
+    const mark = element('span', '*');  // shown, not read: the field itself is marked required
+    mark.className = 'auto-req';
+    mark.setAttribute('aria-hidden', 'true');
+    text.append(mark);
+  }
+  node.append(text);
   const field = element(type === 'textarea' ? 'textarea' : 'input');
   field.name = key;
   if (type === 'textarea') { field.rows = 3; field.maxLength = 3000; node.classList.add('auto-wide'); }
   else { field.type = type; field.maxLength = 250; }
   field.required = mandatory;
+  if (mandatory) field.setAttribute('aria-label', label);  // the name without the visual '*'
   if (type === 'number') { field.min = '0'; field.max = '60'; field.step = '0.5'; }
   node.append(field);
   return node;
@@ -76,9 +107,14 @@ function selectedRole() {
   return role.value.trim().toLowerCase() === CUSTOM.toLowerCase() ? customRole.value.trim() : role.value.trim();
 }
 
+const SECTION_ICONS = {work_experience: 'briefcase', education: 'cap', projects: 'code', coding_platforms: 'github'};
+
 function addSection([key, title, fields]) {
   const details = element('details');
-  const summary = element('summary', title);
+  const summary = element('summary');
+  const heading = element('span', title);
+  heading.className = 'auto-sum';
+  summary.append(icon('chevron-right', 'auto-chev'), icon(SECTION_ICONS[key] || 'doc'), heading);
   const rows = element('div');
   rows.dataset.entries = key;
   const add = element('button', 'Add entry');
@@ -97,7 +133,7 @@ function addSection([key, title, fields]) {
     update();
     row.querySelector('input, textarea').focus();
   });
-  function update() { summary.textContent = title + ' (' + rows.children.length + ')'; }
+  function update() { heading.textContent = title + ' (' + rows.children.length + ')'; }
   details.append(summary, rows, add);
   byId('auto-lists').append(details);
 }
@@ -190,8 +226,8 @@ async function send() {
     form.reset();
     for (const rows of form.querySelectorAll('[data-entries]')) {
       rows.replaceChildren();
-      const summary = rows.previousElementSibling;
-      summary.textContent = summary.textContent.replace(/\(\d+\)$/, '(0)');
+      const heading = rows.previousElementSibling.querySelector('.auto-sum');
+      heading.textContent = heading.textContent.replace(/\(\d+\)$/, '(0)');
     }
     mode();
     await refresh();
@@ -244,40 +280,143 @@ function controlFor(message) {
   return byId('auto-submit');
 }
 
-// Compact action buttons: short visible text, full accessible names ("Download PDF", "Open Overleaf project").
-function links(job) {
+// A download link with the short visible text of the design and a full accessible name ("Download LaTeX").
+function downloadLink(job, text, label, filename, iconName, className) {
+  const link = iconControl('a', iconName, text, className);
+  link.setAttribute('aria-label', label);
+  link.href = '/api/artifact?' + new URLSearchParams({key: job.revision, name: filename, download: '1'});
+  link.addEventListener('click', async event => {
+    event.preventDefault();
+    closeMenus();
+    try {
+      const action = {url: link.getAttribute('href'), name: filename};
+      await ResumeRecovery.put('automation-download', action);
+      await ResumeRecovery.download(action, 'automation-download');
+    } catch (error) { progress(job.stage, 100, error.message); }
+  });
+  return link;
+}
+
+// The card's visible actions: Download PDF and Preview (Details is added by the card when it has details).
+function primaryActions(job) {
   const box = element('div');
-  box.className = 'auto-links';
-  for (const [text, label, filename] of [['PDF', 'Download PDF', 'resume.pdf'], ['LaTeX', 'Download LaTeX', 'main.tex'],
-    ['Overleaf PDF', 'Download Overleaf PDF', 'overleaf.pdf']]) {
-    const link = element('a', text);
-    link.setAttribute('aria-label', label);
-    link.href = '/api/artifact?' + new URLSearchParams({key:job.revision, name:filename, download:'1'});
-    link.addEventListener('click', async event => {
-      event.preventDefault();
-      try {
-        const action = {url:link.getAttribute('href'), name:filename};
-        await ResumeRecovery.put('automation-download', action);
-        await ResumeRecovery.download(action, 'automation-download');
-      } catch (error) { progress(job.stage, 100, error.message); }
-    });
-    box.append(link);
-  }
-  const preview = element('a', 'Preview');
+  box.className = 'auto-actions';
+  const preview = iconControl('a', 'eye', 'Preview', 'auto-btn');
   preview.setAttribute('aria-label', 'Preview PDF');
   preview.href = '/api/artifact?' + new URLSearchParams({key: job.revision, name: 'resume.pdf'});
   preview.target = '_blank';
   preview.rel = 'noopener';
-  box.append(preview);
-  if (job.overleaf && /^https:\/\/www\.overleaf\.com\/project\/[A-Za-z0-9_-]+$/.test(job.overleaf)) {
-    const link = element('a', 'Open Overleaf');
-    link.setAttribute('aria-label', 'Open Overleaf project');
-    link.href = job.overleaf;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    box.append(link);
-  }
+  box.append(downloadLink(job, 'Download PDF', 'Download PDF', 'resume.pdf', 'download', 'auto-btn auto-primary'), preview);
   return box;
+}
+
+// Three-dot menu: LaTeX, Overleaf PDF, Open Overleaf, Regenerate and Delete. It opens under its button,
+// right-aligned (upward when there is no room below), above the page, and closes on a choice, a click
+// elsewhere, Escape, scrolling or resizing. Arrow keys move between its items.
+const POPOVER = typeof HTMLElement === 'function' && Object.prototype.hasOwnProperty.call(HTMLElement.prototype, 'popover');
+let menuCount = 0;
+
+function menuOpen(panel) {
+  return POPOVER ? panel.matches(':popover-open') : panel.classList.contains('is-open');
+}
+
+function hideMenu(panel) {
+  if (!menuOpen(panel)) return;
+  if (POPOVER) panel.hidePopover();
+  else {
+    panel.classList.remove('is-open');
+    panel.previousElementSibling.setAttribute('aria-expanded', 'false');
+  }
+}
+
+function closeMenus() {
+  for (const panel of document.querySelectorAll('.auto-menu')) hideMenu(panel);
+}
+
+function placeMenu(button, panel) {
+  if (!POPOVER) return;  // the fallback menu is positioned by CSS under its button
+  let height = panel.offsetHeight;
+  if (!height) {  // not shown yet: measure it invisibly
+    panel.classList.add('auto-measure');
+    height = panel.offsetHeight;
+    panel.classList.remove('auto-measure');
+  }
+  const box = button.getBoundingClientRect();
+  const view = document.documentElement;
+  const below = view.clientHeight - box.bottom;
+  const upward = below < height + 14 && box.top > below;
+  panel.style.top = Math.max(8, upward ? box.top - 6 - height : box.bottom + 6) + 'px';
+  panel.style.right = Math.max(8, view.clientWidth - box.right) + 'px';
+}
+
+function moreMenu(job, items) {
+  const button = element('button');
+  button.type = 'button';
+  button.className = 'auto-btn auto-kebab';
+  button.setAttribute('aria-label', 'More actions for ' + (job.candidate || 'this resume'));
+  button.setAttribute('aria-expanded', 'false');
+  button.append(icon('more'));
+  const panel = element('div');
+  panel.className = 'auto-menu';
+  panel.id = 'auto-menu-' + (++menuCount);
+  button.setAttribute('aria-controls', panel.id);
+  panel.append(...items);
+  if (POPOVER) {
+    panel.popover = 'auto';
+    button.popoverTargetElement = panel;
+    panel.addEventListener('beforetoggle', event => {
+      const open = event.newState === 'open';
+      button.setAttribute('aria-expanded', String(open));
+      if (open) placeMenu(button, panel);
+    });
+    panel.addEventListener('toggle', event => {
+      if (event.newState !== 'open') return;
+      placeMenu(button, panel);
+      panel.querySelector('a, button')?.focus();
+    });
+  } else {
+    button.addEventListener('click', () => {
+      const open = !menuOpen(panel);
+      closeMenus();
+      if (!open) return;
+      panel.classList.add('is-open');
+      button.setAttribute('aria-expanded', 'true');
+      panel.querySelector('a, button')?.focus();
+    });
+  }
+  panel.addEventListener('keydown', event => {
+    const choices = [...panel.querySelectorAll('a, button')];
+    const at = choices.indexOf(document.activeElement);
+    const to = {ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: choices.length - 1}[event.key];
+    if (to !== undefined) {
+      event.preventDefault();
+      choices[(to + choices.length) % choices.length].focus();
+    } else if (event.key === 'Escape' && !POPOVER) {
+      hideMenu(panel);
+      button.focus();
+    }
+  });
+  return [button, panel];
+}
+
+function menuItems(job, regenerate, remove) {
+  const items = [];
+  if (job.status === 'complete') {
+    items.push(downloadLink(job, 'LaTeX', 'Download LaTeX', 'main.tex', 'latex', ''),
+      downloadLink(job, 'Overleaf PDF', 'Download Overleaf PDF', 'overleaf.pdf', 'file-down', ''));
+    if (job.overleaf && /^https:\/\/www\.overleaf\.com\/project\/[A-Za-z0-9_-]+$/.test(job.overleaf)) {
+      const link = iconControl('a', 'external', 'Open Overleaf', '');
+      link.setAttribute('aria-label', 'Open Overleaf project');
+      link.href = job.overleaf;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.addEventListener('click', () => setTimeout(closeMenus));
+      items.push(link);
+    }
+    if (regenerate) items.push(regenerate);
+  }
+  if (remove) items.push(...(items.length ? [element('hr')] : []), remove);
+  return items;
 }
 
 // Explainable ATS readiness: category points, what lost points, and suggested (not added) keywords.
@@ -452,9 +591,21 @@ function regenerateForm(job) {
   return box;
 }
 
+// "Nov 20, 2026, 2:42:51 PM"
+function createdAt(job) {
+  return job.created ? new Date(job.created * 1000).toLocaleString('en-US', {month: 'short', day: 'numeric',
+    year: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit'}) : '';
+}
+
 function meta(job) {
-  const when = job.created ? new Date(job.created * 1000).toLocaleString() : '';
-  return [job.candidate || 'Candidate', job.role, when].filter(Boolean).join(' · ');
+  return [job.candidate || 'Candidate', job.role, createdAt(job)].filter(Boolean).join(' · ');
+}
+
+// Avatar initials: first and last name, ignoring notes in brackets ("Ravi Example (fictional)" -> "RE").
+function initials(name) {
+  const words = (name || '').replace(/\([^)]*\)/g, ' ').split(/\s+/)
+    .map(word => word.replace(/[^\p{L}\p{N}]/gu, '')).filter(Boolean);
+  return (words.length > 1 ? [words[0], words[words.length - 1]] : words).map(word => word[0].toUpperCase()).join('') || 'CV';
 }
 
 const ACTIVE = new Set(['queued', 'processing', 'handed_off', 'retrying']);
@@ -621,89 +772,196 @@ async function confirmDeleteAll(event) {
   else byId('auto-delete-dialog').close();
 }
 
+// One card per resume, as in the design: initials, name, role and date; the real status and (when complete) the
+// ATS score; Download PDF, Preview and Details; and the three-dot menu for everything else. Questions and project
+// choices stay open on the card; the ATS breakdown and Regenerate open under Details. A card keeps exactly one
+// <strong>: its status.
+const STATUS_ICONS = {complete: 'check', needs_input: 'alert', blocked: 'stop'};
+
 function jobItem(job) {
   const item = element('li');
   item.dataset.status = job.status;
   item.dataset.id = job.id;
-  const top = element('div');
-  top.className = 'auto-line';
-  const label = element('span', meta(job));
-  label.className = 'auto-meta';
-  top.append(label);
-  if (job.status === 'complete' && job.ats) {
-    const score = element('span', 'ATS ' + job.ats.ats_readiness);
-    score.className = 'auto-score';
-    score.title = 'ATS readiness out of 100';
-    top.append(score);
+  const main = element('div');
+  main.className = 'auto-main';
+  const avatar = element('span', initials(job.candidate));
+  avatar.className = 'auto-avatar';
+  avatar.setAttribute('aria-hidden', 'true');
+  const who = element('div');
+  who.className = 'auto-meta';
+  const name = element('span', job.candidate || 'Candidate');
+  name.className = 'auto-name';
+  name.title = job.candidate || '';
+  who.append(name);
+  if (job.role) {
+    const role = element('span', job.role);
+    role.className = 'auto-role';
+    role.title = job.role;
+    who.append(role);
   }
-  const line = element('div');
-  line.className = 'auto-line';
+  if (job.created) {
+    const date = element('span');
+    date.className = 'auto-date';
+    date.append(icon('calendar'), createdAt(job));
+    who.append(date);
+  }
   const state = element('div');
   state.className = 'auto-state';
+  const detail = element('div');
+  detail.className = 'auto-detail';
   const body = element('div');
   body.className = 'auto-body';
   body.id = 'auto-body-' + job.id.slice(0, 16);
+  const pill = text => {
+    const node = element('strong');
+    node.append(icon(STATUS_ICONS[job.status] || 'clock'), text);
+    return node;
+  };
   if (job.status === 'needs_input') {
-    state.append(element('strong', 'Needs your input'));
+    state.append(pill('Needs your input'));
     body.append((job.questions || []).length ? answerForm(job) : proposalsForm(job));  // drafts and projects: one card
   } else if (job.status === 'blocked') {
-    state.append(element('strong', 'Needs attention'), element('span', explain(job.error)));
+    state.append(pill('Needs attention'));
+    detail.append(element('span', explain(job.error)));
   } else if (job.status === 'complete') {
-    state.append(element('strong', 'Complete'));
+    state.append(pill('Complete'));
+    if (job.ats) {
+      const separator = element('span');
+      separator.className = 'auto-sep';
+      const score = element('span', 'ATS ' + job.ats.ats_readiness);
+      score.className = 'auto-score';
+      score.title = 'ATS readiness out of 100';
+      state.append(separator, score);
+    }
   } else {
     const bar = element('progress');
     bar.max = 100;
     bar.value = job.percent;
     bar.setAttribute('aria-label', 'Progress ' + job.percent + '%');
-    state.append(element('strong', job.status === 'retrying' ? 'Retrying' : 'In progress'), bar,
-      element('span', job.stage + ' · ' + job.percent + '%'));
-    if (job.status === 'retrying') state.append(element('span', retryText(job)));
+    state.append(pill(job.status === 'retrying' ? 'Retrying' : 'In progress'));
+    detail.append(bar, element('span', job.stage + ' · ' + job.percent + '%'));
+    if (job.status === 'retrying') detail.append(element('span', retryText(job)));
   }
-  line.append(state);
-  const remove = element('button', 'Delete');
-  remove.type = 'button';
-  remove.setAttribute('aria-label', 'Delete ' + meta(job));
-  remove.addEventListener('click', () => deleteOne(remove, job));
+  main.append(avatar, who, state);
+  // Delete: stopped, waiting for answers, queued or complete. One being prepared right now is kept.
+  let remove = null;
+  if (job.status !== 'processing') {
+    remove = iconControl('button', 'trash', 'Delete', 'auto-menu-danger');
+    remove.setAttribute('aria-label', 'Delete ' + meta(job));
+    remove.addEventListener('click', () => { closeMenus(); deleteOne(remove, job); });
+  }
   for (const notice of job.notice || []) body.append(element('span', notice));
+  let again = null;
   if (job.status === 'complete') {
     if (job.ats) body.append(atsDetails(job.ats));
     const regenerate = job.regenerable ? regenerateForm(job) : null;
     if (regenerate) body.append(regenerate);
-    const actions = links(job);
+    const actions = primaryActions(job);
+    const details = iconControl('button', 'info', 'Details', 'auto-btn');
     const open = show => {
       body.hidden = !show;
       details.setAttribute('aria-expanded', String(show));
-      details.textContent = show ? 'Hide details' : 'Details';
+      details.lastChild.textContent = show ? 'Hide details' : 'Details';
     };
-    const details = element('button', 'Details');
-    details.type = 'button';
     details.setAttribute('aria-controls', body.id);
     details.addEventListener('click', () => open(body.hidden));
     if (regenerate) {
-      const again = element('button', 'Regenerate');
-      again.type = 'button';
+      again = iconControl('button', 'refresh', 'Regenerate', '');
       again.setAttribute('aria-controls', body.id);
-      again.addEventListener('click', () => { open(true); regenerate.querySelector('input').focus(); });
-      actions.append(again);
+      again.addEventListener('click', () => { closeMenus(); open(true); regenerate.querySelector('input').focus(); });
     }
     if (body.children.length) actions.append(details);
-    actions.append(remove);
-    line.append(actions);
+    main.append(actions);
     open(false);
-  } else if (job.status !== 'processing') {
-    line.append(remove);  // stopped, waiting for answers or queued; one being prepared right now is kept
   }
-  item.append(top, line);
+  const items = menuItems(job, again, remove);
+  if (items.length) main.append(...moreMenu(job, items));
+  item.append(main);
+  if (detail.children.length) item.append(detail);
   if (body.children.length) item.append(body);
   return item;
 }
 
-// History: search, role and status filters, rows needing input first, then pages of PAGE_SIZE.
+// History: search, role and status filters, rows needing input first, then pages. On a desktop a page holds as
+// many collapsed cards as fit in the panel (3 to 12), so the list does not scroll; on a phone it holds 6.
 // Each job's element (and anything typed into it) is kept until that job itself changes.
-const PAGE_SIZE = 6;
+const PHONE_PAGE_SIZE = 6;
 const rendered = new Map();
 let allJobs = [];
 let page = 0;
+let pageSize = PHONE_PAGE_SIZE;
+
+// The height of one collapsed, complete card at the list's current width, measured on a hidden reference card
+// (so every page holds the same number, whichever cards it shows). Re-measured only when the size changes.
+let reference = {key: '', row: 84};
+
+function cardHeight() {
+  const list = byId('auto-job-list');
+  const key = list.clientWidth + 'x' + innerHeight;
+  if (reference.key === key) return reference.row;
+  const probe = jobItem({id: 'reference'.padEnd(64, '0'), candidate: 'Reference Candidate', role: 'Reference role',
+    created: 1, status: 'complete', stage: '', percent: 100, revision: 'reference/0', overleaf: '', regenerable: false,
+    notice: [], ats: {ats_readiness: 99}});
+  probe.style.visibility = 'hidden';
+  probe.style.position = 'absolute';
+  probe.style.width = list.clientWidth + 'px';
+  list.append(probe);
+  const row = probe.offsetHeight || 84;
+  probe.remove();
+  reference = {key, row};
+  return row;
+}
+
+function fittedPageSize() {
+  if (!matchMedia('(min-width: 901px)').matches) return PHONE_PAGE_SIZE;
+  const list = byId('auto-job-list');
+  const row = cardHeight();
+  const gap = parseFloat(getComputedStyle(list).rowGap) || 12;
+  const space = byId('auto-history').clientHeight - 8;
+  return Math.max(3, Math.min(12, Math.floor((space + gap) / (row + gap))));
+}
+
+function setText(node, text) {
+  if (node.textContent !== text) node.textContent = text;
+}
+
+// The summary strip: total, completed, and the completed share.
+function renderStats(jobs) {
+  const done = jobs.filter(job => job.status === 'complete').length;
+  const percent = jobs.length ? Math.round(done * 100 / jobs.length) : 0;
+  const count = byId('auto-count');
+  if (count.textContent !== jobs.length + (jobs.length === 1 ? ' resume' : ' resumes')) {
+    count.replaceChildren(element('span', String(jobs.length)), jobs.length === 1 ? ' resume' : ' resumes');
+  }
+  setText(byId('auto-done'), done + ' completed');
+  byId('auto-done-bar').style.width = percent + '%';
+  const share = byId('auto-done-percent');
+  if (share.textContent !== percent + '% completed') share.replaceChildren(element('b', percent + '%'), ' completed');
+}
+
+// Page numbers (at most five, around the current page); hidden when everything fits on one page.
+function renderPager(pages) {
+  byId('auto-pager').hidden = pages <= 1;
+  byId('auto-prev').disabled = page === 0;
+  byId('auto-next').disabled = page >= pages - 1;
+  const holder = byId('auto-pages');
+  const key = pages + ':' + page;
+  if (holder.dataset.key === key) return;
+  const refocus = holder.contains(document.activeElement);
+  holder.dataset.key = key;
+  const start = Math.max(0, Math.min(page - 2, pages - 5));
+  const numbers = [];
+  for (let index = start; index < Math.min(pages, start + 5); index++) {
+    const button = element('button', String(index + 1));
+    button.type = 'button';
+    button.setAttribute('aria-label', 'Page ' + (index + 1));
+    if (index === page) button.setAttribute('aria-current', 'page');
+    button.addEventListener('click', () => turnPage(index - page));
+    numbers.push(button);
+  }
+  holder.replaceChildren(...numbers);
+  if (refocus) holder.querySelector('[aria-current]')?.focus();
+}
 
 function matches(job) {
   const query = byId('auto-search').value.trim().toLowerCase();
@@ -730,12 +988,17 @@ function renderJobs(jobs) {
   const present = new Set(jobs.map(job => job.id));
   for (const id of rendered.keys()) if (!present.has(id)) rendered.delete(id);  // a deleted resume leaves no row
   roleOptions(jobs);
+  const fitted = fittedPageSize();
+  if (fitted !== pageSize) {
+    page = Math.floor(page * pageSize / fitted);  // keep the first card of the page in view
+    pageSize = fitted;
+  }
   const ordered = [...jobs.filter(job => job.status === 'needs_input'), ...jobs.filter(job => job.status !== 'needs_input')];
   const shown = ordered.filter(matches);
-  const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+  const pages = Math.max(1, Math.ceil(shown.length / pageSize));
   page = Math.min(page, pages - 1);
   const list = byId('auto-job-list');
-  const items = shown.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map(job => {
+  const items = shown.slice(page * pageSize, (page + 1) * pageSize).map(job => {
     const json = JSON.stringify(job);
     const known = rendered.get(job.id);
     if (known && known.json === json) return known.item;
@@ -749,18 +1012,18 @@ function renderJobs(jobs) {
   while (list.children.length > items.length) list.lastElementChild.remove();
   byId('auto-empty').hidden = jobs.length > 0;
   byId('auto-delete-all').hidden = jobs.length === 0;
-  byId('auto-count').textContent = jobs.length ? jobs.length + (jobs.length === 1 ? ' resume' : ' resumes') : '';
-  // Which rows this page holds, e.g. "Page 1 of 3 · 1–6 of 15" ("15 shown" read as if all 15 were on screen).
-  const first = page * PAGE_SIZE + 1;
-  const last = Math.min(shown.length, (page + 1) * PAGE_SIZE);
-  byId('auto-page').textContent = !jobs.length ? '' : shown.length ?
-    'Page ' + (page + 1) + ' of ' + pages + ' · ' + first + '–' + last + ' of ' + shown.length
-    : 'No resumes match the search or filters';
-  byId('auto-prev').disabled = page === 0;
-  byId('auto-next').disabled = page >= pages - 1;
+  renderStats(jobs);
+  // Which cards this page holds, e.g. "Showing 1 – 6 of 15 resumes".
+  const first = page * pageSize + 1;
+  const last = Math.min(shown.length, (page + 1) * pageSize);
+  setText(byId('auto-page'), !jobs.length ? '' : shown.length ?
+    'Showing ' + first + ' – ' + last + ' of ' + shown.length + (shown.length === 1 ? ' resume' : ' resumes')
+    : 'No resumes match the search or filters');
+  renderPager(pages);
 }
 
 function turnPage(step) {
+  closeMenus();
   page += step;
   renderJobs(allJobs);
   byId('auto-history').scrollTop = 0;
@@ -791,6 +1054,20 @@ async function init() {
   }
   byId('auto-prev').addEventListener('click', () => turnPage(-1));
   byId('auto-next').addEventListener('click', () => turnPage(1));
+  // An open menu belongs to the spot it opened at: scrolling or resizing closes it. Resizing also refits the page.
+  document.addEventListener('scroll', event => {
+    if (!(event.target instanceof Element && event.target.closest('.auto-menu'))) closeMenus();
+  }, true);
+  let resizing = 0;
+  addEventListener('resize', () => {
+    closeMenus();
+    clearTimeout(resizing);
+    resizing = setTimeout(() => renderJobs(allJobs), 120);
+  });
+  if (!POPOVER) {
+    document.addEventListener('click', event => { if (!event.target.closest('.auto-menu, .auto-kebab')) closeMenus(); });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') closeMenus(); });
+  }
   form.addEventListener('change', event => { if (event.target.name === 'method') mode(); });
   role.addEventListener('input', roleChanged);
   role.addEventListener('change', roleChanged);

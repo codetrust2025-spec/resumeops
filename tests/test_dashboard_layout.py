@@ -127,6 +127,7 @@ class DashboardLayoutTests(unittest.TestCase):
             return {pageY: de.scrollHeight - innerHeight, pageX: de.scrollWidth - innerWidth, width: innerWidth,
                     dash: box('.auto-dash').width, create: box('.auto-create').width, history: box('#auto-jobs').width,
                     createTop: box('.auto-create').top, createBottom: box('.auto-create').bottom, historyTop: box('#auto-jobs').top,
+                    createScroll: document.querySelector('.auto-create').scrollHeight - document.querySelector('.auto-create').clientHeight,
                     body: parseFloat(getComputedStyle(document.body).fontSize),
                     label: parseFloat(getComputedStyle(document.querySelector('#ai-form label')).fontSize),
                     submit: box('#auto-submit').height};
@@ -142,11 +143,16 @@ class DashboardLayoutTests(unittest.TestCase):
                     self.assertLessEqual(m['pageY'], 0, 'no page-level vertical scrolling')
                     self.assertLessEqual(m['pageX'], 0, 'no horizontal scrolling')
                     self.assertGreaterEqual(m['dash'], 0.95 * m['width'], 'the dashboard spans the screen')
-                    self.assertAlmostEqual(m['create'] / (m['create'] + m['history']), 0.4, delta=0.03)
+                    self.assertAlmostEqual(m['create'] / (m['create'] + m['history']), 0.35, delta=0.02)
                     self.assertGreaterEqual(m['body'], 14, 'readable text, no scaling tricks')
                     self.assertGreaterEqual(m['label'], 13)
                     self.assertGreaterEqual(m['submit'], 40)
-                    self.assertEqual(page.locator('#auto-job-list > li').count(), 6, 'one bounded page of history')
+                    if mode.startswith('AI-first'):
+                        self.assertLessEqual(m['createScroll'], 0, 'the whole form fits, Create verified resume included')
+                    rows = page.locator('#auto-job-list > li').count()
+                    self.assertTrue(3 <= rows <= 12, 'one bounded page of history, sized to the panel')
+                    self.assertEqual(page.locator('#auto-page').inner_text(), f'Showing 1 – {rows} of 15 resumes')
+                    self.assertTrue(page.locator('#auto-pager').is_visible(), 'page numbers when there is more than one page')
             with self.subTest(resolution=f'{width}x{height}', state='expanded details'):
                 page.get_by_label('AI-first: name and phone').check()
                 page.get_by_text('Optional details and profiles', exact=True).click()
@@ -154,13 +160,87 @@ class DashboardLayoutTests(unittest.TestCase):
             page.close()
 
     def test_phone_layout_is_one_column_without_sideways_scrolling(self):
-        page = self.open(**self.playwright.devices['iPhone 13'])
-        m = self.measure(page)
-        self.assertLessEqual(m['pageX'], 0)
-        self.assertGreaterEqual(m['historyTop'], m['createBottom'] - 1, 'My resumes follows the form')
-        self.assertGreaterEqual(m['submit'], 44, 'touch-friendly')
-        page.get_by_label('Upload candidate documents').check()
-        self.assertLessEqual(self.measure(page)['pageX'], 0)
+        for device in ('iPhone 13', 'Galaxy S9+'):
+            with self.subTest(device=device):
+                page = self.open(**self.playwright.devices[device])
+                m = self.measure(page)
+                self.assertLessEqual(m['pageX'], 0)
+                self.assertGreaterEqual(m['historyTop'], m['createBottom'] - 1, 'My resumes follows the form')
+                self.assertGreaterEqual(m['submit'], 44, 'touch-friendly')
+                page.get_by_label('Upload candidate documents').check()
+                self.assertLessEqual(self.measure(page)['pageX'], 0)
+                # Every control of a complete card stays inside the card: nothing overlaps or spills sideways.
+                row = page.locator('#auto-job-list > li[data-status="complete"]').first
+                outside = row.evaluate('''li => { const card = li.getBoundingClientRect();
+                    return [...li.querySelectorAll('.auto-main > *:not(.auto-menu), .auto-actions > *')].filter(el => {
+                        const box = el.getBoundingClientRect();
+                        return box.left < card.left - 0.5 || box.right > card.right + 0.5; }).length; }''')
+                self.assertEqual(outside, 0)
+                for name in ('Download PDF', 'Preview PDF', 'Details'):
+                    self.assertTrue(row.get_by_role('link' if name != 'Details' else 'button', name=name, exact=True).is_visible())
+                row.get_by_role('button', name='More actions for Candidate 03 Example').click()
+                menu = row.locator('.auto-menu')
+                self.assertTrue(menu.is_visible())
+                box, width = menu.bounding_box(), page.evaluate('innerWidth')
+                self.assertTrue(box['x'] >= 0 and box['x'] + box['width'] <= width, 'the menu stays on screen')
+                self.assertLessEqual(self.measure(page)['pageX'], 0)
+                page.close()
+
+    def test_three_dot_menu_holds_the_other_actions_and_opens_and_closes(self):
+        from playwright.sync_api import expect
+        page = self.open(viewport={'width': 1440, 'height': 900})
+        page.get_by_label('Filter by status').select_option('complete')
+        row = page.locator('#auto-job-list > li[data-status="complete"]').first
+        kebab = row.get_by_role('button', name='More actions for Candidate 03 Example')
+        menu = row.locator('.auto-menu')
+        self.assertTrue(menu.is_hidden(), 'closed until asked for')
+        for name in ('Download LaTeX', 'Download Overleaf PDF', 'Open Overleaf project'):
+            self.assertEqual(row.get_by_role('link', name=name, exact=True).count(), 0, f'{name} is in the menu')
+        kebab.click()
+        self.assertTrue(menu.is_visible())
+        self.assertEqual(kebab.get_attribute('aria-expanded'), 'true')
+        self.assertEqual(menu.locator('a, button').evaluate_all('items => items.map(i => i.textContent.trim())'),
+                         ['LaTeX', 'Overleaf PDF', 'Open Overleaf', 'Regenerate', 'Delete'])
+        k, m = kebab.bounding_box(), menu.bounding_box()
+        self.assertAlmostEqual(m['x'] + m['width'], k['x'] + k['width'], delta=1.5, msg='right-aligned with its button')
+        self.assertGreater(m['y'], k['y'] + k['height'] - 1, 'opens below its button')
+        expect(menu.locator('a').first).to_be_focused()  # focus moves into the menu
+        page.keyboard.press('ArrowDown')
+        self.assertEqual(page.evaluate('document.activeElement.textContent.trim()'), 'Overleaf PDF')
+        page.keyboard.press('Escape')
+        self.assertTrue(menu.is_hidden(), 'Escape closes it')
+        self.assertEqual(kebab.get_attribute('aria-expanded'), 'false')
+        kebab.click()
+        page.mouse.click(5, 300)
+        self.assertTrue(menu.is_hidden(), 'a click elsewhere closes it')
+        kebab.click()
+        kebab.click()
+        self.assertTrue(menu.is_hidden(), 'the button toggles it')
+        # Only one menu is open at a time.
+        page.locator('#auto-job-list > li .auto-kebab').nth(1).click()
+        kebab.click()
+        expect(page.locator('.auto-menu:popover-open')).to_have_count(1)
+        self.assertTrue(menu.is_visible())
+        page.keyboard.press('Escape')
+        # A card near the bottom of a short window opens its menu upward, fully on screen.
+        page.set_viewport_size({'width': 1366, 'height': 768})
+        last = page.locator('#auto-job-list > li .auto-kebab').last
+        last.click()
+        opened = page.locator('.auto-menu:popover-open')
+        expect(opened).to_have_count(1)
+        o, k = opened.bounding_box(), last.bounding_box()
+        self.assertTrue(o['y'] >= 0 and o['y'] + o['height'] <= 768, 'on screen')
+        if k['y'] + k['height'] + o['height'] + 6 > 768:
+            self.assertLess(o['y'] + o['height'], k['y'] + 1, 'opens upward when there is no room below')
+        page.close()
+
+    def test_pagination_is_hidden_when_everything_fits_on_one_page(self):
+        page = self.open(jobs=fake_jobs(4), viewport={'width': 1920, 'height': 1080})
+        self.assertEqual(page.locator('#auto-page').inner_text(), 'Showing 1 – 4 of 4 resumes')
+        self.assertTrue(page.locator('#auto-pager').is_hidden())
+        self.assertEqual(page.locator('#auto-count').inner_text(), '4 resumes')
+        self.assertEqual(page.locator('#auto-done').inner_text(), '1 completed')
+        self.assertEqual(page.locator('#auto-done-percent').inner_text(), '25% completed')
         page.close()
 
     def test_switching_modes_keeps_what_was_entered(self):
@@ -210,20 +290,27 @@ class DashboardLayoutTests(unittest.TestCase):
     def test_search_filters_and_pagination(self):
         page = self.open(viewport={'width': 1440, 'height': 900})
         rows = page.locator('#auto-job-list > li')
-        self.assertEqual(page.locator('#auto-page').inner_text(), 'Page 1 of 3 · 1–6 of 15')
+        size = rows.count()
+        pages = -(-15 // size)
+        self.assertEqual(page.locator('#auto-page').inner_text(), f'Showing 1 – {size} of 15 resumes')
         self.assertEqual(rows.first.get_attribute('data-status'), 'needs_input', 'rows needing input come first')
+        self.assertEqual(page.locator('#auto-pages button').count(), min(pages, 5))
+        self.assertEqual(page.locator('#auto-pages [aria-current=page]').inner_text(), '1')
         first_page = rows.evaluate_all('items => items.map(item => item.dataset.id)')
         page.get_by_role('button', name='Next page').click()
-        self.assertEqual(page.locator('#auto-page').inner_text(), 'Page 2 of 3 · 7–12 of 15')
+        self.assertEqual(page.locator('#auto-page').inner_text(), f'Showing {size + 1} – {min(15, 2 * size)} of 15 resumes')
+        self.assertEqual(rows.count(), min(size, 15 - size), 'every page holds the same number of cards')
         self.assertFalse(set(first_page) & set(rows.evaluate_all('items => items.map(item => item.dataset.id)')))
-        page.get_by_role('button', name='Next page').click()
-        self.assertEqual(rows.count(), 3)
+        page.get_by_role('button', name=f'Page {pages}', exact=True).click()
+        self.assertEqual(rows.count(), 15 - (pages - 1) * size)
         self.assertTrue(page.get_by_role('button', name='Next page').is_disabled())
-        page.get_by_role('button', name='Previous page').click()
-        self.assertEqual(page.locator('#auto-page').inner_text(), 'Page 2 of 3 · 7–12 of 15')
+        page.get_by_role('button', name='Page 2', exact=True).click()
+        self.assertEqual(page.locator('#auto-page').inner_text(), f'Showing {size + 1} – {min(15, 2 * size)} of 15 resumes')
         page.get_by_label('Search resumes').fill('Candidate 07')
         self.assertEqual(rows.count(), 1)
-        self.assertIn('Candidate 07 Example · Java Backend Developer', rows.first.inner_text())
+        self.assertIn('Candidate 07 Example', rows.first.inner_text())
+        self.assertIn('Java Backend Developer', rows.first.inner_text())
+        self.assertTrue(page.locator('#auto-pager').is_hidden(), 'no page numbers for one page')
         page.get_by_label('Search resumes').fill('')
         page.get_by_label('Filter by job role').select_option('Angular Developer')
         titles = rows.evaluate_all('items => items.map(item => item.querySelector(".auto-meta").textContent)')
@@ -232,20 +319,27 @@ class DashboardLayoutTests(unittest.TestCase):
         page.get_by_label('Filter by status').select_option('needs_input')
         self.assertEqual(rows.count(), 1)
         page.get_by_label('Filter by status').select_option('complete')
-        self.assertEqual(page.locator('#auto-page').inner_text(), 'Page 1 of 2 · 1–6 of 12')
+        self.assertEqual(page.locator('#auto-page').inner_text(), f'Showing 1 – {min(size, 12)} of 12 resumes')
         page.close()
 
     def test_every_action_and_regeneration(self):
         page = self.open(viewport={'width': 1366, 'height': 768})
+        page.get_by_label('Filter by status').select_option('complete')
         row = page.locator('#auto-job-list > li[data-status="complete"]').first
-        for name, fragment in (('Download PDF', 'name=resume.pdf&download=1'), ('Download LaTeX', 'name=main.tex&download=1'),
-                               ('Download Overleaf PDF', 'name=overleaf.pdf&download=1'), ('Preview PDF', 'name=resume.pdf'),
-                               ('Open Overleaf project', 'https://www.overleaf.com/project/abc03')):
+        # Download PDF, Preview and Details are on the card; the rest are in its three-dot menu.
+        actions = (('Download PDF', 'name=resume.pdf&download=1'), ('Preview PDF', 'name=resume.pdf'),
+                   ('Download LaTeX', 'name=main.tex&download=1'), ('Download Overleaf PDF', 'name=overleaf.pdf&download=1'),
+                   ('Open Overleaf project', 'https://www.overleaf.com/project/abc03'))
+        for name, fragment in actions:
             with self.subTest(action=name):
+                if name == 'Download LaTeX':
+                    row.get_by_role('button', name='More actions for Candidate 03 Example').click()
                 link = row.get_by_role('link', name=name, exact=True)
                 self.assertTrue(link.is_visible())
                 self.assertIn(fragment, link.get_attribute('href'))
+        page.keyboard.press('Escape')
         self.assertIn('ATS 63', row.locator('.auto-score').inner_text())
+        self.assertIn('Complete', row.locator('strong').inner_text())
         details = row.get_by_role('button', name='Details')
         details.click()
         self.assertTrue(row.locator('.auto-ats').is_visible())
@@ -253,7 +347,9 @@ class DashboardLayoutTests(unittest.TestCase):
         self.assertEqual(row.locator('.auto-ats tr').count(), 8, 'the explainable ATS breakdown')
         row.get_by_role('button', name='Hide details').click()
         self.assertTrue(row.locator('.auto-ats').is_hidden())
-        row.get_by_role('button', name='Regenerate', exact=True).click()
+        row.get_by_role('button', name='More actions for Candidate 03 Example').click()
+        row.locator('.auto-menu').get_by_role('button', name='Regenerate', exact=True).click()
+        self.assertTrue(row.locator('.auto-menu').is_hidden(), 'choosing an item closes the menu')
         field = row.get_by_label('Regenerate for another role')
         self.assertTrue(field.evaluate('el => el === document.activeElement'), 'Regenerate opens and focuses the role')
         field.fill('Node.js Developer')
@@ -311,22 +407,34 @@ class DashboardLayoutTests(unittest.TestCase):
         dialogs, answers = [], iter([False, True])
         page.on('dialog', lambda d: (dialogs.append(d.message), d.accept() if next(answers) else d.dismiss()))
         rows = page.locator('#auto-job-list > li')
-        for status, has_delete in (('needs_input', True), ('processing', False), ('blocked', True), ('complete', True)):
+        status_filter = page.get_by_label('Filter by status')
+        for status, choice, has_delete in (('needs_input', 'needs_input', True), ('processing', 'active', False),
+                                           ('blocked', 'blocked', True), ('complete', 'complete', True)):
             with self.subTest(status=status):
+                status_filter.select_option(choice)
                 row = page.locator(f'#auto-job-list > li[data-status="{status}"]').first
-                self.assertEqual(row.get_by_role('button', name='Delete', exact=False).count() > 0, has_delete)
-        delete_03 = page.locator('#auto-job-list > li[data-id^="03"]').get_by_role('button', name='Delete Candidate 03 Example')
+                menu = row.locator('.auto-kebab')
+                self.assertEqual(menu.count(), int(has_delete), 'a resume being prepared has no menu')
+                if has_delete:
+                    menu.click()
+                    self.assertEqual(row.get_by_role('button', name='Delete', exact=False).count(), 1)
+                    page.keyboard.press('Escape')
+        card_03 = page.locator('#auto-job-list > li[data-id^="03"]')
+        delete_03 = card_03.get_by_role('button', name='Delete Candidate 03 Example')
+        card_03.locator('.auto-kebab').click()
         delete_03.click()  # cancelled in the browser's confirmation: no request at all
         page.wait_for_timeout(300)
         self.assertEqual(self.posts, [])
         self.assertIn('Permanently delete Candidate 03 Example', dialogs[0])
         self.assertIn('cannot be undone', dialogs[0])
+        card_03.locator('.auto-kebab').click()
         with page.expect_request('**/api/automation/delete'):
             delete_03.click()  # confirmed
         expect(page.locator('#auto-delete-status')).to_have_text('Permanently deleted 1 resume.')
         self.assertEqual(self.posts, [{'id': '03' + 'f' * 62, 'confirm': 'DELETE'}])
         expect(page.locator('#auto-job-list > li[data-id^="03"]')).to_have_count(0)
         expect(page.locator('#auto-count')).to_have_text('14 resumes')
+        status_filter.select_option('')
 
         dialog = page.locator('#auto-delete-dialog')
         confirm = dialog.get_by_role('button', name='Permanently delete all')
