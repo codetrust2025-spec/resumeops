@@ -361,6 +361,7 @@ class AutomationJobs:
                                                                         'drafted')}
                                     for question in waiting.get('questions', [])]
                 job['proposals'] = waiting.get('proposals', [])
+                job['certifications'] = waiting.get('certification_options', [])
             jobs.append(job)
         return jobs
 
@@ -568,7 +569,33 @@ class AutomationJobs:
         checkpoints.pop('proposals')
         checkpoints.update(projects_reviewed=True, confirmed_projects=confirmed)
 
-    def decide_projects(self, owner, identifier, decisions):
+    @staticmethod
+    def _certification_choices(checkpoints, notes, certifications):
+        """The certifications the candidate says they have completed: recommendations they ticked, or names they
+        typed. Recommendations left unticked are never printed, and nothing is added otherwise."""
+        from resume_bot.automation import AnswerError
+        from resume_bot.generate import plain
+
+        if checkpoints.pop('certification_options', None) is None:
+            return
+        checkpoints['certifications_reviewed'] = True
+        if not certifications:
+            return
+        if not isinstance(certifications, list) or len(certifications) > 8 or \
+                any(not isinstance(name, str) for name in certifications):
+            raise AnswerError('List up to 8 certifications you have completed.', 'certifications')
+        facts = checkpoints['facts']
+        have = {name.casefold() for name in facts.get('certifications') or []}
+        for name in certifications:
+            name = ' '.join(plain(name).split())
+            if len(name) > 120:
+                raise AnswerError('Keep each certification under 120 characters.', 'certifications')
+            if name and name.casefold() not in have:
+                facts.setdefault('certifications', []).append(name)
+                have.add(name.casefold())
+                notes.append(f'Confirmed by you: certification "{name}".')
+
+    def decide_projects(self, owner, identifier, decisions, certifications=None):
         """Project decisions alone (no other question pending). Then the job continues."""
         from resume_bot.automation import AnswerError
 
@@ -583,6 +610,7 @@ class AutomationJobs:
                 raise AnswerError('Confirm the drafted details together with the projects.')
             notes = json.loads(row['notice'] or '[]')
             self._project_choices(checkpoints, notes, decisions)
+            self._certification_choices(checkpoints, notes, certifications)
             db.execute("UPDATE automation SET status='queued',stage='Project choices saved; continuing',percent=max(percent,62),"
                        'error=NULL,next_retry=0,checkpoints=?,notice=?,updated=? WHERE owner=? AND id=?',
                        (json.dumps(checkpoints), json.dumps(notes), time.time(), owner, identifier))
@@ -617,7 +645,7 @@ class AutomationJobs:
         self.wake.set()
         return new_id
 
-    def answer(self, owner, identifier, answers, decisions=None):
+    def answer(self, owner, identifier, answers, decisions=None, certifications=None):
         """Apply the candidate's answers to a job that needs input, then continue it where it stopped. When the
         same review also holds project suggestions, their decisions come with the answers (one confirmation)."""
         from resume_bot.automation import AnswerError, apply_answers
@@ -665,6 +693,7 @@ class AutomationJobs:
                         have = {s.casefold() for s in facts['skills']}
                         facts['skills'] += [s for s in question['carry'] if s.casefold() not in have]
                 checkpoints['facts'] = facts
+                self._certification_choices(checkpoints, project_notes, certifications)
                 if any(question['field'] == 'bullets' for question in questions):
                     checkpoints['drafts_reviewed'] = True  # a job left without lines is not asked about again
                 if any(question['field'] == 'skills' for question in questions):
@@ -837,6 +866,15 @@ class AutomationJobs:
         def draft_progress(metrics):
             progress(28 + min(1, metrics.get('chunks', 0) // 200), 'AI drafting role-specific content for your review')
 
+        def offer_certifications(facts):
+            """Certifications worth earning for the role, shown unticked in the review card (once per resume):
+            only those the candidate ticks as completed are printed."""
+            from resume_bot.certifications import recommended_certifications
+            if not checkpoints.get('certifications_reviewed'):
+                checkpoints['certification_options'] = recommended_certifications(
+                    {'role': intelligence['role'], 'keywords': intelligence['terms'], 'role_title': intelligence['label']},
+                    facts.get('certifications') or [])
+
         try:
             source = checkpoints.get('source')
             if source is None and 'identity' in request:
@@ -945,10 +983,13 @@ class AutomationJobs:
                         progress(29, 'Project selection: proposing role-specific projects')
                         proposals = checkpoint('proposals_made', propose_projects(
                             {**facts, 'skills': [*role_skills, *skills]}, target, label, years,
-                            model, proposal_progress))
+                            model, proposal_progress,
+                            avoid=[*(line for entry in facts['experience'] for line in entry['bullets']),
+                                   *(line for lines in work.values() for line in lines)]))
                 checkpoints.update(draft=facts, questions=questions)
                 if proposals:
                     checkpoints['proposals'] = proposals
+                offer_certifications(facts)
                 # Say exactly what was drafted and what is asked: "work lines" only when work lines were drafted.
                 has = lambda field, drafted: any(q['field'] == field and bool(q.get('drafted')) == drafted for q in questions)
                 drafted = [text for field, text in (('bullets', 'work lines from your job titles and dates'),
@@ -985,10 +1026,12 @@ class AutomationJobs:
                     progress(56, 'Project selection: proposing role-specific projects')
                     proposals = checkpoint('proposals_made', propose_projects(
                         facts, {'role': intelligence['role'], 'keywords': intelligence['terms']},
-                        intelligence['label'], years, model, proposal_progress))
+                        intelligence['label'], years, model, proposal_progress,
+                        avoid=[line for entry in facts['experience'] for line in entry['bullets']]))
                 if proposals:
                     # Suggestions are never resume content until the candidate confirms them.
                     checkpoints['proposals'] = proposals
+                    offer_certifications(facts)
                     with closing(self.connection()) as db, db:
                         db.execute("UPDATE automation SET status='needs_input',stage='Review suggested projects',percent=60,"
                                    'error=?,checkpoints=?,updated=? WHERE owner=? AND id=?',

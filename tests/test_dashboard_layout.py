@@ -278,7 +278,8 @@ class DashboardLayoutTests(unittest.TestCase):
                                    'explanation': 'Keep only tools you have used.', 'value': 'Google Cloud, Terraform, Cloud Run'}],
                        proposals=[{'name': 'Practice API on Cloud Run', 'problem': 'Fictional.', 'architecture': 'Cloud Run.',
                                    'features': [], 'responsibilities': 'Build it.', 'stack': ['Cloud Run', 'Terraform'],
-                                   'bullets': ['Deployed a practice API to Cloud Run with Terraform.']}])
+                                   'bullets': ['Deployed a practice API to Cloud Run with Terraform.']}],
+                       certifications=['Google Cloud Associate Cloud Engineer', 'HashiCorp Certified: Terraform Associate'])
         page = self.open(jobs=jobs, viewport={'width': 1366, 'height': 768})
         row = page.locator('#auto-job-list > li[data-status="needs_input"]')
         work = row.get_by_label('Work as Cloud Engineer at Example Health (AI draft)')
@@ -292,11 +293,16 @@ class DashboardLayoutTests(unittest.TestCase):
         # A suggested project starts included as an AI draft (one confirmation); the candidate skips this one.
         expect(row.get_by_label('I built this: include it')).to_be_checked()
         row.get_by_label('Skip').check()
+        # Certifications are recommendations: unticked until the candidate says they completed one.
+        expect(row.get_by_label('Google Cloud Associate Cloud Engineer')).not_to_be_checked()
+        row.get_by_label('Google Cloud Associate Cloud Engineer').check()
+        row.get_by_label('Other completed certifications (one per line)').fill('Udemy: Cloud Run Fundamentals')
         with page.expect_request('**/api/automation/answer'):
             row.get_by_role('button', name='Confirm and continue').click()
         self.assertEqual(self.posts[-1], {'id': jobs[0]['id'], 'answers': {
             'experience.0.bullets': 'Deployed services to Cloud Run with Terraform.', 'experience.1.bullets': '',
-            'skills': 'Google Cloud, Terraform, Cloud Run'}, 'decisions': [{'include': False}]})
+            'skills': 'Google Cloud, Terraform, Cloud Run'}, 'decisions': [{'include': False}],
+            'certifications': ['Google Cloud Associate Cloud Engineer', 'Udemy: Cloud Run Fundamentals']})
         page.close()
 
     def test_delete_one_and_delete_all_need_explicit_confirmation(self):

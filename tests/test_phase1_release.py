@@ -144,8 +144,8 @@ class ClaimAuditTests(unittest.TestCase):
         self.assertTrue(claim_violations(PROFILE, {'attested': True, 'claims': unapproved}))
 
     def test_pdf_text_outside_the_approved_profile_is_reported(self):
-        pdf = ('Phase One Synthetic\nphase1@example.com\nPROFESSIONAL SUMMARY\nEngineer focused on Python\n'
-               'services.\nTECHNICAL SKILLS\nSkills: Python • SQL\nPROFESSIONAL EXPERIENCE\nEngineer | Example Co\n'
+        pdf = ('Phase One Synthetic\nphase1@example.com\nCAREER OBJECTIVE\nEngineer focused on Python\n'
+               'services.\nTECHNICAL SKILLS\nSkills: Python • SQL\nPROFESSIONAL WORK EXPERIENCE\nEngineer | Example Co\n'
                'Jan 2020 – Present\n• Maintained billing APIs\nEDUCATION\nBSc | Example University\n2019')
         profile = normalize_request(REQUEST)[0]
         self.assertTrue(matches_pdf_text(pdf, profile, 5))
