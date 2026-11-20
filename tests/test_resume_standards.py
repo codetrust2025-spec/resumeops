@@ -75,6 +75,17 @@ class LayoutTests(unittest.TestCase):
         self.assertTrue(matches_pdf_text(text, profile, 0, complete_sections=True))
         self.assertFalse(matches_pdf_text(text, profile, 0))
 
+    def test_new_target_requests_enable_all_six_sections_without_private_automation(self):
+        profile = resume(experience=[], projects=[], certifications=[])
+        normalized_profile, target = normalize_request({
+            'profile': profile,
+            'target': {'role': 'java-backend-developer', 'experience_years': 0},
+        })
+        self.assertNotIn('automation_id', target)
+        self.assertTrue(target['complete_sections'])
+        tex = render(normalized_profile, years=0, complete_sections=target['complete_sections'])
+        self.assertEqual(re.findall(r'\\\\section\\*{([^}]+)}', tex), SECTIONS)
+
     def test_technologies_are_bold_selectively_and_the_text_is_unchanged(self):
         profile = resume()
         tex = render(profile, years=3)
