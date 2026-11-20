@@ -19,7 +19,7 @@ from resume_bot.generate import (_checked_proposals, composed_summary, conflicti
                                  draft_role_content, role_entry, skill_groups, summary_problems)
 from resume_bot.latex import education_details, expected_text, render
 from resume_bot.profile import validate_profile
-from resume_bot.workflow import ROLES, analyze, load_roles
+from resume_bot.workflow import ROLES, analyze, load_roles, normalize_request
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'dashboard'))
