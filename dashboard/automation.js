@@ -333,6 +333,20 @@ function closeMenus() {
   for (const panel of document.querySelectorAll('.auto-menu')) hideMenu(panel);
 }
 
+function followMenus() {
+  if (!POPOVER) return;  // the fallback menu sits in the card and moves with it
+  for (const panel of document.querySelectorAll('.auto-menu')) {
+    if (!menuOpen(panel)) continue;
+    const button = panel.previousElementSibling;
+    const box = button.getBoundingClientRect();
+    const list = byId('auto-history').getBoundingClientRect();
+    const top = Math.max(0, list.top);
+    const bottom = Math.min(document.documentElement.clientHeight, list.bottom);
+    if (!button.isConnected || box.bottom <= top || box.top >= bottom) hideMenu(panel);
+    else placeMenu(button, panel);
+  }
+}
+
 function placeMenu(button, panel) {
   if (!POPOVER) return;  // the fallback menu is positioned by CSS under its button
   let height = panel.offsetHeight;
@@ -1054,13 +1068,12 @@ async function init() {
   }
   byId('auto-prev').addEventListener('click', () => turnPage(-1));
   byId('auto-next').addEventListener('click', () => turnPage(1));
-  // An open menu belongs to the spot it opened at: scrolling or resizing closes it. Resizing also refits the page.
-  document.addEventListener('scroll', event => {
-    if (!(event.target instanceof Element && event.target.closest('.auto-menu'))) closeMenus();
-  }, true);
+  // An open menu stays with its button while the page or list scrolls (or the window resizes, as phone toolbars do),
+  // and closes once the button leaves the visible part of the list. Resizing also refits the page.
+  document.addEventListener('scroll', followMenus, {capture: true, passive: true});
   let resizing = 0;
   addEventListener('resize', () => {
-    closeMenus();
+    followMenus();
     clearTimeout(resizing);
     resizing = setTimeout(() => renderJobs(allJobs), 120);
   });

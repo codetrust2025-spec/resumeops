@@ -184,6 +184,14 @@ class DashboardLayoutTests(unittest.TestCase):
                 box, width = menu.bounding_box(), page.evaluate('innerWidth')
                 self.assertTrue(box['x'] >= 0 and box['x'] + box['width'] <= width, 'the menu stays on screen')
                 self.assertLessEqual(self.measure(page)['pageX'], 0)
+                # Scrolling the page a little keeps the menu open and attached to its button.
+                page.mouse.wheel(0, 60)
+                page.wait_for_timeout(250)
+                kebab = row.locator('.auto-kebab').bounding_box()
+                box = menu.bounding_box()
+                self.assertTrue(menu.is_visible())
+                self.assertAlmostEqual(box['x'] + box['width'], kebab['x'] + kebab['width'], delta=1.5)
+                self.assertTrue(abs(box['y'] - (kebab['y'] + kebab['height'])) < 12 or box['y'] + box['height'] < kebab['y'] + 1)
                 page.close()
 
     def test_three_dot_menu_holds_the_other_actions_and_opens_and_closes(self):
