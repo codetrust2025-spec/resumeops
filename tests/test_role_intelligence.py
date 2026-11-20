@@ -59,6 +59,18 @@ class RoleIntelligenceTests(unittest.TestCase):
         self.assertIn('React.js',intel['terms'])
         self.assertEqual(intel['sources'][0]['url'],'')
 
+    def test_market_posting_prioritizes_catalog_terms_for_a_supported_role(self):
+        posting = {'title': 'Frontend Developer', 'url': 'https://in.linkedin.com/jobs/view/123',
+                   'description': 'Experience with TypeScript, JavaScript and PostgreSQL.',
+                   'retrieved_at': datetime.now(UTC).isoformat()}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'market-sources.json').write_text(json.dumps({'authorized_postings': [posting]}))
+            intelligence = role_intelligence('frontend-developer', root)
+        self.assertIn('TypeScript', intelligence['terms'][:2])
+        self.assertNotIn('PostgreSQL', intelligence['terms'])
+        self.assertEqual(intelligence['sources'][0]['url'], posting['url'])
+
     def test_five_distinct_experience_strategies_and_intake_stability(self):
         messages=set()
         for years in (0,2,4,7,9):

@@ -122,7 +122,7 @@ def _split_project(project):
     return name, stack, parts
 
 
-def _build(profile, template='standard', years=None):
+def _build(profile, template='standard', years=None, *, complete_sections=False):
     doc = _Doc()
     doc.raw(r'{\centering {\LARGE\bfseries ' + paragraph(profile['full_name']) + r'}\par' + '\n', profile['full_name'])
     if profile.get('headline'):
@@ -140,8 +140,9 @@ def _build(profile, template='standard', years=None):
     terms = [skill for skill in profile.get('skills') or [] if skill not in concepts]
 
     def summary():
-        if profile.get('summary'):
+        if complete_sections or profile.get('summary'):
             doc.section('Career Objective')
+        if profile.get('summary'):
             # Selective emphasis: the selected role, and one technology per sentence. The words stay exactly as
             # approved (sentences are rejoined with the single space they had).
             lead = [profile['headline']] if profile.get('headline') else []
@@ -151,39 +152,39 @@ def _build(profile, template='standard', years=None):
             doc.raw(tex + r'\par' + '\n', profile['summary'])
 
     def skills():
-        if profile.get('skills'):
+        if complete_sections or profile.get('skills'):
             doc.section('Technical Skills')
+        if profile.get('skills'):
             groups = profile.get('skill_groups') or [{'name': 'Skills', 'items': profile['skills']}]
             for group in groups:
                 doc.raw(r'\textbf{' + paragraph(group['name']) + r':} ' + paragraph(', '.join(group['items'])) + r'\par' + '\n',
                         group['name'] + ':', ', '.join(group['items']))
+
+    def competencies():
         if profile.get('competencies'):
             doc.section('Core Competencies')
             doc.raw(paragraph(', '.join(profile['competencies'])) + r'\par' + '\n', ', '.join(profile['competencies']))
 
     def experience():
-        if not profile['experience']:
-            return
-        doc.section('Professional Work Experience')
+        if complete_sections or profile.get('experience'):
+            doc.section('Professional Work Experience')
         for x in profile['experience']:
             doc.entry(x['position'], x['company'], ' -- '.join(p for p in (x['start'], x['end']) if p), x.get('location', ''))
             doc.bullets(x['bullets'], terms)
             doc.raw(r'\vspace{2pt}' + '\n')
 
     def projects():
-        if not profile.get('projects'):
-            return
-        doc.section('Projects')
-        for project in profile['projects']:
+        if complete_sections or profile.get('projects'):
+            doc.section('Projects')
+        for project in profile.get('projects', []):
             name, stack, details = _split_project(project)
             # The technologies sit beside the project title, comma-separated.
             doc.entry(name, ', '.join(stack), '', muted_place=True)
             doc.bullets(details, terms)
 
     def education():
-        if not profile['education']:
-            return
-        doc.section('Education')
+        if complete_sections or profile.get('education'):
+            doc.section('Education')
         for x in profile['education']:
             doc.entry(x['degree'], x['institution'], ' -- '.join(p for p in (x['start'], x['end']) if p),
                       education_details(x.get('details', '')))
@@ -194,13 +195,19 @@ def _build(profile, template='standard', years=None):
             doc.bullets(profile[field])
 
     def certifications():
-        listed('certifications', 'Certifications')
+        if complete_sections:
+            doc.section('Certifications')
+            doc.bullets(profile.get('certifications', []))
+        else:
+            listed('certifications', 'Certifications')
 
     # Career Objective, Technical Skills, Professional Work Experience, Projects, Certifications, Education
-    # (a fresher's projects and education come before an internship).
-    fresher = years is not None and years < 1
-    order = ((summary, skills, projects, certifications, education, experience) if fresher else
-             (summary, skills, experience, projects, certifications, education))
+    if complete_sections:
+        order = (summary, skills, experience, projects, certifications, education, competencies)
+    elif years is not None and years < 1:
+        order = (summary, skills, competencies, projects, certifications, education, experience)
+    else:
+        order = (summary, skills, competencies, experience, projects, certifications, education)
     for part in order:
         part()
     listed('achievements', 'Achievements')
@@ -222,12 +229,11 @@ def _build(profile, template='standard', years=None):
     return content, doc.text
 
 
-def render(profile, template="standard", years=None):
-    """``years`` is the verified experience level for this build: under one year (a fresher) puts
-    projects and education before experience; otherwise experience comes first."""
-    return _build(profile, template, years)[0]
+def render(profile, template="standard", years=None, *, complete_sections=False):
+    """Render the resume using the layout recorded when the generation job was submitted."""
+    return _build(profile, template, years, complete_sections=complete_sections)[0]
 
 
-def expected_text(profile, years=None):
+def expected_text(profile, years=None, *, complete_sections=False):
     """The resume text in the reading order of the compiled PDF (for the strict PDF text check)."""
-    return _build(profile, 'standard', years)[1]
+    return _build(profile, 'standard', years, complete_sections=complete_sections)[1]

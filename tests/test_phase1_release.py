@@ -240,8 +240,8 @@ class WatcherClaimAuditTests(unittest.TestCase):
         from resume_bot import pipeline
         real = pipeline.render
 
-        def injected(profile, template='standard', years=None):
-            return real(profile, template, years).replace('\\end{document}', 'Led a team of 40 engineers\n\\end{document}')
+        def injected(profile, template='standard', years=None, **layout):
+            return real(profile, template, years, **layout).replace('\\end{document}', 'Led a team of 40 engineers\n\\end{document}')
 
         with tempfile.TemporaryDirectory() as directory:
             workspace = Workspace(Path(directory), code_root=ROOT)

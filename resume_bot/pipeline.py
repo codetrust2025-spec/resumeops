@@ -148,6 +148,7 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
     source_digest = _source_digest(source)
     original, target = normalize_request(_read_json(source)) if source.suffix == '.json' else (None, None)
     approval = None
+    complete_sections = bool(target and target.get('complete_sections'))
     if target and target.get('approved'):
         records = records_for(original_source.parent.parent / 'approvals', original_source.name)
         approval = next((record for record in records
@@ -219,11 +220,12 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
             raise ValueError('Cached source fingerprint mismatch')
         t.units_done(1, 1, 'Saved revision matches the candidate input')
         t.enter('latex', 'Checking saved LaTeX and Overleaf ZIP')
-        _verify_upload_source(folder, cached, template, years)
+        _verify_upload_source(folder, cached, template, years, complete_sections=complete_sections)
         t.units_done(1, 1, 'Saved LaTeX matches the verified profile')
         t.enter('pdf', 'Verifying the saved local PDF')
         verify_pdf(folder / 'resume.pdf', cached, max_pages)
-        if approval and not matches_pdf_text(read_resume_text(folder / 'resume.pdf'), original, years):
+        if approval and not matches_pdf_text(read_resume_text(folder / 'resume.pdf'), original, years,
+                                             complete_sections=complete_sections):
             raise BuildError('Saved PDF text differs from the candidate-approved resume.')
         t.units_done(1, 1, 'Saved local PDF verified')
         if overleaf:
@@ -263,7 +265,7 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
     with tempfile.TemporaryDirectory(dir=folder.parent,prefix='resume-build-',ignore_cleanup_errors=True) as temp:
         working=Path(temp)
         t.enter('latex', 'Rendering LaTeX from the verified profile')
-        latex = render(profile, template, years)
+        latex = render(profile, template, years, complete_sections=complete_sections)
         (working/'main.tex').write_text(latex,encoding='utf8')
         t.units_done(1, 3, 'LaTeX rendered')
         (working/'profile.json').write_text(json.dumps(profile,indent=2,ensure_ascii=False),encoding='utf8')
@@ -277,7 +279,7 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
         t.units_done(1, 2, 'Local PDF compiled; checking pages and text')
         audit['pdf_checks']=verify_pdf(built,profile,max_pages=max_pages)
         if approval:
-            if not matches_pdf_text(read_resume_text(built), original, years):
+            if not matches_pdf_text(read_resume_text(built), original, years, complete_sections=complete_sections):
                 raise BuildError('Generated PDF text differs from the candidate-approved resume.')
             audit['pdf_checks']['approved_claims_match'] = True
             audit['approval_record'] = approval['record_id']
@@ -308,7 +310,7 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
         folder.mkdir(parents=True,exist_ok=True)
         for item in ('main.tex','profile.json','resume.pdf','overleaf-project.zip','audit.json','result.json'):
             _replace(working/item,folder/item)
-    _verify_upload_source(folder, profile, template, years)
+    _verify_upload_source(folder, profile, template, years, complete_sections=complete_sections)
     if overleaf:
         report = _sync_overleaf(folder, report, profile, browser_profile, max_pages, refresh_overleaf, t)
     else:
@@ -348,8 +350,8 @@ def _finish(report, folder, overleaf, t):
     return report
 
 
-def _verify_upload_source(folder, profile, template, years=None):
-    expected = render(profile, template, years).encode('utf-8').replace(b'\r\n', b'\n')
+def _verify_upload_source(folder, profile, template, years=None, *, complete_sections=False):
+    expected = render(profile, template, years, complete_sections=complete_sections).encode('utf-8').replace(b'\r\n', b'\n')
     with zipfile.ZipFile(folder / 'overleaf-project.zip') as archive:
         if archive.namelist() != ['main.tex']:
             raise ValueError('Cached Overleaf ZIP contains unexpected files')

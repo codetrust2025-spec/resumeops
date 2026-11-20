@@ -128,7 +128,8 @@ def normalize_request(payload):
     if set(payload) != {'profile', 'target'} or not isinstance(payload['target'], dict):
         raise ProfileError('Expected a candidate profile and target')
     target = payload['target']
-    if set(target) - {'role', 'keywords', 'template', 'experience_years', 'approved', 'role_title', 'automation_owner', 'automation_id'}:
+    if set(target) - {'role', 'keywords', 'template', 'experience_years', 'approved', 'role_title', 'automation_owner', 'automation_id',
+                      'complete_sections'}:
         raise ProfileError('Unknown target option')
     if 'approved' in target and target['approved'] is not True:
         raise ProfileError('Approval marker must be true when present')
@@ -164,6 +165,10 @@ def normalize_request(payload):
                 for key in private):
             raise ProfileError('Invalid private automation request')
         normalized.update({key: target[key] for key in private})
+    if 'complete_sections' in target:
+        if target['complete_sections'] is not True or 'automation_id' not in normalized:
+            raise ProfileError('Complete sections require a private automation request')
+        normalized['complete_sections'] = True
     return validate_profile(payload['profile']), normalized
 
 

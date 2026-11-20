@@ -1085,6 +1085,7 @@ class AutomationJobs:
                                        'facts': shown_facts, 'summary': how, 'confirmed_projects': confirmed}}
             packet['target']['automation_owner'] = job['owner']
             packet['target']['automation_id'] = job['id']
+            packet['target']['complete_sections'] = True
             match = self.workspace.enqueue(json.dumps(packet).encode(), approval=approval)
             notes = json.loads(job['notice'] or '[]')
             if left_out:
