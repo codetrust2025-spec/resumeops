@@ -13,7 +13,7 @@ from unittest.mock import patch
 from xml.sax.saxutils import escape
 from zipfile import ZipFile
 
-from resume_bot.automation import NeedsInput, source_profile
+from resume_bot.automation import CONSENT_VERSION, NeedsInput, source_profile
 from resume_bot.ingest import read_resume_text, repair
 from resume_bot.latex import render
 
@@ -85,6 +85,21 @@ class EmployerDateOnlyTests(unittest.TestCase):
         self.assertTrue(all(e['position'] == '' for e in data['experience']))
         self.assertEqual(data['education'][0]['institution'], 'Example College, Bengaluru')
 
+    def test_numbered_company_name_and_employment_dates_headers(self):
+        source = SOURCE.replace('Company / employer', '5. Company Name').replace(
+            'Employment dates', '6. Employment Dates')
+        data = raw_profile()
+        data['experience'] = []
+        repair(data, source)
+        with patch('resume_bot.automation.extract_profile', return_value=data):
+            result = source_profile(source, object(), evidence_documents=True)
+        self.assertEqual(len(result['experience']), 4)
+        self.assertEqual([(job['start'], job['end']) for job in result['experience']], [
+            ('11 Jul 2022', '08 Apr 2025'), ('23 Aug 2021', '22 Apr 2022'),
+            ('25 Nov 2019', '30 Jun 2021'), ('11 Nov 2015', '08 Aug 2019'),
+        ])
+        self.assertTrue(all(not job['position'] for job in result['experience']))
+
     def test_document_asks_no_job_title_or_start_date_questions_when_dates_are_present(self):
         data = raw_profile()
         repair(data, SOURCE)
@@ -127,6 +142,46 @@ class EmployerDateOnlyTests(unittest.TestCase):
             self.assertNotIn('questions', saved)
             self.assertNotIn('draft', saved)
             self.assertNotIn('extraction', saved)
+
+    def test_dates_only_document_reaches_the_watcher_without_optional_review(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'dashboard'))
+        from automation_jobs import AutomationJobs
+        from resume_dashboard import Workspace
+
+        data = raw_profile()
+        repair(data, SOURCE)
+        owner, identity = 'a' * 64, 'b' * 64
+        with tempfile.TemporaryDirectory() as folder:
+            workspace = Workspace(Path(folder))
+            jobs = AutomationJobs(workspace)
+            with closing(jobs.connection()) as db, db:
+                db.execute("INSERT INTO automation (owner,id,payload,status,created,updated,checkpoints) "
+                           "VALUES (?,?,?,'queued',1,1,?)",
+                           (owner, identity, json.dumps({'role': 'GCP Cloud Engineer', 'extension': 'docx',
+                                                        'consent': CONSENT_VERSION}),
+                            json.dumps({'source': SOURCE})))
+                row = db.execute('SELECT * FROM automation').fetchone()
+            with patch('resume_bot.automation.extract_profile', return_value=data), \
+                    patch('resume_bot.automation.generate', return_value={}), \
+                    patch('resume_bot.generate.generate', return_value={}), \
+                    patch('resume_bot.generate.draft_role_content') as drafts, \
+                    patch('resume_bot.generate.propose_projects') as projects:
+                jobs._prepare(row)
+            drafts.assert_not_called()
+            projects.assert_not_called()
+            result = jobs.list(owner, identity)[0]
+            self.assertNotEqual(result['status'], 'needs_input')
+            queued = list(workspace.private_inbox.glob('*.json'))
+            self.assertEqual(len(queued), 1, result)
+            from resume_bot.automation import verified_automation
+            from resume_bot.claim_audit import records_for
+            packet = json.loads(queued[0].read_text(encoding='utf-8'))
+            profile = packet['profile']
+            [approval] = records_for(workspace.root / 'approvals', queued[0].name)
+            self.assertTrue(verified_automation(profile, packet['target'], approval), profile['summary'])
+            self.assertEqual(profile['headline'], 'GCP Cloud Engineer')
+            self.assertEqual(len(profile['experience']), 4)
+            self.assertTrue(all(not job['position'] for job in profile['experience']))
 
     def test_unrelated_resume_without_employer_table_is_unchanged(self):
         data = raw_profile()

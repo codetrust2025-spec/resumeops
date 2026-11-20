@@ -505,8 +505,10 @@ def summary_problems(text, profile, role_title, years):
     """Every reason a summary is not defensible from the verified facts ([] means acceptable)."""
     problems = []
     words = len(text.split())
-    if not 18 <= words <= 80:
-        problems.append(f'use 18-80 words (now {words})')
+    untitled_work = profile['experience'] and not any(job['position'] for job in profile['experience'])
+    minimum_words = 8 if untitled_work else 18
+    if not minimum_words <= words <= 80:
+        problems.append(f'use {minimum_words}-80 words (now {words})')
     longest = max((len(part.split()) for part in re.split(r'(?<=[.!?])\s+', text)), default=0)
     if longest > 40:
         problems.append('keep each sentence under 40 words; do not copy the responsibilities into one sentence')
@@ -665,7 +667,10 @@ def composed_summary(profile, role_title, years, keywords):
         lead = f'{role_title} candidate with {_years_text(years)} of documented employment history' if years else f'{role_title} candidate with documented employment history'
         sentences.append(lead + '.')
         if skills:
-            sentences.append(f'Documented skills include {_join(skills)}.')
+            sentences.append(f'Works with {_join(skills)}.')
+        if degree:
+            sentences.append(f'Holds a {_degree_phrase(degree)}.')
+        return _fit(sentences, optional)
     elif not positions or years == 0:
         sentences.append((f'{degree} graduate' if degree else 'Early-career candidate') + f' seeking a {role_title} role.')
         project_lines = [b for p in profile.get('projects') or [] for b in split_project(p)[2]]
