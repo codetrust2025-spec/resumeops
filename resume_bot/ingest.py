@@ -28,12 +28,7 @@ def read_resume_text(path, *, minimum_characters=120):
         text = proc.stdout
     elif ext == '.docx':
         try:
-            with zipfile.ZipFile(path) as z:
-                content = z.read('word/document.xml')
-            ns = {'w':'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
-            root=ET.fromstring(content)
-            text='\n'.join(''.join(t.text or '' for t in p.findall('.//w:t',ns))
-                           for p in root.findall('.//w:p',ns))
+            text = _docx_text(path)
         except (KeyError,zipfile.BadZipFile,ET.ParseError) as exc:
             raise ExtractionError('Cannot read DOCX') from exc
     else:
@@ -45,6 +40,55 @@ def read_resume_text(path, *, minimum_characters=120):
     if len(text) > 75_000:
         raise ExtractionError('Source too long; refusing truncation that could lose facts')
     return text
+
+
+W = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+FALLBACK = '{http://schemas.openxmlformats.org/markup-compatibility/2006}Fallback'
+PART_NUMBER = re.compile(r'word/(header|footer)(\d*)\.xml$')
+
+
+def _docx_lines(content):
+    """The paragraphs of one Word part as lines, the way Word shows them: a tab reads as a space and a line break
+    starts a new line. A text box saved twice for old Word versions (mc:Fallback) is read once."""
+    root = ET.fromstring(content)
+    for parent in list(root.iter()):
+        for child in [c for c in parent if c.tag == FALLBACK]:
+            parent.remove(child)
+    def own_text(node, parts):  # a paragraph nested in a text box is skipped here and read on its own
+        for child in node:
+            if child.tag in (W + 'p', W + 'pPr', W + 'rPr'):  # properties hold tab stops, not text
+                continue
+            if child.tag == W + 't':
+                parts.append(child.text or '')
+            elif child.tag == W + 'tab':
+                parts.append(' ')
+            elif child.tag in (W + 'br', W + 'cr'):
+                parts.append('\n')
+            own_text(child, parts)
+        return parts
+
+    lines = []
+    for paragraph in root.iter(W + 'p'):
+        lines.extend(''.join(own_text(paragraph, [])).split('\n'))
+    return lines
+
+
+def _docx_text(path):
+    """A Word document's text: the page header first (where many resumes keep the name, phone, email and links),
+    then the body, then the footer. A header or footer line the body already has is not repeated."""
+    with zipfile.ZipFile(path) as z:
+        body = _docx_lines(z.read('word/document.xml'))
+        parts = sorted((m.group(1), int(m.group(2) or 0), name) for name in z.namelist()
+                       for m in [PART_NUMBER.match(name)] if m)
+        extra = {'header': [], 'footer': []}
+        seen = {' '.join(line.split()).casefold() for line in body if line.strip()}
+        for kind, _, name in parts:
+            for line in _docx_lines(z.read(name)):
+                key = ' '.join(line.split()).casefold()
+                if key and key not in seen:
+                    seen.add(key)
+                    extra[kind].append(line)
+    return '\n'.join(extra['header'] + body + extra['footer'])
 
 
 def _norm(text):
