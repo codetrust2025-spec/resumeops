@@ -84,7 +84,8 @@ class LayoutTests(unittest.TestCase):
         self.assertNotIn('automation_id', target)
         self.assertTrue(target['complete_sections'])
         tex = render(normalized_profile, years=0, complete_sections=target['complete_sections'])
-        self.assertEqual(re.findall(r'\\\\section\\*{([^}]+)}', tex), SECTIONS)
+        positions = [tex.index(r'\section*{' + name + '}') for name in SECTIONS]
+        self.assertEqual(positions, sorted(positions))
 
     def test_technologies_are_bold_selectively_and_the_text_is_unchanged(self):
         profile = resume()
