@@ -3,7 +3,10 @@
 This fixture uses fabricated names and companies solely for tests; the production
 candidate's uploaded evidence is never committed to the repository.
 """
+import json
+import sys
 import tempfile
+from contextlib import closing
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -96,6 +99,34 @@ class EmployerDateOnlyTests(unittest.TestCase):
         self.assertNotIn(r'\textbf{}', tex)
         for job in result['experience']:
             self.assertIn(job['company'], tex)
+
+    def test_existing_eight_question_job_is_automatically_requeued(self):
+        from resume_bot.automation import EXTRACTION_VERSION
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'dashboard'))
+        from automation_jobs import AutomationJobs
+        from resume_dashboard import Workspace
+        with tempfile.TemporaryDirectory() as folder:
+            jobs = AutomationJobs(Workspace(Path(folder)))
+            owner, identity = 'a' * 64, 'b' * 64
+            checkpoint = {'source': SOURCE, 'extraction': 'facts-v4',
+                          'draft': raw_profile(), 'questions': [
+                              {'id': 'experience.0.position', 'field': 'position'}]}
+            with closing(jobs.connection()) as db, db:
+                db.execute("INSERT INTO automation (owner,id,payload,status,created,updated,checkpoints) "
+                           "VALUES (?,?,?,'needs_input',1,1,?)",
+                           (owner, identity, '{"role":"GCP Data Engineer"}',
+                            json.dumps(checkpoint)))
+            jobs._recheck_stale_questions()
+            with closing(jobs.connection()) as db:
+                row = db.execute('SELECT status,checkpoints FROM automation WHERE id=?', (identity,)).fetchone()
+            self.assertNotEqual(EXTRACTION_VERSION, 'facts-v4')
+            self.assertEqual(row['status'], 'queued')
+            saved = json.loads(row['checkpoints'])
+            self.assertEqual(saved['source'], SOURCE)
+            self.assertNotIn('questions', saved)
+            self.assertNotIn('draft', saved)
+            self.assertNotIn('extraction', saved)
 
     def test_unrelated_resume_without_employer_table_is_unchanged(self):
         data = raw_profile()
