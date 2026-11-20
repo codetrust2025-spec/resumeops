@@ -939,6 +939,13 @@ class AutomationJobs:
             # A designation is never a skill, and extraction notes are never resume text (any source, including a
             # resume regenerated from earlier facts).
             positions = [entry['position'] for entry in facts['experience']]
+            # An employer/date-only upload is complete for extraction. Optional AI suggestions
+            # would pause the build and could imply duties or credentials the upload never states.
+            employer_dates_only = (
+                ('documents' in request or request.get('extension') == 'docx')
+                and bool(positions)
+                and all(not entry['position'] and not entry['bullets'] for entry in facts['experience'])
+            )
             facts = {**facts, 'skills': [s for s in facts.get('skills', []) if not is_job_title(s, positions)],
                      'education': [{**entry, 'degree': without_note(entry['degree']) or entry['degree'],
                                     'details': without_note(entry.get('details', ''))} for entry in facts['education']]}
@@ -968,11 +975,12 @@ class AutomationJobs:
             sparse = lambda index, entry: (technical_job(entry['position']) and 2 * len(
                 [line for line in entry['bullets'] if not other_field_tools(line, tools, target)])
                 < draft_lines(index, entry['position']))
-            missing = ([] if checkpoints.get('drafts_reviewed') else
+            missing = ([] if employer_dates_only or checkpoints.get('drafts_reviewed') else
                        [index for index, entry in enumerate(facts['experience'])
                         if not entry['bullets'] or thin(entry) or sparse(index, entry)])
             role_skills = [s for s in facts['skills'] if skill_fits_role(s, target)]
-            need_skills = lacks_role_core(role_skills, target) and checkpoints.get('skills_reviewed') != label
+            need_skills = (not employer_dates_only and lacks_role_core(role_skills, target)
+                           and checkpoints.get('skills_reviewed') != label)
             questions = []
             if missing or need_skills:
                 progress(28, f'AI drafting {label} content for your review')
@@ -1041,7 +1049,7 @@ class AutomationJobs:
                 tailored = checkpoint('tailored', [profile, how])
             profile, how = tailored
             progress(55, 'Role-based summary, skills and evidence order prepared')
-            if not role_projects(facts, target) and not checkpoints.get('projects_reviewed'):
+            if not employer_dates_only and not role_projects(facts, target) and not checkpoints.get('projects_reviewed'):
                 proposals = checkpoints.get('proposals_made')
                 if proposals is None:
                     progress(56, 'Project selection: proposing role-specific projects')

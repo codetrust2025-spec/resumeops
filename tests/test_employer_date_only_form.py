@@ -13,7 +13,7 @@ from unittest.mock import patch
 from xml.sax.saxutils import escape
 from zipfile import ZipFile
 
-from resume_bot.automation import NeedsInput, source_profile
+from resume_bot.automation import CONSENT_VERSION, NeedsInput, source_profile
 from resume_bot.ingest import read_resume_text, repair
 from resume_bot.latex import render
 
@@ -142,6 +142,41 @@ class EmployerDateOnlyTests(unittest.TestCase):
             self.assertNotIn('questions', saved)
             self.assertNotIn('draft', saved)
             self.assertNotIn('extraction', saved)
+
+    def test_dates_only_document_reaches_the_watcher_without_optional_review(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'dashboard'))
+        from automation_jobs import AutomationJobs
+        from resume_dashboard import Workspace
+
+        data = raw_profile()
+        repair(data, SOURCE)
+        owner, identity = 'a' * 64, 'b' * 64
+        with tempfile.TemporaryDirectory() as folder:
+            workspace = Workspace(Path(folder))
+            jobs = AutomationJobs(workspace)
+            with closing(jobs.connection()) as db, db:
+                db.execute("INSERT INTO automation (owner,id,payload,status,created,updated,checkpoints) "
+                           "VALUES (?,?,?,'queued',1,1,?)",
+                           (owner, identity, json.dumps({'role': 'GCP Cloud Engineer', 'extension': 'docx',
+                                                        'consent': CONSENT_VERSION}),
+                            json.dumps({'source': SOURCE})))
+                row = db.execute('SELECT * FROM automation').fetchone()
+            with patch('resume_bot.automation.extract_profile', return_value=data), \
+                    patch('resume_bot.automation.generate', return_value={}), \
+                    patch('resume_bot.generate.generate', return_value={}), \
+                    patch('resume_bot.generate.draft_role_content') as drafts, \
+                    patch('resume_bot.generate.propose_projects') as projects:
+                jobs._prepare(row)
+            drafts.assert_not_called()
+            projects.assert_not_called()
+            result = jobs.list(owner, identity)[0]
+            self.assertNotEqual(result['status'], 'needs_input')
+            queued = list(workspace.private_inbox.glob('*.json'))
+            self.assertEqual(len(queued), 1, result)
+            profile = json.loads(queued[0].read_text(encoding='utf-8'))['profile']
+            self.assertEqual(profile['headline'], 'GCP Cloud Engineer')
+            self.assertEqual(len(profile['experience']), 4)
+            self.assertTrue(all(not job['position'] for job in profile['experience']))
 
     def test_unrelated_resume_without_employer_table_is_unchanged(self):
         data = raw_profile()
