@@ -58,14 +58,14 @@ def verify_completed(page, workspace, candidate, *, education_first, builder):
     text = read_resume_text(downloaded)
     assert candidate in text and 'Python' in text, text
     years = 0 if education_first else request['target']['experience_years']
-    assert matches_pdf_text(text, request['profile'], years), text
+    assert matches_pdf_text(text, request['profile'], years, complete_sections=True), text
     for excluded in ('Unconfirmed Vendor Tool', 'Increased revenue', 'Unbuilt portfolio idea',
                      'Unearned certification', 'Testing', DRAFT['professional_summary']):
         assert excluded not in text, (excluded, text)
-    if education_first:
-        assert 'education' in text.casefold() and 'professional work experience' not in text.casefold()
-    else:
-        assert text.casefold().index('professional work experience') < text.casefold().index('education')
+    sections = ['career objective', 'technical skills', 'professional work experience', 'projects',
+                'certifications', 'education']
+    positions = [text.casefold().index(section) for section in sections]
+    assert positions == sorted(positions), positions
     page.locator('[data-tab="tab-latex"]').click()
     with page.expect_download() as latex:
         page.locator('#download-latex').click()
