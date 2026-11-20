@@ -140,13 +140,30 @@ function addSection([key, title, fields]) {
   byId('auto-lists').append(details);
 }
 
+// The candidate-details fields: the whole form in AI-first mode, and an optional "Add details" section under
+// the upload field (name and phone optional there, since the documents usually state them).
+const manualHome = document.createComment('auto-manual');
+byId('auto-manual').before(manualHome);
+
 function mode() {
   const manual = form.elements.method.value === 'manual';
-  byId('auto-manual').hidden = !manual;
-  byId('auto-manual').disabled = !manual;
+  const fields = byId('auto-manual');
+  if (manual) manualHome.after(fields); else byId('auto-extra-slot').append(fields);
+  fields.hidden = false;
+  fields.disabled = false;
+  fields.classList.toggle('auto-basics-optional', !manual);
+  for (const field of byId('auto-basics').querySelectorAll('input')) field.required = manual;
+  byId('auto-extra').hidden = manual;
   byId('auto-upload').hidden = manual;
   fileControl.disabled = manual;
   return manual;
+}
+
+// True when anything was typed in the details fields (a blank "Add entry" row counts as nothing).
+function typedAnything(info) {
+  return Object.entries(info).some(([key, value]) => Array.isArray(value)
+    ? value.some(row => Object.values(row).some(item => String(item).trim()))
+    : value !== null && String(value).trim() !== '');
 }
 
 function candidate() {
@@ -184,7 +201,9 @@ async function body() {
     }
     documents.push({extension, document: btoa(binary)});
   }
-  return {...data, documents};
+  const typed = candidate();
+  for (const [key] of collections) typed[key] = typed[key].filter(row => Object.values(row).some(v => v.trim()));
+  return typedAnything(typed) ? {...data, documents, candidate: typed} : {...data, documents};
 }
 
 function progress(stage, value, error = '') {
@@ -1087,8 +1106,15 @@ async function init() {
   role.addEventListener('input', roleChanged);
   role.addEventListener('change', roleChanged);
   form.addEventListener('invalid', event => {
-    const details = event.target.closest('details:not([open])');
-    if (details) { details.open = true; event.target.getBoundingClientRect(); }
+    // Open every closed section around the field, and on phones "More details" too, which shows the lists.
+    for (let details = event.target.closest('details'); details; details = details.parentElement.closest('details')) {
+      details.open = true;
+    }
+    if (event.target.closest('#auto-lists')) {
+      const more = event.target.closest('.auto-accordions')?.querySelector(':scope > details');
+      if (more) more.open = true;
+    }
+    event.target.getBoundingClientRect();
   },true);
   mode();
   await ResumeAuth.ready();
