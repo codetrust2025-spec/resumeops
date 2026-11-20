@@ -60,7 +60,7 @@ def validate_profile(data):
             raise ProfileError(f'experience[{i}]: expected object')
         if set(item) - {'company','position','start','end','location','bullets'}:
             raise ProfileError(f'experience[{i}]: unknown fields')
-        entry = {k: _string(item.get(k,''), f'experience[{i}].{k}', k in ('company','position','start'))
+        entry = {k: _string(item.get(k,''), f'experience[{i}].{k}', k in ('company','start'))
                  for k in ('company', 'position','start','end','location')}
         if not isinstance(item.get('bullets',[]), list):
             raise ProfileError(f'experience[{i}].bullets: expected array')
