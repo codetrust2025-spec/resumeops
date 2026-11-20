@@ -220,6 +220,52 @@ class ObjectiveAcrossRolesTests(unittest.TestCase):
                 self.assertIn(entry['name'], text)
 
 
+class SparseJobTests(unittest.TestCase):
+    """A same-field job with only a couple of stated lines gets drafted additions to confirm; a job the candidate
+    described in depth keeps exactly what they wrote."""
+    LINES = ['Built payment APIs in Python and PostgreSQL.', 'Maintained REST services in Django.',
+             'Wrote pytest suites for the payment API endpoints.', 'Added Celery tasks for nightly settlement files.',
+             'Containerized the Django services with Docker for the staging setup.']
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.workspace = Workspace(Path(self.temp.name), code_root=ROOT)
+        self.jobs = AutomationJobs(self.workspace)
+        self.jobs.start = lambda: None
+
+    def questions(self, lines):
+        candidate = {'full_name': 'Asha Example (fictional)', 'phone': '+91 9000000002', 'email': 'asha@example.com',
+                     'skills': 'Python, Django, PostgreSQL, Git',
+                     'work_experience': [{'company': 'Example Cloud (fictional)', 'position': 'Backend Engineer',
+                                          'start': 'Jan 2022', 'end': 'Present', 'responsibilities': '\n'.join(lines)}],
+                     'education': [{'degree': 'B.E. Computer Engineering', 'university': 'Example Institute (fictional)',
+                                    'graduation_year': '2019'}]}
+        ident = self.jobs.enqueue(OWNER, {'consent': CONSENT_VERSION, 'role': 'Python Backend Developer',
+                                          'candidate': candidate})
+        draft = {'roles': [{'index': 0, 'bullets': [
+            'Built FastAPI endpoints in Python for refund requests with Pydantic validation and clear error messages.',
+            'Added Redis caching in front of the Django account lookups so repeated reads skip the database.',
+            'Wrote Django REST Framework serializers for invoice exports used by the finance reporting team.']}],
+            'skills': []}
+        with closing(self.jobs.connection()) as db:
+            row = db.execute('SELECT * FROM automation WHERE id=?', (ident,)).fetchone()
+        with patch('resume_bot.generate.generate', lambda ai, prompt, **_: draft if prompt.startswith('Draft') else
+                   {'projects': []}), patch('resume_bot.automation.generate', return_value={}), \
+                patch.object(self.workspace, 'enqueue', return_value={'name': f'private-{OWNER}-{"7" * 64}.json'}):
+            self.jobs._prepare(row)
+        return self.jobs.list(OWNER, ident)[0].get('questions') or []
+
+    def test_two_stated_lines_get_drafted_additions(self):
+        work = next(q for q in self.questions(self.LINES[:2]) if q['field'] == 'bullets')
+        self.assertTrue(work['drafted'])
+        self.assertEqual(work['value'].split('\n')[:2], self.LINES[:2], "the candidate's own lines come first")
+        self.assertEqual(len(work['value'].split('\n')), 5)
+
+    def test_a_job_described_in_depth_keeps_what_the_candidate_wrote(self):
+        self.assertFalse([q for q in self.questions(self.LINES) if q['field'] == 'bullets'])
+
+
 class ReviewTests(unittest.TestCase):
     """A certification is printed only when the candidate confirms they completed it."""
 
