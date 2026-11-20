@@ -807,7 +807,7 @@ class AutomationJobs:
         from resume_bot.generate import (GENERIC_TOOLS, content_problems, draft_role_content, is_job_title,
                                          lacks_role_core, present_for_role, propose_projects, role_projects,
                                          role_vocabulary, same_field, skill_fits_role, skill_groups, split_project,
-                                         technical_job, without_note, work_skills, named_tools, catalog_terms,
+                                         technical_job, without_note, work_skills, named_tools, catalog_terms, draft_lines,
                                          other_field_tools)
         from resume_bot.workflow import ROLES
         from resume_bot.workflow import matched_terms
@@ -948,8 +948,16 @@ class AutomationJobs:
                                   and (not same_field(entry['position'], label)
                                        or 2 * sum(bool(other_field_tools(line, tools, target)) for line in entry['bullets'])
                                        > len(entry['bullets'])))
+            # A technical job whose own lines for the role cover less than half of the lines it is drafted to (about
+            # eight for the current job, seven for the one before, fewer for older ones) gets drafted additions for
+            # the candidate to confirm: two stated lines never stand for a whole job. Jobs with substantial own
+            # content keep exactly what the candidate wrote.
+            sparse = lambda index, entry: (technical_job(entry['position']) and 2 * len(
+                [line for line in entry['bullets'] if not other_field_tools(line, tools, target)])
+                < draft_lines(index, entry['position']))
             missing = ([] if checkpoints.get('drafts_reviewed') else
-                       [index for index, entry in enumerate(facts['experience']) if not entry['bullets'] or thin(entry)])
+                       [index for index, entry in enumerate(facts['experience'])
+                        if not entry['bullets'] or thin(entry) or sparse(index, entry)])
             role_skills = [s for s in facts['skills'] if skill_fits_role(s, target)]
             need_skills = lacks_role_core(role_skills, target) and checkpoints.get('skills_reviewed') != label
             questions = []
