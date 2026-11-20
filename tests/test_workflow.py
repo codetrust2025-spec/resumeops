@@ -61,7 +61,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn('Describe what you built in at least one project.', described['suggestions'])
         self.assertEqual(described['breakdown'][3]['points'], bare + 5)
         target['experience_years'] = 2
-        self.assertIn('Describe responsibilities for every role.', analyze(profile, target)['suggestions'])
+        self.assertIn('Describe at least three responsibilities for every role.', analyze(profile, target)['suggestions'])
 
     def test_ats_rubric_distinguishes_coverage_from_section_and_evidence_points(self):
         job = targeted()

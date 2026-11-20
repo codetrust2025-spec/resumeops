@@ -139,6 +139,7 @@ class AutomationContract(unittest.TestCase):
                     patch('resume_bot.automation.extract_profile', return_value=make_facts()), \
                     patch('resume_bot.generate.lacks_role_core', return_value=False), \
                     patch('resume_bot.generate.fits_role', return_value=True), \
+                    patch('resume_bot.generate.technical_job', return_value=False), \
                     patch('resume_bot.automation.generate', side_effect=[OllamaError('transient'), {}]):
                 with closing(jobs.connection()) as db:
                     job = db.execute('SELECT * FROM automation').fetchone()

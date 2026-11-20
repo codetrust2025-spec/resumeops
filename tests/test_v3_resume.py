@@ -289,8 +289,9 @@ class WorkflowTests(unittest.TestCase):
     def proposal(self, name):
         return {'name': name, 'problem': 'Track orders.', 'stack': ['Java 17', 'Spring Boot', 'PostgreSQL'],
                 'architecture': 'REST service.', 'features': ['Orders'], 'responsibilities': 'API and tests.',
-                'bullets': ['Designed REST endpoints for orders.', 'Mapped entities with Spring Data JPA.',
-                            'Wrote JUnit 5 tests for services.']}
+                'bullets': ['Designed REST endpoints for creating and tracking customer orders with Spring Boot.',
+                            'Mapped order and payment entities to PostgreSQL tables with Spring Data JPA.',
+                            'Wrote JUnit 5 tests for the order services and the payment validation rules.']}
 
     def test_projects_pause_for_review_and_only_confirmed_ones_are_published(self):
         self.prepare(proposals=[self.proposal('Order Service'), self.proposal('Inventory Service')])
