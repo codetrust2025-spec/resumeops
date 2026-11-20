@@ -7,6 +7,7 @@ const role = form.elements.role;
 const customRole = byId('auto-custom-role');
 const CUSTOM = 'Custom Role';
 const required = [['full_name','Full name'], ['phone','Phone','tel']];
+const PLACEHOLDERS = {full_name: 'Enter full name', phone: 'Enter phone number'};
 const optional = [['email','Email (optional)','email'],
   ['years_of_experience','Years of experience (optional)','number'],
   ['location','Location'], ['current_company','Current company'],
@@ -73,6 +74,7 @@ function input([key, label, type = 'text'], mandatory = false) {
   if (type === 'textarea') { field.rows = 3; field.maxLength = 3000; node.classList.add('auto-wide'); }
   else { field.type = type; field.maxLength = 250; }
   field.required = mandatory;
+  if (PLACEHOLDERS[key]) field.placeholder = PLACEHOLDERS[key];
   if (mandatory) field.setAttribute('aria-label', label);  // the name without the visual '*'
   if (type === 'number') { field.min = '0'; field.max = '60'; field.step = '0.5'; }
   node.append(field);

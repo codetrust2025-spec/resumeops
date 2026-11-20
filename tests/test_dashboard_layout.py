@@ -258,6 +258,8 @@ class DashboardLayoutTests(unittest.TestCase):
                         'documents come before the target role')
         page.get_by_label('Target role').fill('React.js Developer')
         page.get_by_label('AI-first').check()
+        self.assertTrue(page.get_by_placeholder('Enter full name').is_visible())
+        self.assertTrue(page.get_by_placeholder('Enter phone number').is_visible())
         page.get_by_label('Full name').fill('Kiran Example (fictional)')
         page.get_by_label('Phone', exact=True).fill('+91 90000 00000')
         page.locator('#auto-background').fill('Worked at Example Works as Frontend Developer from 2023.')
