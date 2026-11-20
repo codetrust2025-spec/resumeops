@@ -262,6 +262,8 @@ li[data-status=blocked] .auto-state strong{background:var(--a-red-bg);color:var(
   .auto-choice .ic{display:none}
   .auto-card fieldset.auto-choice{grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:8px}
   .auto-page .auto-choice label{gap:7px;padding:6px 9px;white-space:nowrap;font-size:.85rem}
+  /* Full name and Phone stack so each field (and its placeholder) has the full width. */
+  .auto-grid.auto-basics{grid-template-columns:minmax(0,1fr);gap:12px}
 }
 /* Narrower lists: the status and ATS score stack so every action keeps its label on one line. */
 @container auto-list (max-width:900px){
@@ -359,9 +361,6 @@ li[data-status=blocked] .auto-state strong{background:var(--a-red-bg);color:var(
   .auto-stat-progress{grid-column:1/-1;padding:12px 0 0;border-left:0;border-top:1px solid #d3deee}
   .auto-toolbar{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
   .auto-search{grid-column:1/-1}
-}
-@media (max-width:340px){
-  .auto-grid.auto-basics{grid-template-columns:minmax(0,1fr)}
 }
 @media (max-width:520px){
   .auto-head{gap:12px}

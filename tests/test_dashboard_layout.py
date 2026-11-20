@@ -167,6 +167,10 @@ class DashboardLayoutTests(unittest.TestCase):
                 self.assertLessEqual(m['pageX'], 0)
                 self.assertGreaterEqual(m['historyTop'], m['createBottom'] - 1, 'My resumes follows the form')
                 self.assertGreaterEqual(m['submit'], 44, 'touch-friendly')
+                page.get_by_label('AI-first').check()
+                name, phone = page.get_by_label('Full name').bounding_box(), page.get_by_label('Phone', exact=True).bounding_box()
+                self.assertGreaterEqual(phone['y'], name['y'] + name['height'], 'Full name and Phone stack on a phone')
+                self.assertGreaterEqual(phone['width'], 250, 'room for the whole "Enter phone number" placeholder')
                 page.get_by_label('Upload documents').check()
                 self.assertLessEqual(self.measure(page)['pageX'], 0)
                 # Every control of a complete card stays inside the card: nothing overlaps or spills sideways.
