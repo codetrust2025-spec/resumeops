@@ -104,7 +104,8 @@ class _Doc:
     def entry(self, title, place, dates, extra='', muted_place=False):
         """'Title | Place' left, dates right; an optional muted second line."""
         place_tex = r'{\small\color{ink}' + paragraph(place) + '}' if muted_place else paragraph(place)
-        left = r'\textbf{' + paragraph(title) + '}' + (r' \textbar{} ' + place_tex if place else '')
+        left = (r'\textbf{' + paragraph(title) + '}' + (r' \textbar{} ' + place_tex if place else '')
+                if title else r'\textbf{' + paragraph(place) + '}')
         right = r'\hfill{\small\color{ink}' + paragraph(dates) + '}' if dates else ''
         self.raw(left + right + r'\par' + '\n', title, place, dates)
         if extra:

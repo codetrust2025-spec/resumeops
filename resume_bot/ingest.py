@@ -221,7 +221,7 @@ FORM_LABELS = [(key, re.compile(pattern, re.I)) for key, pattern in (
     ('period', r'(?:employment |work(?:ing)? |service |job |experience )?(?:period|duration|tenure|dates?)|working since|'
                r'date of joining|joining date'),
     ('degree', r'(?:highest |educational |education )?(?:qualification|degree)(?: name)?'),
-    ('institution', r'(?:college|university|institute|institution|school)(?: name)?'),
+    ('institution', r'(?:college(?:\s*/\s*university)?|university(?:\s*/\s*college)?|institute|institution|school)(?: name)?'),
     ('education_end', r'(?:education |degree )?(?:completion|passing|passed[- ]?out|pass[- ]?out|graduation)(?: year)?|'
                       r'year of (?:passing|graduation|completion)|education (?:completion |passing |passed[- ]?out )?year'),
     ('skills', r'(?:(?:primary|key|core|main|technical|it|professional)\s+)*skills(?: set)?|technolog(?:y|ies)|'
@@ -339,12 +339,58 @@ def _repair_form(out, source):
         out['skills'] += [skill for skill in _split_list(form['skills']) if skill.casefold() not in known]
 
 
+# Employer/date-only candidate forms deliberately omit historical job titles.
+# The paired rows are facts supplied by the candidate, not model-generated roles.
+EMPLOYMENT_SPAN = re.compile(
+    r'(?P<start>(?:\d{1,2}\s+)?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}|\d{4})'
+    r'\s*[-\u2013\u2014]\s*'
+    r'(?P<end>(?:\d{1,2}\s+)?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}|\d{4}|Present|Current|Ongoing)',
+    re.I)
+
+
+def _repair_employment_table(out, source):
+    """Use exact company/date pairs from the two-column candidate evidence form.
+
+    A model may return company names but blank or confused dates. Never infer a past
+    designation from the selected role. Only a table explicitly headed Company /
+    employer and Employment dates is repaired; ordinary resumes are unaffected.
+    """
+    lines = _lines(source)
+    at = next((i for i in range(len(lines) - 1)
+               if re.fullmatch(r'company\s*/\s*employer', lines[i], re.I)
+               and re.fullmatch(r'employment\s+dates?', lines[i + 1], re.I)), None)
+    if at is None:
+        return
+    entries = []
+    for i in range(at + 2, min(len(lines) - 1, at + 82), 2):
+        company, span = lines[i], lines[i + 1]
+        match = EMPLOYMENT_SPAN.fullmatch(span.strip())
+        if not match or len(company) > 160 or not re.search(r'[A-Za-z]', company):
+            break
+        entries.append({'company': company, 'position': '', 'start': match['start'],
+                        'end': match['end'], 'location': '', 'bullets': []})
+        if len(entries) >= 40:
+            break
+    if not entries:
+        return
+    old = out['experience']
+    for entry in entries:
+        prior = next((job for job in old if _norm(job.get('company')) == _norm(entry['company'])), None)
+        if prior:
+            # Work bullets and positions survive only when explicitly linked to this employer in
+            # the source; these candidate forms supply neither, so do not promote model guesses.
+            entry['bullets'] = [line for line in prior.get('bullets', [])
+                                if any(_norm(line) in _norm(raw) for raw in lines[at + 2:at + 2 + 2 * len(entries)])]
+    out['experience'] = entries
+
+
 def repair(out, source, name_hint=''):
     """Deterministic, verbatim-only fixes for common model slips. Every value set here is copied
     from the source text (or moved between fields) and is never invented."""
     lines = _lines(source)
     head = lines[:6]
     _repair_form(out, source)
+    _repair_employment_table(out, source)
     # One stated date is never both ends of a span ("2019 - 2019" for "..., 2019"). The same value counts
     # as a span only when the resume writes it as one; the year appearing elsewhere (in a job's dates) is
     # not evidence of a span for this entry.
