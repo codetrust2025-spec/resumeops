@@ -21,11 +21,12 @@ from resume_dashboard import Workspace  # noqa: E402
 
 OWNER = 'f' * 64
 GCP_LINES = [
-    'Built BigQuery views that feed the React.js reporting dashboards used by the operations team.',
+    'Built BigQuery views that join order and inventory tables for the operations reporting dashboards.',
     'Developed Dataflow pipelines with Apache Beam to clean event data before loading it into BigQuery.',
     'Configured Pub/Sub topics to stream frontend activity events into Cloud Storage for later analysis.',
     'Wrote Python jobs on Cloud Composer that refresh BigQuery tables behind the internal dashboards.',
     'Tested Dataflow transformations with Python unit tests before releasing changes to the data pipelines.',
+    'Built BigQuery views that feed the React.js reporting dashboards used by the operations team.',  # React: off-role
     'Styled the dashboard layout with React.js and CSS for desktop and mobile screens.',  # no GCP technology
 ]
 
@@ -71,7 +72,7 @@ class DraftDepthTests(unittest.TestCase):
         model = Model()
         with patch('resume_bot.generate.generate', model):
             work, _ = draft_role_content(arun(), role('GCP Data Engineer'), 'GCP Data Engineer', 3, [0], False, object())
-        self.assertEqual(work[0], GCP_LINES[:5], 'five role-focused lines; the line without GCP technology is dropped')
+        self.assertEqual(work[0], GCP_LINES[:5], 'five role-focused lines; lines naming React.js are dropped')
         self.assertTrue(all(line.endswith('.') for line in work[0]))
         self.assertIn('kind "role"', model.prompts[0])
         self.assertNotIn('DemoTech', model.prompts[0], 'the model never sees the employer')
@@ -89,7 +90,9 @@ class DraftDepthTests(unittest.TestCase):
         own = ['Built React.js screens for the order tracking module.']
         with patch('resume_bot.generate.generate', Model()):
             work, _ = draft_role_content(arun(own), role('GCP Data Engineer'), 'GCP Data Engineer', 3, [0], False, object())
-        self.assertEqual(len(work[0]), 4, 'additions fill the job to five lines with the candidate line')
+        # The candidate's React.js line is another field's work: it stays in the facts, is not shown on the GCP
+        # resume and does not take a place, so five GCP lines are drafted.
+        self.assertEqual(len(work[0]), 5)
 
 
 class PresentationDepthTests(unittest.TestCase):
@@ -218,8 +221,14 @@ class ReviewAndResumeTests(unittest.TestCase):
         self.assertEqual(profile['experience'][0]['start'], 'July 2023')
         project_lines = sum(len(p.split(' | ')) - 1 for p in profile.get('projects', []))
         self.assertLessEqual(project_lines, len(bullets), 'projects never outweigh the experience')
-        self.assertIn('Recent work uses', profile['summary'])
+        self.assertTrue(profile['summary'].startswith('GCP Data Engineer with hands-on experience'), profile['summary'])
+        self.assertNotIn('Frontend', profile['summary'], 'the selected role leads; no previous title')
         self.assertIn('B.Tech in Information Technology', profile['summary'])
+        printed = json.dumps({k: profile[k] for k in ('summary', 'skills', 'experience', 'projects')})
+        for other in ('React', 'Redux', 'TypeScript', 'Jest', 'REST APIs'):
+            self.assertNotIn(other, printed.replace('Frontend Developer', ''), f'{other} is not GCP Data Engineer content')
+        for used in ('BigQuery', 'Dataflow', 'Pub/Sub', 'Cloud Composer', 'Cloud Storage', 'Apache Beam'):
+            self.assertIn(used, profile['skills'], f'{used} is used in the confirmed work, so it is a listed skill')
         self.assertTrue(verified_automation(profile, packet['target'], approval), "the builder's check passes")
 
     def test_ats_marks_one_line_per_role_as_underdeveloped(self):

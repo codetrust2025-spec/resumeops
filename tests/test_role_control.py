@@ -243,7 +243,9 @@ class RegenerationTests(unittest.TestCase):
         self.assertEqual(self.row(new)['status'], 'handed_off', self.row(new)['error'])
         packet, approval = json.loads(enqueue.call_args.args[0]), enqueue.call_args.kwargs['approval']
         profile = packet['profile']
-        self.assertEqual(profile['skills'], ['Python', 'SQL', 'BigQuery'])
+        # The confirmed skills, plus the role tools the resume's own project uses (its stack names Dataflow and
+        # Pub/Sub): Technical Skills and Projects tell one story.
+        self.assertEqual(profile['skills'], ['Python', 'SQL', 'BigQuery', 'Dataflow', 'Pub/Sub'])
         self.assertEqual(profile['headline'], 'GCP Data Engineer')
         self.assertEqual(profile['experience'][0]['bullets'], [])
         self.assertEqual(profile['experience'][1]['bullets'],

@@ -307,14 +307,15 @@ function atsDetails(ats) {
   return box;
 }
 
-// Suggested projects: never resume content until the candidate includes (and may edit) one.
-// One reviewable card per suggested project; the candidate includes (as edited) or skips each.
+// Suggested projects: never resume content until the candidate confirms the card. Like the drafted work lines,
+// each starts included as an AI draft; the candidate edits it or chooses Skip, then confirms once.
+// The background (problem, architecture, features) stays folded so the card is short on a phone.
 function proposalCards(job) {
   return job.proposals.map((proposal, index) => {
     const card = element('fieldset');
     card.className = 'auto-proposal';
     card.dataset.index = index;
-    card.append(element('legend', 'Suggested project ' + (index + 1) + ' (AI proposal, not yet confirmed)'));
+    card.append(element('legend', 'Suggested project ' + (index + 1) + ' (AI draft, not yet confirmed)'));
     const name = element('input'); name.name = 'name'; name.value = proposal.name; name.maxLength = 70;
     const nameLabel = element('label', 'Project name'); nameLabel.append(name);
     const facts = element('dl');
@@ -322,6 +323,9 @@ function proposalCards(job) {
       ['Key features', (proposal.features || []).join('; ')], ['Responsibilities', proposal.responsibilities]]) {
       if (value) facts.append(element('dt', term), element('dd', value));
     }
+    const about = element('details');
+    about.className = 'auto-about';
+    about.append(element('summary', 'About this project'), facts);
     const stack = element('input'); stack.name = 'stack'; stack.value = proposal.stack.join(', '); stack.maxLength = 300;
     const stackLabel = element('label', 'Tech stack (comma separated)'); stackLabel.append(stack);
     const bullets = element('textarea'); bullets.name = 'bullets'; bullets.rows = 4; bullets.maxLength = 1500;
@@ -332,9 +336,10 @@ function proposalCards(job) {
     for (const [value, text] of [['include', 'I built this: include it'], ['skip', 'Skip']]) {
       const option = element('label'); const radio = element('input');
       radio.type = 'radio'; radio.name = 'decision-' + index; radio.value = value;
+      radio.checked = value === 'include';
       option.append(radio, ' ' + text); choice.append(option);
     }
-    card.append(nameLabel, facts, stackLabel, bulletsLabel, choice);
+    card.append(nameLabel, stackLabel, bulletsLabel, choice, ...(facts.children.length ? [about] : []));
     return card;
   });
 }
@@ -467,8 +472,11 @@ function answerForm(job) {
     const field = element(multiline ? 'textarea' : 'input');
     field.name = question.id;
     if (field.tagName === 'INPUT') field.type = question.field === 'email' ? 'email' : 'text';
-    else field.rows = question.field === 'bullets' ? 4 : question.field === 'skills' ? 2 : 3;
-    field.maxLength = question.field === 'source_text' ? 7500 : DRAFTED.has(question.field) ? 1500 : 250;
+    // Drafted work lines show whole (no scrolling inside the box on a phone), up to eight rows.
+    else field.rows = question.field === 'bullets' ? Math.min(8, Math.max(3, (question.value || '').split('\n').length))
+      : question.field === 'skills' ? 2 : 3;
+    field.maxLength = question.field === 'source_text' ? 7500 : question.field === 'bullets' ? 2400
+      : DRAFTED.has(question.field) ? 1500 : 250;
     field.required = !DRAFTED.has(question.field);
     field.value = question.value || '';
     const hint = element('span', question.explanation);

@@ -85,7 +85,7 @@ FIELD_NAMES = {'full_name': 'full name', 'email': 'email address', 'phone': 'pho
 ANSWER_LIMIT = 250
 # Work lines and skills arrive as AI drafts the candidate keeps, edits or clears: several lines, and optional
 # (an empty answer lists the job without lines, or the resume without a skills section).
-DRAFTED_FIELDS = {'bullets': (6, 240, 1500), 'skills': (20, 60, 1500)}  # max items, item length, total
+DRAFTED_FIELDS = {'bullets': (10, 240, 2400), 'skills': (20, 60, 1500)}  # max items, item length, total
 # Said under each question, so the answer goes in the right field.
 FIELD_HINTS = {'phone': ' Include the country code, for example +91 98765 43210.',
                'email': ' Correct it so recruiters can reach you.',

@@ -289,9 +289,8 @@ class DashboardLayoutTests(unittest.TestCase):
         self.assertTrue(row.locator('label.auto-drafted').first.is_visible(), 'drafts are marked as AI drafts')
         work.fill('Deployed services to Cloud Run with Terraform.')
         row.get_by_label('Work as Associate Engineer at Sample Systems (AI draft)').fill('')  # leave this job without lines
-        row.get_by_role('button', name='Confirm and continue').click()
-        expect(row.locator('.auto-proposal input[type=radio]').first).to_have_attribute('aria-invalid', 'true')
-        self.assertEqual(self.posts, [], 'a project still needs a decision')
+        # A suggested project starts included as an AI draft (one confirmation); the candidate skips this one.
+        expect(row.get_by_label('I built this: include it')).to_be_checked()
         row.get_by_label('Skip').check()
         with page.expect_request('**/api/automation/answer'):
             row.get_by_role('button', name='Confirm and continue').click()
