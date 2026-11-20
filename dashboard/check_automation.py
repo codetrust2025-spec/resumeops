@@ -213,10 +213,10 @@ def check():
                     page.goto(origin)
                     target = page.get_by_label('Target role')
                     target.fill('Full Stack Developer')
-                    page.get_by_label('AI-first: name and phone').check()
+                    page.get_by_label('AI-first').check()
                     page.get_by_label('Full name').fill('Fresher Synthetic')
                     page.get_by_label('Phone', exact=True).fill('+44 7700 900456')
-                    page.get_by_text('Optional details and profiles', exact=True).click()
+                    page.get_by_text('More details', exact=True).click()
                     page.get_by_label('Email (optional)').fill('fresher@example.test')
                     page.get_by_label('Years of experience (optional)').fill('0')
                     # Without confirmed skills the evidence gate would (rightly) ask for them first.
