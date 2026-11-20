@@ -12,55 +12,99 @@
 <script defer src="/automation.js"></script>
 </head>
 <body class="auto-page">
-<header class="auto-nav"><div class="auto-bar"><strong>ResumeOps</strong><a href="#auto-jobs">My resumes</a></div></header>
+<svg class="auto-sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></symbol>
+  <symbol id="i-doc-check" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h6"/><path d="M14 2v6h6"/><path d="M20 8v5"/><path d="M8 13h5"/><path d="M8 9h2"/><path d="M8 17h3"/><path d="m15 19 2 2 4-4"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M11 3.5 12.6 8a2 2 0 0 0 1.2 1.2l4.5 1.6-4.5 1.6a2 2 0 0 0-1.2 1.2L11 18.1l-1.6-4.5a2 2 0 0 0-1.2-1.2L3.7 10.8l4.5-1.6A2 2 0 0 0 9.4 8z"/><path d="M19 3v4"/><path d="M21 5h-4"/><path d="M18.5 16.5v3"/><path d="M20 18h-3"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-briefcase" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/></symbol>
+  <symbol id="i-cap" viewBox="0 0 24 24"><path d="M22 10 12 5 2 10l10 5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/><path d="M22 10v6"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/><path d="m14 4-4 16"/></symbol>
+  <symbol id="i-github" viewBox="0 0 24 24"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></symbol>
+  <symbol id="i-bars" viewBox="0 0 24 24"><rect fill="currentColor" stroke="none" x="4" y="12" width="4" height="8" rx="1"/><rect fill="currentColor" stroke="none" x="10" y="5" width="4" height="15" rx="1"/><rect fill="currentColor" stroke="none" x="16" y="9" width="4" height="11" rx="1"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="m19 6-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle fill="currentColor" stroke="none" cx="12" cy="5" r="1.7"/><circle fill="currentColor" stroke="none" cx="12" cy="12" r="1.7"/><circle fill="currentColor" stroke="none" cx="12" cy="19" r="1.7"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></symbol>
+  <symbol id="i-latex" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="m10 12-2 2.5 2 2.5"/><path d="m14 17 2-2.5-2-2.5"/></symbol>
+  <symbol id="i-file-down" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 12v6"/><path d="m9 15 3 3 3-3"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+</svg>
+<header class="auto-nav">
+  <div class="auto-bar">
+    <a class="auto-brand" href="/"><svg class="ic" aria-hidden="true"><use href="#i-doc"/></svg>ResumeOps</a>
+    <a class="auto-navlink" href="#auto-jobs" aria-current="page"><svg class="ic" aria-hidden="true"><use href="#i-layers"/></svg>My resumes</a>
+  </div>
+</header>
 <main class="auto-dash">
   <section class="auto-panel auto-create" aria-labelledby="auto-create-title">
     <div class="auto-head">
-      <h1 id="auto-create-title">Create a verified resume</h1>
-      <p>Name, phone and target role. AI writes from real evidence and asks before publishing anything it cannot verify.</p>
+      <span class="auto-tile" aria-hidden="true"><svg class="ic"><use href="#i-doc-check"/></svg></span>
+      <div>
+        <h1 id="auto-create-title">Create a verified resume</h1>
+        <p>Generate an AI-verified resume from real evidence and career facts.</p>
+      </div>
     </div>
     <form id="ai-form" class="auto-card">
-      <label>Target role (technology or job role)
-        <input name="role" id="auto-role" list="auto-role-options" maxlength="100" required autocomplete="off"
-               placeholder="Search roles, e.g. Java Backend Developer">
+      <label class="auto-field"><span class="auto-lbl">Target role (technology or job role)<span class="auto-req" aria-hidden="true">*</span></span>
+        <span class="auto-input auto-input-search">
+          <svg class="ic auto-lead" aria-hidden="true"><use href="#i-search"/></svg>
+          <input name="role" id="auto-role" list="auto-role-options" maxlength="100" required autocomplete="off"
+                 placeholder="Search roles, e.g. Java Backend Developer">
+          <svg class="ic auto-trail" aria-hidden="true"><use href="#i-chevron-down"/></svg>
+        </span>
         <span id="auto-role-hint" class="field-hint" aria-live="polite"></span>
       </label>
       <datalist id="auto-role-options"></datalist>
-      <label id="auto-custom-wrap" hidden>Custom role title
+      <label id="auto-custom-wrap" class="auto-field" hidden>Custom role title
         <input id="auto-custom-role" maxlength="100" placeholder="e.g. Kotlin Backend Developer">
       </label>
       <fieldset class="auto-choice">
-        <legend>Candidate evidence</legend>
-        <label><input type="radio" name="method" value="upload"> Upload candidate documents</label>
-        <label><input type="radio" name="method" value="manual" checked> AI-first: name and phone</label>
+        <legend>Candidate evidence<span class="auto-req" aria-hidden="true">*</span></legend>
+        <label><input type="radio" name="method" value="upload"><svg class="ic" aria-hidden="true"><use href="#i-doc"/></svg>Upload candidate documents</label>
+        <label><input type="radio" name="method" value="manual" checked><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg>AI-first: name and phone</label>
       </fieldset>
-      <label id="auto-upload">Candidate evidence documents <span>Upload education records, certificates, experience letters, project details or resumes for one candidate. PDF, DOCX, TXT, JPG or PNG. Up to 10 documents and 12 MB total.</span>
+      <label id="auto-upload" class="auto-field">Candidate evidence documents <span class="auto-note">Upload education records, certificates, experience letters, project details or resumes for one candidate. PDF, DOCX, TXT, JPG or PNG. Up to 10 documents and 12 MB total.</span>
         <input type="file" id="auto-file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png" multiple required>
       </label>
       <fieldset id="auto-manual" hidden disabled>
-        <legend>Candidate details</legend>
-        <div class="auto-grid" id="auto-basics"></div>
-        <label>Existing work or education facts (optional)
+        <legend class="auto-sr">Candidate details</legend>
+        <div class="auto-grid auto-basics" id="auto-basics"></div>
+        <label class="auto-field">Existing work or education facts (optional)
           <textarea id="auto-background" name="background" rows="3" maxlength="7500"
             placeholder="Paste real company, designation, dates, education or completed project facts. AI organizes them, never invents them."></textarea>
         </label>
         <div class="auto-accordions">
-          <details><summary>Optional details and profiles</summary><div class="auto-grid" id="auto-optional"></div></details>
+          <details><summary><svg class="ic auto-chev" aria-hidden="true"><use href="#i-chevron-right"/></svg><svg class="ic" aria-hidden="true"><use href="#i-user"/></svg><span class="auto-sum">Optional details and profiles</span></summary><div class="auto-grid" id="auto-optional"></div></details>
           <div id="auto-lists"></div>
         </div>
       </fieldset>
       <label class="auto-consent"><input id="auto-consent" type="checkbox" required>
         I confirm my submitted facts are accurate. AI drafts from these facts; unverified career claims must not be published.</label>
-      <button id="auto-submit" type="submit" class="primary">Create verified resume</button>
+      <button id="auto-submit" type="submit" class="primary"><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg>Create verified resume</button>
     </form>
   </section>
   <section id="auto-jobs" class="auto-panel auto-history-panel" aria-labelledby="auto-jobs-title">
     <div class="auto-history-head">
-      <h2 id="auto-jobs-title">My resumes</h2>
-      <span id="auto-count" class="auto-count" aria-live="polite"></span>
-      <button id="auto-delete-all" type="button" hidden>Delete all</button>
-      <span id="auto-delete-status" role="status"></span>
+      <div>
+        <h2 id="auto-jobs-title">My resumes</h2>
+        <p>Manage, preview, and download your verified resumes.</p>
+      </div>
+      <button id="auto-delete-all" type="button" hidden><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg>Delete all</button>
     </div>
+    <span id="auto-delete-status" role="status"></span>
     <dialog id="auto-delete-dialog" class="auto-dialog" aria-labelledby="auto-delete-title" aria-describedby="auto-delete-text">
       <form id="auto-delete-form">
         <h3 id="auto-delete-title">Permanently delete all resumes?</h3>
@@ -75,37 +119,57 @@
         </div>
       </form>
     </dialog>
+    <div class="auto-stats" id="auto-stats">
+      <div class="auto-stat">
+        <span class="auto-stat-icon" aria-hidden="true"><svg class="ic"><use href="#i-bars"/></svg></span>
+        <div><strong id="auto-count" class="auto-stat-value"><span>0</span> resumes</strong><span>Total created</span></div>
+      </div>
+      <div class="auto-stat">
+        <span class="auto-stat-icon auto-stat-ok" aria-hidden="true"><svg class="ic"><use href="#i-check"/></svg></span>
+        <div><strong id="auto-done" class="auto-stat-value">0 completed</strong><span>Verified and ready</span></div>
+      </div>
+      <div class="auto-stat auto-stat-progress">
+        <span class="auto-meter" aria-hidden="true"><span id="auto-done-bar"></span></span>
+        <span id="auto-done-percent"><b>0%</b> completed</span>
+      </div>
+    </div>
     <section id="auto-status" class="auto-status" hidden aria-live="polite">
       <strong id="auto-stage"></strong>
       <div class="auto-progress"><progress id="auto-progress" max="100" value="0" aria-label="Verified processing progress"></progress><span id="auto-percent">0%</span></div>
       <p id="auto-error" role="alert"></p>
     </section>
     <div class="auto-toolbar" role="search">
-      <label class="auto-search">Search resumes
-        <input type="search" id="auto-search" placeholder="Candidate or role" autocomplete="off">
+      <label class="auto-search"><span class="auto-sr">Search resumes</span>
+        <span class="auto-input auto-input-search">
+          <svg class="ic auto-lead" aria-hidden="true"><use href="#i-search"/></svg>
+          <input type="search" id="auto-search" placeholder="Search resumes (name or role)" autocomplete="off">
+        </span>
       </label>
       <label>Filter by job role
-        <select id="auto-filter-role"><option value="">All roles</option></select>
+        <span class="auto-input auto-input-select"><select id="auto-filter-role"><option value="">All roles</option></select><svg class="ic auto-trail" aria-hidden="true"><use href="#i-chevron-down"/></svg></span>
       </label>
       <label>Filter by status
-        <select id="auto-filter-status">
+        <span class="auto-input auto-input-select"><select id="auto-filter-status">
           <option value="">All statuses</option>
           <option value="needs_input">Needs your input</option>
           <option value="active">In progress</option>
           <option value="complete">Complete</option>
           <option value="blocked">Needs attention</option>
-        </select>
+        </select><svg class="ic auto-trail" aria-hidden="true"><use href="#i-chevron-down"/></svg></span>
       </label>
     </div>
     <div class="auto-history" id="auto-history">
-      <p id="auto-empty">No submissions yet.</p>
+      <p id="auto-empty">No resumes yet. Create your first verified resume.</p>
       <ul id="auto-job-list"></ul>
     </div>
-    <nav class="auto-pager" aria-label="Resume history pages">
-      <button type="button" id="auto-prev" class="secondary small" aria-label="Previous page">Previous</button>
+    <div class="auto-footer">
       <span id="auto-page" aria-live="polite"></span>
-      <button type="button" id="auto-next" class="secondary small" aria-label="Next page">Next</button>
-    </nav>
+      <nav class="auto-pager" id="auto-pager" aria-label="Resume history pages" hidden>
+        <button type="button" id="auto-prev" aria-label="Previous page"><svg class="ic" aria-hidden="true"><use href="#i-chevron-left"/></svg></button>
+        <span id="auto-pages"></span>
+        <button type="button" id="auto-next" aria-label="Next page"><svg class="ic" aria-hidden="true"><use href="#i-chevron-right"/></svg></button>
+      </nav>
+    </div>
   </section>
 </main>
 </body>
