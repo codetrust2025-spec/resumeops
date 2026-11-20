@@ -28,8 +28,10 @@ def _form_lines(value, label, limit, commas=False):
     return list(dict.fromkeys(item for item in (clean_bullet(' '.join(p.split())) for p in parts) if item))
 
 
-def attested_profile(candidate):
-    """The 'Enter details' form, as attested facts. The candidate states every line; nothing is added."""
+def attested_profile(candidate, entries_required=True):
+    """The 'Enter details' form, as attested facts. The candidate states every line; nothing is added.
+    entries_required=False: the work or education may come from the candidate's note instead, so every typed
+    field is still checked now (a mistake is reported on submit), without requiring a typed entry."""
     from copy import deepcopy
 
     from .ai_first import validate_intake
@@ -70,7 +72,64 @@ def attested_profile(candidate):
     profile['certifications'] = extras['certifications']
     if extras['achievements']:
         profile['achievements'] = extras['achievements']
-    return validate_profile(profile)
+    if entries_required or profile['experience'] or profile['education']:
+        return validate_profile(profile)
+    stand_in = [{'institution': 'Stand-in', 'degree': 'Stand-in'}]  # only to check the other fields
+    checked = validate_profile({**profile, 'education': stand_in})
+    checked['education'] = []
+    return checked
+
+
+def merge_attested(facts, attested):
+    """Facts read from the candidate's note plus every field they typed in the form, which are attested
+    exactly as on the form-only path. Nothing typed is dropped and nothing is added. An explicitly typed
+    contact or profile field replaces a quote from the note. Lists are joined without duplicates, and a
+    typed job or education entry that the note also describes gains the typed details and work lines.
+    Merging twice gives the same result."""
+    return validate_profile(_merge_typed(facts, attested))
+
+
+def _merge_typed(facts, attested):
+    """merge_attested without the final profile check (used while questions may still be open)."""
+    from .generate import split_project
+
+    merged = copy.deepcopy(facts)
+    norm = lambda text: ' '.join(str(text or '').split()).casefold()
+    for field in ('location', 'current_company', 'linkedin', 'github', 'portfolio'):
+        if attested.get(field):
+            merged[field] = attested[field]
+    for field in ('skills', 'certifications', 'achievements', 'coding_platforms'):
+        values = list(merged.get(field) or [])
+        seen = {norm(value) for value in values}
+        for value in attested.get(field) or []:
+            if norm(value) not in seen:
+                seen.add(norm(value))
+                values.append(value)
+        if values:
+            merged[field] = values
+    projects = list(merged.get('projects') or [])
+    names = {norm(split_project(project)[0]) for project in projects}
+    for project in attested.get('projects') or []:
+        if norm(split_project(project)[0]) not in names:
+            names.add(norm(split_project(project)[0]))
+            projects.append(project)
+    if projects:
+        merged['projects'] = projects
+    for section, keys in (('experience', ('company', 'position')), ('education', ('institution', 'degree'))):
+        entries = list(merged.get(section) or [])
+        for typed in attested.get(section) or []:
+            same = next((entry for entry in entries if all(norm(entry.get(k)) == norm(typed.get(k)) for k in keys)), None)
+            if same is None:
+                entries.append(copy.deepcopy(typed))
+                continue
+            for field, value in typed.items():
+                if field == 'bullets':
+                    have = {norm(line) for line in same.get('bullets') or []}
+                    same['bullets'] = list(same.get('bullets') or []) + [line for line in value if norm(line) not in have]
+                elif value and not same.get(field):
+                    same[field] = value
+        merged[section] = entries
+    return merged
 
 
 def select_target(title):
@@ -133,7 +192,8 @@ def _describe(entry, section):
     return ' '.join(words)
 
 
-def source_profile(source, ai, on_progress=None, notices=None, identity=None, evidence_documents=False):
+def source_profile(source, ai, on_progress=None, notices=None, identity=None, evidence_documents=False,
+                   attested=None):
     """Verified facts from a resume, keeping every entry it lists.
 
     A fact the resume does not state, or does not tie to its entry, is never completed or guessed.
@@ -238,9 +298,12 @@ def source_profile(source, ai, on_progress=None, notices=None, identity=None, ev
                 ask('education', index, field,
                     'The resume shows this degree and institution in different places. Confirm or correct it.',
                     entry, suggest=True)
-    if not evidence_documents and not draft['experience'] and not draft['education']:
+    # attested: fields the candidate typed in the form beside this note. Typed work or education counts here,
+    # so a note that only adds skills, projects or certifications is still read.
+    typed_entries = bool(attested and (attested.get('experience') or attested.get('education')))
+    if not evidence_documents and not typed_entries and not draft['experience'] and not draft['education']:
         raise ExtractionError('No work history or education could be read from this resume. '
-                              'Choose "Enter details" to type them, or upload a different file.')
+                              'Add your work or education facts, or upload a different file.')
 
     # A term found in a target description or a future plan is not candidate evidence.
     # Require affirmative list entries in the appropriate source section.
@@ -283,6 +346,10 @@ def source_profile(source, ai, on_progress=None, notices=None, identity=None, ev
         ask('profile', None, 'certifications',
             'Your documents include a certificate, but its credential title could not be verified. '
             'Enter the earned title exactly as printed. Separate multiple titles with commas.')
+    if attested:
+        # Joined after the note's own lists are filtered, so the typed values (attested) are never filtered
+        # out, and any question below already includes them.
+        draft = _merge_typed(draft, attested)
     _ask_what_validation_rejects(draft, questions, ask)
     if questions:
         raise NeedsInput(draft, questions)
