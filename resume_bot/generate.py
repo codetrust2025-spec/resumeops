@@ -319,7 +319,7 @@ def present_for_role(facts, target, role_title, origin_bullets=None):
                 off_role.append((line, foreign))
             elif not same and target_tech and ' '.join(line.split()).casefold() not in origin:
                 left.append(f'work line at {job["company"]} naming {", ".join(target_tech[:3])}: {role_title} work is not '
-                            f'claimed in a {job["position"]} job without your own evidence')
+                            f'claimed in {article(job["position"])} {job["position"]} job without your own evidence')
             elif _near_duplicate(line, shown):
                 left.append(f'work line at {job["company"]}: repeats another line')
             else:
@@ -653,6 +653,18 @@ def _fit(sentences, optional, limit=80):
     return ' '.join(sentences)
 
 
+def article(phrase):
+    """'an' before a vowel sound, else 'a': an Angular, an AWS, an iOS, an M.Tech, an ML, an SRE;
+    a UI, a .NET, a MERN, a Java, a B.Tech. Letters spoken by name (M.Tech, MCA, SRE) count by their sound."""
+    word = (phrase or '').strip().split(' ')[0]
+    if re.match(r'[AEIOaeio]', word):
+        return 'an'
+    # F, H, L, M, N, R, S, X are said "ef, aitch, el, em, en, ar, es, ex" when spelled out as letters.
+    if re.match(r'[FHLMNRSX](?:[.A-Z]|$)', word) and not re.match(r'(?:MERN|MEAN)\b', word):
+        return 'an'
+    return 'a'
+
+
 def composed_summary(profile, role_title, years, keywords):
     """A plain, defensible career objective built only from verified facts (used when the AI draft fails): one
     paragraph of about four lines, focused on the selected role and the work the candidate confirmed."""
@@ -667,7 +679,8 @@ def composed_summary(profile, role_title, years, keywords):
         if skills:
             sentences.append(f'Documented skills include {_join(skills)}.')
     elif not positions or years == 0:
-        sentences.append((f'{degree} graduate' if degree else 'Early-career candidate') + f' seeking a {role_title} role.')
+        sentences.append((f'{degree} graduate' if degree else 'Early-career candidate')
+                         + f' seeking {article(role_title)} {role_title} role.')
         project_lines = [b for p in profile.get('projects') or [] for b in split_project(p)[2]]
         work = _work_sentence(lines + project_lines, keywords, 'Hands-on work includes')
         if work:
@@ -711,27 +724,30 @@ def composed_summary(profile, role_title, years, keywords):
             if rest:
                 sentences.append(f'Works with {_join(rest)}.')
             if years and degree:
-                sentences.append(f'{_years_text(years)} of professional experience and a {_degree_phrase(degree)}.')
+                phrase = _degree_phrase(degree)
+                sentences.append(f'{_years_text(years)} of professional experience and {article(phrase)} {phrase}.')
             elif years:
                 sentences.append(f'{_years_text(years)} of professional experience.')
             elif degree:
-                sentences.append(f'Holds a {_degree_phrase(degree)}.')
+                phrase = _degree_phrase(degree)
+                sentences.append(f'Holds {article(phrase)} {phrase}.')
             degree = ''
         else:
             sentences.append(f'{positions[0]}' + (f' with {_years_text(years)} of professional experience' if years
-                                                  else '') + f', moving into a {role_title} role.')
+                                                  else '') + f', moving into {article(role_title)} {role_title} role.')
             if used:
                 sentences.append(f'Recent work uses {_join(used)}.')
             rest = [s for s in skills if s not in used]
             if rest:
                 sentences.append(f'Transferable, hands-on skills include {_join(rest)}.')
     if degree and positions and years:
-        sentences.append(f'Holds a {_degree_phrase(degree)}.')
+        phrase = _degree_phrase(degree)
+        sentences.append(f'Holds {article(phrase)} {phrase}.')
     text = _fit(sentences, optional)
     if len(text.split()) >= 18:
         return text
     return text + (f' Focused on {role_title} work.' if text.startswith(role_title + ' with hands-on')
-                   else f' Seeking to apply these skills as a {role_title}.')
+                   else f' Seeking to apply these skills as {article(role_title)} {role_title}.')
 
 
 def _prose(term):
