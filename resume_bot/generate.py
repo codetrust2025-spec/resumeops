@@ -561,6 +561,13 @@ def summary_problems(text, profile, role_title, years):
     # The target role's own title names the goal, not a skill ("Java Backend Developer" does not
     # prove Java): remove it before looking for technology claims.
     scan = re.sub(re.escape(role_title), ' ', text, flags=re.IGNORECASE)
+    # Likewise the candidate's own degree, as stated or as a sentence reads it ("B.Sc in Statistics"): it states the
+    # education, not work. Read as a work claim, "Holds a B.Sc in Statistics." failed every career-change resume of a
+    # Statistics graduate at the watcher's final check, so it was never published.
+    for entry in profile['education']:
+        for form in sorted({entry.get('degree') or '', _degree_phrase(entry.get('degree') or '')}, key=len, reverse=True):
+            if len(form) > 2:
+                scan = re.sub(r'(?<!\w)' + re.escape(form) + r'(?!\w)', ' ', scan, flags=re.IGNORECASE)
     unsupported = [term for term in matched_terms(catalog_terms(), scan) if not matched_terms([term], evidence)]
     if unsupported:
         problems.append('mentions technology the resume does not support: ' + ', '.join(unsupported[:5]))
