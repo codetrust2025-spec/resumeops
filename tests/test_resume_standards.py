@@ -66,6 +66,15 @@ class LayoutTests(unittest.TestCase):
         self.assertLess(fresher.index(r'\section*{Certifications}'), fresher.index(r'\section*{Education}'))
         self.assertLess(fresher.index(r'\section*{Education}'), fresher.index(r'\section*{Professional Work Experience}'))
 
+    def test_new_generation_uses_all_sections_in_order_even_without_claims(self):
+        profile = resume(experience=[], projects=[], certifications=[])
+        tex = render(profile, years=0, complete_sections=True)
+        sections = re.findall(r'\\section\*{([^}]+)}', tex)
+        self.assertEqual(sections, SECTIONS)
+        text = ' '.join(expected_text(profile, 0, complete_sections=True))
+        self.assertTrue(matches_pdf_text(text, profile, 0, complete_sections=True))
+        self.assertFalse(matches_pdf_text(text, profile, 0))
+
     def test_technologies_are_bold_selectively_and_the_text_is_unchanged(self):
         profile = resume()
         tex = render(profile, years=3)
@@ -104,8 +113,8 @@ class LayoutTests(unittest.TestCase):
 
 
 class ExperienceDepthTests(unittest.TestCase):
-    def test_recent_jobs_get_seven_or_eight_lines_and_older_or_short_ones_fewer(self):
-        self.assertEqual([draft_lines(rank, 'Software Engineer') for rank in range(5)], [8, 7, 5, 4, 4])
+    def test_regular_jobs_get_seven_or_eight_lines_and_short_ones_fewer(self):
+        self.assertEqual([draft_lines(rank, 'Software Engineer') for rank in range(5)], [8, 7, 7, 7, 7])
         self.assertEqual(draft_lines(0, 'Software Engineer Intern'), 4)
         self.assertEqual(draft_lines(1, 'Freelance Developer'), 4)
 

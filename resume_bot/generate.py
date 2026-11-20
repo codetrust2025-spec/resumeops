@@ -1010,16 +1010,14 @@ def technical_job(position):
 
 
 DRAFT_LINES = 8  # the most recent job; earlier and shorter jobs take fewer (draft_lines)
-# Lines per job by recency: about eight for the current job and seven for the one before, then fewer for older
-# jobs, whose details the candidate supports least, so a long career still fits the two-page limit.
-LINES_BY_RANK = (8, 7, 5, 4)
 SHORT_STINT = re.compile(r'\b(?:intern|internship|trainee|apprentice|freelance|part[- ]time)\b', re.IGNORECASE)
 
 
 def draft_lines(rank, position):
     """How many lines the job at ``rank`` (0 = most recent) is drafted to, whatever the years of experience."""
-    lines = LINES_BY_RANK[min(rank, len(LINES_BY_RANK) - 1)]
-    return min(lines, 4) if SHORT_STINT.search(position or '') else lines
+    if SHORT_STINT.search(position or ''):
+        return 4
+    return DRAFT_LINES if rank == 0 else 7
 
 
 def draft_role_content(profile, target, role_title, years, missing, need_skills, ai, on_progress=None):

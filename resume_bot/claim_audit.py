@@ -77,14 +77,14 @@ def records_for(folder, job):
     return records
 
 
-def matches_pdf_text(observed, profile, years):
+def matches_pdf_text(observed, profile, years, *, complete_sections=False):
     """The compiled PDF says exactly what the approved profile says, in the template's order."""
     from .latex import expected_text
 
     def tokens(text):
         return re.findall(r"\w+(?:[.'@+#/-]\w+|[+#](?!\w))*|[%$]", normalize(text))
 
-    expected = tokens(' '.join(expected_text(profile, years)))
+    expected = tokens(' '.join(expected_text(profile, years, complete_sections=complete_sections)))
     joined = re.sub(r'(?<=\w)-[ \t]*\r?\n[ \t]*(?=\w)', '', observed)
     return tokens(observed) == expected or tokens(joined) == expected
 
