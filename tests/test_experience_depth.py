@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from resume_bot.ats import score as ats_score  # noqa: F401  (imported to keep the module under test explicit)
 from resume_bot.automation import CONSENT_VERSION, verified_automation
-from resume_bot.generate import composed_summary, draft_role_content, present_for_role, technical_job
+from resume_bot.generate import composed_summary, draft_role_content, present_for_role, propose_projects, technical_job
 from resume_bot.workflow import analyze
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -102,6 +102,69 @@ class PresentationDepthTests(unittest.TestCase):
         kept = shown['experience'][0]['bullets']
         self.assertIn(lines[0], kept)
         self.assertEqual(len(kept), 3, "the candidate's own lines are kept until the job has three")
+
+
+class ProposalTests(unittest.TestCase):
+    """Release 02c7899 was rolled back: an experienced candidate (fictional Asha Example, Python Backend Developer)
+    got no project to review, because the model's short complete sentences were rejected and only two proposals
+    were considered. A proposal that fails validation must never leave the candidate without any."""
+    REJECTED = {'name': 'Travel Booking API', 'stack': ['FastAPI', 'PostgreSQL', 'Celery', 'Redis'], 'bullets': [
+        'Designed API endpoints for booking and managing travel reservations.',
+        'Integrated Celery and Redis for background job processing and real-time updates.',
+        'Wrote unit tests with pytest to ensure API reliability.',  # pytest is outside the stack
+        'Deployed application using Docker and Kubernetes for container orchestration.']}  # so is Docker
+    SHORT = {'name': 'Microservices Ecosystem', 'stack': ['Django', 'Kubernetes', 'PostgreSQL', 'Redis'], 'bullets': [
+        'Developed Django services with REST APIs for service communication.',
+        'Managed Kubernetes deployments for the Django services.',
+        'Ensured database consistency with PostgreSQL.',  # five words: dropped
+        'Integrated Redis for caching and session management.']}  # seven words: a complete sentence, kept
+    THIRD = {'name': 'Order Reporting Service', 'stack': ['Django', 'PostgreSQL', 'Celery'], 'bullets': [
+        'Built Django REST endpoints that return daily order summaries from PostgreSQL.',
+        'Scheduled Celery tasks that rebuild the order summary tables every night.',
+        'Wrote Django unit tests for the summary endpoints and the scheduled tasks.']}
+
+    def setUp(self):
+        self.asha = {'full_name': 'Asha Example', 'skills': ['Python', 'SQL', 'Django', 'Kubernetes'],
+                     'experience': [{'company': 'Example Cloud Pvt Ltd', 'position': 'Senior Backend Engineer',
+                                     'start': 'Jan 2022', 'end': 'Present', 'location': '',
+                                     'bullets': ['Built payment APIs in Python and PostgreSQL.']}],
+                     'education': []}
+
+    def propose(self, *responses, profile=None):
+        prompts, replies = [], list(responses)
+
+        def model(ai, prompt, **_):
+            prompts.append(prompt)
+            context = {'problem': 'Fictional practice.', 'architecture': 'Service.', 'features': ['Orders'],
+                       'responsibilities': 'Backend.'}
+            return {'projects': [{**context, **item} for item in replies.pop(0)]}
+        with patch('resume_bot.generate.generate', model):
+            kept = propose_projects(profile or self.asha, role('Python Backend Developer'), 'Python Backend Developer',
+                                    7, object())
+        return kept, prompts
+
+    def test_short_complete_sentences_are_kept_and_a_spare_proposal_is_asked_for(self):
+        kept, prompts = self.propose([self.REJECTED, self.SHORT, self.THIRD])
+        self.assertEqual([p['name'] for p in kept], ['Microservices Ecosystem', 'Order Reporting Service'])
+        self.assertIn('Integrated Redis for caching and session management.', kept[0]['bullets'])
+        self.assertNotIn('Ensured database consistency with PostgreSQL.', kept[0]['bullets'])
+        self.assertTrue(prompts[0].startswith('Propose 3 '), 'one spare, so a rejected proposal leaves two')
+        self.assertEqual(len(prompts), 1)
+
+    def test_an_experienced_candidate_gets_two_and_a_fresher_three(self):
+        kept, _ = self.propose([self.SHORT, self.THIRD, {**self.THIRD, 'name': 'Invoice Export Service'}])
+        self.assertEqual(len(kept), 2)
+        fresher = {**self.asha, 'experience': []}
+        kept, _ = self.propose([self.SHORT, self.THIRD, {**self.THIRD, 'name': 'Invoice Export Service'}], profile=fresher)
+        self.assertEqual(len(kept), 3)
+
+    def test_when_every_proposal_is_rejected_the_model_is_asked_once_more(self):
+        kept, prompts = self.propose([self.REJECTED], [self.SHORT])
+        self.assertEqual([p['name'] for p in kept], ['Microservices Ecosystem'])
+        self.assertEqual(len(prompts), 2)
+        self.assertIn('previous proposals were rejected', prompts[1])
+        kept, prompts = self.propose([self.REJECTED], [self.REJECTED])
+        self.assertEqual((kept, len(prompts)), ([], 2), 'no project rather than an unsupported one; one retry only')
 
 
 class ReviewAndResumeTests(unittest.TestCase):
