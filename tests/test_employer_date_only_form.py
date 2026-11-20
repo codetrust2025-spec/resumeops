@@ -85,6 +85,21 @@ class EmployerDateOnlyTests(unittest.TestCase):
         self.assertTrue(all(e['position'] == '' for e in data['experience']))
         self.assertEqual(data['education'][0]['institution'], 'Example College, Bengaluru')
 
+    def test_numbered_company_name_and_employment_dates_headers(self):
+        source = SOURCE.replace('Company / employer', '5. Company Name').replace(
+            'Employment dates', '6. Employment Dates')
+        data = raw_profile()
+        data['experience'] = []
+        repair(data, source)
+        with patch('resume_bot.automation.extract_profile', return_value=data):
+            result = source_profile(source, object(), evidence_documents=True)
+        self.assertEqual(len(result['experience']), 4)
+        self.assertEqual([(job['start'], job['end']) for job in result['experience']], [
+            ('11 Jul 2022', '08 Apr 2025'), ('23 Aug 2021', '22 Apr 2022'),
+            ('25 Nov 2019', '30 Jun 2021'), ('11 Nov 2015', '08 Aug 2019'),
+        ])
+        self.assertTrue(all(not job['position'] for job in result['experience']))
+
     def test_document_asks_no_job_title_or_start_date_questions_when_dates_are_present(self):
         data = raw_profile()
         repair(data, SOURCE)

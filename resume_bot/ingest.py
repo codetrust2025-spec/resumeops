@@ -352,13 +352,13 @@ def _repair_employment_table(out, source):
     """Use exact company/date pairs from the two-column candidate evidence form.
 
     A model may return company names but blank or confused dates. Never infer a past
-    designation from the selected role. Only a table explicitly headed Company /
-    employer and Employment dates is repaired; ordinary resumes are unaffected.
+    designation from the selected role. Repair only tables with explicit employer
+    and employment date headings.
     """
     lines = _lines(source)
     at = next((i for i in range(len(lines) - 1)
-               if re.fullmatch(r'company\s*/\s*employer', lines[i], re.I)
-               and re.fullmatch(r'employment\s+dates?', lines[i + 1], re.I)), None)
+               if re.fullmatch(r'(?:\d+\.\s*)?(?:company(?:\s+name|\s*/\s*employer)?|employer(?:\s+name)?)', lines[i], re.I)
+               and re.fullmatch(r'(?:\d+\.\s*)?employment\s+dates?', lines[i + 1], re.I)), None)
     if at is None:
         return
     entries = []

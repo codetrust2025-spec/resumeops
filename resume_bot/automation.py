@@ -13,7 +13,7 @@ from .workflow import dated_months, matched_terms, normalize_request, valid_role
 CONSENT_VERSION = 'resumeops-auto-1'
 # Bumped whenever reading facts from a resume improves: a job still waiting on questions from an older
 # version is read again automatically (dashboard automation_jobs), so a fixed defect never strands a user.
-EXTRACTION_VERSION = 'facts-v5'  # recheck pending employer/date-only forms without asking for missing job titles
+EXTRACTION_VERSION = 'facts-v6'  # recheck pending forms with numbered employment table headings
 
 
 SCRATCH_TEXT = {'skills': ('Technical skills', 1500), 'certifications': ('Certifications', 1500),
