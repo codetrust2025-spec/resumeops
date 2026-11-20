@@ -222,7 +222,7 @@ def submission(payload):
         if not candidate.get('work_experience') and not candidate.get('education'):
             background = candidate.get('background') or ''
             if not isinstance(background, str) or len(background) > 7500:
-                raise ValueError('Existing work or education facts must be under 7500 characters.')
+                raise ValueError('Work or education facts must be under 7500 characters.')
             return {'consent': CONSENT_VERSION, 'role': role,
                     'identity': {'full_name': name.strip(), 'phone': phone.strip(), 'email': email.strip()},
                     'background': background.strip()}

@@ -54,15 +54,22 @@
       <span class="auto-tile" aria-hidden="true"><svg class="ic"><use href="#i-doc-check"/></svg></span>
       <div>
         <h1 id="auto-create-title">Create a verified resume</h1>
-        <p>Generate an AI-verified resume from real evidence and career facts.</p>
       </div>
     </div>
     <form id="ai-form" class="auto-card">
-      <label class="auto-field"><span class="auto-lbl">Target role (technology or job role)<span class="auto-req" aria-hidden="true">*</span></span>
+      <fieldset class="auto-choice">
+        <legend class="auto-sr">Candidate evidence</legend>
+        <label><input type="radio" name="method" value="upload" checked><svg class="ic" aria-hidden="true"><use href="#i-doc"/></svg>Upload documents</label>
+        <label><input type="radio" name="method" value="manual"><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg>AI-first</label>
+      </fieldset>
+      <label id="auto-upload" class="auto-field"><span class="auto-lbl">Documents<span class="auto-req" aria-hidden="true">*</span> <span class="auto-note">PDF, DOCX, TXT, JPG, PNG · max 10 files, 12 MB</span></span>
+        <input type="file" id="auto-file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png" multiple required>
+      </label>
+      <label class="auto-field"><span class="auto-lbl">Target role<span class="auto-req" aria-hidden="true">*</span></span>
         <span class="auto-input auto-input-search">
           <svg class="ic auto-lead" aria-hidden="true"><use href="#i-search"/></svg>
           <input name="role" id="auto-role" list="auto-role-options" maxlength="100" required autocomplete="off"
-                 placeholder="Search roles, e.g. Java Backend Developer">
+                 placeholder="e.g. Java Backend Developer">
           <svg class="ic auto-trail" aria-hidden="true"><use href="#i-chevron-down"/></svg>
         </span>
         <span id="auto-role-hint" class="field-hint" aria-live="polite"></span>
@@ -71,28 +78,20 @@
       <label id="auto-custom-wrap" class="auto-field" hidden>Custom role title
         <input id="auto-custom-role" maxlength="100" placeholder="e.g. Kotlin Backend Developer">
       </label>
-      <fieldset class="auto-choice">
-        <legend>Candidate evidence<span class="auto-req" aria-hidden="true">*</span></legend>
-        <label><input type="radio" name="method" value="upload"><svg class="ic" aria-hidden="true"><use href="#i-doc"/></svg>Upload candidate documents</label>
-        <label><input type="radio" name="method" value="manual" checked><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg>AI-first: name and phone</label>
-      </fieldset>
-      <label id="auto-upload" class="auto-field">Candidate evidence documents <span class="auto-note">Upload education records, certificates, experience letters, project details or resumes for one candidate. PDF, DOCX, TXT, JPG or PNG. Up to 10 documents and 12 MB total.</span>
-        <input type="file" id="auto-file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png" multiple required>
-      </label>
       <fieldset id="auto-manual" hidden disabled>
         <legend class="auto-sr">Candidate details</legend>
         <div class="auto-grid auto-basics" id="auto-basics"></div>
-        <label class="auto-field">Existing work or education facts (optional)
+        <label class="auto-field">Work or education facts (optional)
           <textarea id="auto-background" name="background" rows="3" maxlength="7500"
-            placeholder="Paste real company, designation, dates, education or completed project facts. AI organizes them, never invents them."></textarea>
+            placeholder="Company, title, dates, education, projects"></textarea>
         </label>
         <div class="auto-accordions">
-          <details><summary><svg class="ic auto-chev" aria-hidden="true"><use href="#i-chevron-right"/></svg><svg class="ic" aria-hidden="true"><use href="#i-user"/></svg><span class="auto-sum">Optional details and profiles</span></summary><div class="auto-grid" id="auto-optional"></div></details>
+          <details><summary><svg class="ic auto-chev" aria-hidden="true"><use href="#i-chevron-right"/></svg><svg class="ic" aria-hidden="true"><use href="#i-user"/></svg><span class="auto-sum">More details</span></summary><div class="auto-grid" id="auto-optional"></div></details>
           <div id="auto-lists"></div>
         </div>
       </fieldset>
       <label class="auto-consent"><input id="auto-consent" type="checkbox" required>
-        I confirm my submitted facts are accurate. AI drafts from these facts; unverified career claims must not be published.</label>
+        These facts are accurate. Unverified claims won't be published.</label>
       <button id="auto-submit" type="submit" class="primary"><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg>Create verified resume</button>
     </form>
   </section>
@@ -100,7 +99,6 @@
     <div class="auto-history-head">
       <div>
         <h2 id="auto-jobs-title">My resumes</h2>
-        <p>Manage, preview, and download your verified resumes.</p>
       </div>
       <button id="auto-delete-all" type="button" hidden><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg>Delete all</button>
     </div>
@@ -108,8 +106,7 @@
     <dialog id="auto-delete-dialog" class="auto-dialog" aria-labelledby="auto-delete-title" aria-describedby="auto-delete-text">
       <form id="auto-delete-form">
         <h3 id="auto-delete-title">Permanently delete all resumes?</h3>
-        <p id="auto-delete-text">This deletes every resume in My resumes, on every page and filter, with its PDF, LaTeX
-          and generated files. It cannot be undone. A resume still being prepared is kept.</p>
+        <p id="auto-delete-text">Deletes every resume and its files. This cannot be undone. Resumes in progress are kept.</p>
         <label>Type DELETE ALL to confirm
           <input id="auto-delete-phrase" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
         <p id="auto-delete-error" class="auto-dialog-error" role="alert"></p>
@@ -159,7 +156,7 @@
       </label>
     </div>
     <div class="auto-history" id="auto-history">
-      <p id="auto-empty">No resumes yet. Create your first verified resume.</p>
+      <p id="auto-empty">No resumes yet.</p>
       <ul id="auto-job-list"></ul>
     </div>
     <div class="auto-footer">

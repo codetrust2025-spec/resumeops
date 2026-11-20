@@ -100,7 +100,7 @@ function roleChanged() {
   customRole.required = custom;
   const known = catalogNames.some(name => name.toLowerCase() === role.value.trim().toLowerCase());
   byId('auto-role-hint').textContent = custom || !role.value.trim() || known ? '' :
-    'Custom role: keywords come from job-market data instead of the role catalog.';
+    'Custom role';
 }
 
 function selectedRole() {
@@ -467,14 +467,14 @@ function certificationChoices(job) {
   if (!(job.certifications || []).length) return null;
   const box = element('fieldset');
   box.className = 'auto-certs';
-  box.append(element('legend', 'Certifications (optional): tick only those you have completed'));
+  box.append(element('legend', 'Completed certifications (optional)'));
   for (const name of job.certifications) {
     const option = element('label'); const box_ = element('input');
     box_.type = 'checkbox'; box_.value = name; box_.name = 'certification';
     option.append(box_, ' ' + name); box.append(option);
   }
   const other = element('textarea'); other.name = 'other_certifications'; other.rows = 2; other.maxLength = 900;
-  const otherLabel = element('label', 'Other completed certifications (one per line)'); otherLabel.append(other);
+  const otherLabel = element('label', 'Other certifications (one per line)'); otherLabel.append(other);
   box.append(otherLabel);
   return box;
 }
@@ -648,9 +648,9 @@ function showCurrent(jobs) {
   const job = jobs.find(item => item.id === tracked);
   if (!job || pending) { if (!pending && !requestRunning) byId('auto-status').hidden = true; return; }
   if (job.status === 'needs_input') progress('Needs your input', null,
-    (job.questions || []).some(question => question.drafted) ? 'Review the AI drafts under My resumes, then confirm once.'
-      : (job.questions || []).length ? 'Answer the questions under My resumes to continue.'
-        : 'Review the suggested projects under My resumes to continue.');
+    (job.questions || []).some(question => question.drafted) ? 'Review the drafts in My resumes.'
+      : (job.questions || []).length ? 'Answer the questions in My resumes.'
+        : 'Review the suggested projects in My resumes.');
   else if (job.status === 'blocked') progress('Stopped', null, 'See My resumes for the reason.');
   else progress(job.stage, job.percent, job.status === 'retrying' ? retryText(job) : '');
 }
