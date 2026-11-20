@@ -124,7 +124,7 @@
     });
     return initial;
   }
-  async function call(url, init = {}) {
+  async function call(url, init = {}, timeoutMs = 22000) {
     await ready();
     if (waiting) await waiting;
     if (expires && expires - Date.now() < 15000) {
@@ -138,7 +138,7 @@
       let response;
       try {
         response = await fetch(url,{credentials:'same-origin',redirect:'manual',cache:'no-store',
-          signal:AbortSignal.timeout(22000),...init,headers:headers(init.headers)});
+          signal:AbortSignal.timeout(timeoutMs),...init,headers:headers(init.headers)});
       } catch (error) {
         let current;
         try { current = await session(); } catch {}
