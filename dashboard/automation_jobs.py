@@ -379,13 +379,15 @@ class AutomationJobs:
         raw = json.dumps(request, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
         return hashlib.sha256(raw.encode()).hexdigest(), raw
 
-    def insert(self, db, owner, request, source=None, candidate=None, client=None, per_owner=True):
+    def insert(self, db, owner, request, source=None, candidate=None, client=None, per_owner=True, identifier=None):
         """Save a validated request inside the caller's transaction (``BEGIN IMMEDIATE``); the same request from
         the same owner is the same job (never processed twice). Account submissions keep their limits (four in
         progress per account, 24 waiting overall); intake submissions have their own, larger limit, and at most
         INTAKE_CLIENT_LIMIT of them wait at once from one network (``client``). ``per_owner=False``: the operator
-        starting candidates' applications, which the intake limits govern instead of an account's four."""
-        identifier, raw = self.request_id(request)
+        starting candidates' applications, which the intake limits govern instead of an account's four.
+        ``identifier``: the job's own id instead of the request's hash (a new version of an application)."""
+        hashed, raw = self.request_id(request)
+        identifier = identifier or hashed
         if db.execute('SELECT 1 FROM automation WHERE owner=? AND id=?', (owner, identifier)).fetchone():
             return identifier
         pending = db.execute("SELECT count(*) FROM automation WHERE status in ('queued','processing','retrying') AND owner=?",
@@ -991,6 +993,9 @@ class AutomationJobs:
         # A candidate's application (started by the operator, who confirms the drafts on the candidate's behalf):
         # drafts and proposed projects name only the candidate's own technologies (generate.evidence_tools).
         grounded = 'source' in job.keys() and job['source'] == INTAKE_SOURCE
+        # Projects that make suggestions unnecessary: those about the role, or in an application every project the
+        # candidate entered (all of them are printed, see present_for_role keep_own).
+        own_projects = lambda facts: (facts.get('projects') or []) if grounded else role_projects(facts, target)
         checkpoints = json.loads(job['checkpoints'])
         model = Ollama(model=self.workspace.model)
         request = json.loads(job['payload'])
@@ -1177,7 +1182,7 @@ class AutomationJobs:
                     checkpoints['skills_review_role'] = label
             if questions:
                 proposals = []
-                if not role_projects(facts, target) and not checkpoints.get('projects_reviewed'):
+                if not own_projects(facts) and not checkpoints.get('projects_reviewed'):
                     proposals = checkpoints.get('proposals_made')
                     if proposals is None:
                         progress(29, 'Project selection: proposing role-specific projects')
@@ -1215,8 +1220,9 @@ class AutomationJobs:
             progress(40, 'Role keywords and skill areas prepared')
             with closing(self.connection()) as db, db:  # History label for a job submitted before roles were recorded
                 db.execute('UPDATE automation SET role=COALESCE(role,?) WHERE owner=? AND id=?', (intelligence['label'], *key))
-            # The role resume: only what fits the selected role, from the candidate's facts (nothing added).
-            presented, left_out = present_for_role(facts, target, label, origin['bullets'])
+            # The role resume: only what fits the selected role, from the candidate's facts (nothing added). A
+            # candidate's application keeps all of their own facts: they typed them for this role.
+            presented, left_out = present_for_role(facts, target, label, origin['bullets'], keep_own=grounded)
             tailored = checkpoints.get('broad_objective_tailored')
             if tailored is None:
                 profile, how = tailor_role(presented, label, years, intelligence, model,
@@ -1224,7 +1230,7 @@ class AutomationJobs:
                 tailored = checkpoint('broad_objective_tailored', [profile, how])
             profile, how = tailored
             progress(55, 'Role-based summary, skills and evidence order prepared')
-            if not role_projects(facts, target) and not checkpoints.get('projects_reviewed'):
+            if not own_projects(facts) and not checkpoints.get('projects_reviewed'):
                 proposals = checkpoints.get('proposals_made')
                 if proposals is None:
                     progress(56, 'Project selection: proposing role-specific projects')

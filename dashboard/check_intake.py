@@ -207,10 +207,16 @@ def main():
                     db.execute("UPDATE automation SET status='complete', stage='Verified resume ready' WHERE id=?",
                                (identifier,))
                 operator.goto(origin + '/candidates')
-                # A finished resume can be prepared again from the same details (the operator's choice).
-                expect(operator.get_by_role('button', name='Process again')).to_be_visible(timeout=15000)
-                with closing(__import__('sqlite3').connect(database)) as db, db:
-                    db.execute("UPDATE automation SET status='queued', stage='Submission saved' WHERE id=?", (identifier,))
+                # A finished resume can be prepared again from the same details (the operator's choice): a new version,
+                # its own resume linked to the application; the first one stays.
+                operator.get_by_role('button', name='Process again').click(timeout=15000)
+                expect(operator.locator('#cd-message')).to_contain_text('Processing started', timeout=15000)
+                with closing(__import__('sqlite3').connect(database)) as db:
+                    runs = db.execute('SELECT job_id FROM intake_runs WHERE candidate=? ORDER BY started',
+                                      (candidate,)).fetchall()
+                    statuses = dict(db.execute('SELECT id, status FROM automation').fetchall())
+                assert len(runs) == 2 and runs[0][0] == identifier and runs[1][0] != identifier, runs
+                assert statuses[identifier] == 'complete' and statuses[runs[1][0]] == 'queued', statuses
                 operator.reload()
 
                 # The candidate follows it, and downloads the finished resume; nothing else.
@@ -248,7 +254,7 @@ def main():
             server.server_close()
     print('Intake browser acceptance passed: phone form, Word prefill, local draft, private link, nothing processed '
           'before Start, Candidates beside My resumes with its badge (desktop and phone), Share via WhatsApp with the form link, full details, Start processing '
-          'and Process again (typed details as the operator), resume and application linked both ways, the candidate '
+          'and Process again (a new linked version of the typed details), resume and application linked both ways, the candidate '
           'progress and PDF download, corrections flagged for the operator.')
 
 

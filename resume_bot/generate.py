@@ -301,7 +301,7 @@ def _same_start(line, kept, words=4):
     return len(start) == words and any(other.casefold().split()[:words] == start for other in kept)
 
 
-def present_for_role(facts, target, role_title, origin_bullets=None):
+def present_for_role(facts, target, role_title, origin_bullets=None, keep_own=False):
     """The resume for the selected role, built from the candidate's facts without adding anything.
 
     The selected role decides what is shown; nothing is invented and the stored facts stay complete:
@@ -313,7 +313,12 @@ def present_for_role(facts, target, role_title, origin_bullets=None):
       employment. A line repeating another is not shown.
     * projects: those about the role's technologies.
     * extraction notes such as "(branch not specified in source)" are removed.
-    Employers, designations, dates and education always stay. Returns (facts, [what was left out, and why])."""
+    Employers, designations, dates and education always stay. Returns (facts, [what was left out, and why]).
+
+    keep_own=True (a candidate's application, typed for this one role): the candidate's own skills, work lines and
+    projects all stay, whatever the role's catalog says. Seen live: a Full Stack Developer applicant's only project
+    (React.js with Java and Spring Boot) was left off as "not about" the role, and half of their stated skills
+    (HTML, CSS, Java, Spring Boot) with it, because the role's catalog is the JavaScript stack."""
     import copy
 
     # Named tools only: a concept ("Responsive Design", "Data Integration") is not another field's technology.
@@ -325,7 +330,7 @@ def present_for_role(facts, target, role_title, origin_bullets=None):
     for skill in facts.get('skills', []):
         if is_job_title(skill, positions):
             left.append(f'"{skill}" as a skill: it is a job title')
-        elif not skill_fits_role(skill, target):
+        elif not keep_own and not skill_fits_role(skill, target):
             left.append(f'skill "{skill}": not used for {role_title}')
         else:
             skills.append(skill)
@@ -337,7 +342,7 @@ def present_for_role(facts, target, role_title, origin_bullets=None):
         for line in job['bullets']:
             named = matched_terms(tools, line)
             target_tech = [t for t in named if fits(t) and not matched_terms(GENERIC_TOOLS, t)]
-            foreign = other_field_tools(line, tools, target)
+            foreign = [] if keep_own else other_field_tools(line, tools, target)
             if foreign:
                 off_role.append((line, foreign))
             elif not same and target_tech and ' '.join(line.split()).casefold() not in origin:
@@ -358,7 +363,7 @@ def present_for_role(facts, target, role_title, origin_bullets=None):
         shown.extend(restored)
     projects = []
     for project in facts.get('projects', []):
-        if other_field_tools(project, tools, target) or project_off_role(project, tools, target):
+        if not keep_own and (other_field_tools(project, tools, target) or project_off_role(project, tools, target)):
             left.append(f'project "{project.split(" - ")[0]}": not about {role_title}')
         else:
             projects.append(project)

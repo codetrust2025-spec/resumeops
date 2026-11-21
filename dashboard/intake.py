@@ -412,11 +412,13 @@ class IntakeDesk:
 
     # Operator ------------------------------------------------------------------------------------------------
 
-    def start(self, candidate, operator_owner):
+    def start(self, candidate, operator_owner, again=False):
         """Start processing an application (Start processing on the Candidates page): the operator's own "Create a
         verified resume" workflow, unchanged (AI drafting for the role, the review of drafts in the operator's
         dashboard, ATS, LaTeX, PDF, Overleaf), with the candidate's details as typed, as the operator's resume
         labelled with the candidate's name. The same details again are the same resume (never processed twice).
+        again=True (Process again on a finished resume): a new version from the same details, as its own job linked
+        to the application; the earlier versions stay. Refused while a version is still being prepared.
         Returns {'candidate', 'job', 'owner', 'created'}."""
         from resume_bot.automation import CONSENT_VERSION
         with closing(self.automation.connection()) as db:
@@ -433,10 +435,24 @@ class IntakeDesk:
         identifier = self.automation.request_id(request)[0]
         with closing(self.automation.connection()) as db, db:
             db.execute('BEGIN IMMEDIATE')
+            if again and db.execute('SELECT 1 FROM automation WHERE owner=? AND id=?',
+                                    (operator_owner, identifier)).fetchone():
+                busy = db.execute("SELECT 1 FROM automation a JOIN intake_runs r ON r.job_owner=a.owner AND "
+                                  "r.job_id=a.id WHERE r.candidate=? AND a.status IN "
+                                  "('queued','processing','retrying','needs_input')", (candidate,)).fetchone()
+                if busy:
+                    raise IntakeError('A resume for this application is still being prepared. Process it again once '
+                                      'it is finished.', None, 409)
+                # Seen live: Process again on identical details returned the finished resume, so a fix in the
+                # workflow could not reach an application. Each version gets its own id from the details.
+                n = 1
+                while db.execute('SELECT 1 FROM automation WHERE owner=? AND id=?', (operator_owner, identifier)).fetchone():
+                    identifier = hashlib.sha256(f'{self.automation.request_id(request)[0]}:again:{n}'.encode()).hexdigest()
+                    n += 1
             created = not db.execute('SELECT 1 FROM automation WHERE owner=? AND id=?',
                                      (operator_owner, identifier)).fetchone()
             job = self.automation.insert(db, operator_owner, request, INTAKE_SOURCE, row['name'], row['client'],
-                                         per_owner=False)
+                                         per_owner=False, identifier=identifier)
             db.execute('INSERT OR IGNORE INTO intake_runs(candidate, job_owner, job_id, started, started_by, digest) '
                        'VALUES (?,?,?,?,?,?)', (candidate, operator_owner, job, time.time(), operator_owner,
                                                 row['digest']))

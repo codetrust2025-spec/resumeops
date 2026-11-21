@@ -997,7 +997,9 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 if self.path == '/api/intake/start':
                     # Start processing: the operator's own resume workflow on the typed details, as the operator's resume.
                     try:
-                        return self.send_json(intake.start(candidate, self.session_owner(request_origin)), 202)
+                        # again: Process again on a finished resume, a new version from the same details.
+                        return self.send_json(intake.start(candidate, self.session_owner(request_origin),
+                                                           again=request.get('again') is True), 202)
                     except AutomationCapacity as exc:
                         return self.send_json({'error': str(exc)}, 429)
                     except IntakeError:

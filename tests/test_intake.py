@@ -225,6 +225,62 @@ class DeskTests(unittest.TestCase):
             self.d.desk.start(self.d.desk.submit(form(n), key())['candidate'], OPERATOR)
         self.assertEqual(len(self.d.rows('SELECT 1 FROM automation WHERE owner=?', OPERATOR)), 7)
 
+    def test_an_applicants_own_project_and_skills_reach_the_resume_without_suggestions(self):
+        # Seen live: a Full Stack Developer applicant's only project (React.js on a Java and Spring Boot API) was left
+        # off as "not about" the role, AI projects were suggested in its place, and half their skills were dropped.
+        applicant = form(role='Full Stack Developer', skills='HTML, CSS, JavaScript, React.js, Java, Spring Boot, MySQL',
+                         work_experience=[{'company': 'Example Web Studio (fictional)', 'position': 'Software Developer',
+                                           'start': 'Jan 2022', 'end': 'Present', 'location': '',
+                                           'responsibilities': 'Built Spring Boot REST APIs in Java for the order service.\n'
+                                                               'Built React.js pages with HTML and CSS for the order screens.\n'
+                                                               'Wrote MySQL queries for the order reports.'}],
+                         projects=[{'name': 'Order Tracker', 'stack': 'React.js, Java, Spring Boot, HTML, CSS',
+                                    'description': 'Built order tracking screens in React.js.\n'
+                                                   'Built the Spring Boot API behind them in Java.'}])
+        first = self.d.desk.submit(applicant, key())
+        self.d.desk.start(first['candidate'], OPERATOR)
+        row = started_job(self.d, first['candidate'])
+
+        def model(ai, prompt, **_):
+            raise RuntimeError('no model in this test: drafts are empty and the summary is composed')
+        with patch('resume_bot.generate.generate', model), patch('resume_bot.automation.generate', return_value={}), \
+                patch.object(self.d.workspace, 'enqueue', return_value={'name': 'private-x.json'}) as enqueue:
+            self.d.jobs._prepare(row)
+        row = started_job(self.d, first['candidate'])
+        self.assertEqual(row['status'], 'handed_off', (row['stage'], row['error']))
+        self.assertNotIn('proposals', json.loads(row['checkpoints'] or '{}'), 'no AI project in place of their own')
+        packet = json.loads(enqueue.call_args[0][0])
+        printed = packet['profile']
+        self.assertEqual([p.split(' - ')[0] for p in printed['projects']], ['Order Tracker'])
+        for skill in ('HTML', 'CSS', 'JavaScript', 'React.js', 'Java', 'Spring Boot', 'MySQL'):
+            self.assertIn(skill, printed['skills'])
+        self.assertEqual(len(printed['experience'][0]['bullets']), 3)
+
+    def test_process_again_makes_a_new_version_from_the_same_details(self):
+        # Seen live: Process again on identical details returned the finished resume ("already prepared"), so a fix
+        # in the workflow could never reach an application. Each version is its own job, linked to the application.
+        first = self.d.desk.submit(form(), key())
+        started = self.d.desk.start(first['candidate'], OPERATOR)
+        with self.assertRaises(IntakeError) as caught:
+            self.d.desk.start(first['candidate'], OPERATOR, again=True)
+        self.assertEqual(caught.exception.status, 409, 'never while a version is still being prepared')
+        with closing(self.d.jobs.connection()) as db, db:
+            db.execute("UPDATE automation SET status='handed_off'")
+        same = self.d.desk.start(first['candidate'], OPERATOR)
+        self.assertEqual((same['job'], same['created']), (started['job'], False), 'Start: the same resume')
+        again = self.d.desk.start(first['candidate'], OPERATOR, again=True)
+        self.assertTrue(again['created'])
+        self.assertNotEqual(again['job'], started['job'])
+        row = started_job(self.d, first['candidate'])
+        self.assertEqual((row['id'], row['source'], row['status']), (again['job'], INTAKE_SOURCE, 'queued'))
+        payloads = {r['payload'] for r in self.d.rows('SELECT payload FROM automation')}
+        self.assertEqual(len(payloads), 1, 'the same typed details as the first version')
+        with closing(self.d.jobs.connection()) as db, db:
+            db.execute("UPDATE automation SET status='handed_off'")
+        third = self.d.desk.start(first['candidate'], OPERATOR, again=True)
+        self.assertNotIn(third['job'], (started['job'], again['job']))
+        self.assertEqual(len(self.d.desk.runs(first['candidate'])), 3, 'every version stays linked')
+
     def test_a_fresher_application_becomes_a_resume_without_employment(self):
         applicant = form(fresher=True, work_experience=[])
         first = self.d.desk.submit(applicant, key())
