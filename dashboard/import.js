@@ -192,7 +192,7 @@
         await ResumeRecovery.put('import',work);
         await ResumeRecovery.remove('selected-import');
         await run(work);
-      }, () => message('An import is already open in another tab. Continue there or close that tab to resume here.', true));
+      }, () => message('Import open in another tab. Continue there or close it to resume here.', true));
     } catch(error) {
       message('Cannot save this upload for recovery. Check browser storage and retry.',true);
     }

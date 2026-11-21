@@ -8,6 +8,14 @@ button,input,textarea,select{font:inherit}[hidden]{display:none!important}
 button,a,input,select,textarea,summary{outline-offset:3px}:focus-visible{outline:2px solid var(--primary)}
 a{color:var(--primary);text-underline-offset:3px}p,small{color:var(--muted)}
 .width{width:min(1180px,calc(100% - 40px));margin-inline:auto}
+/* Role catalog uses a page layout, separate from the resume-card row. */
+.roles-main{display:grid;gap:16px;padding-block:24px;min-width:0}
+.roles-main h1,.roles-main h2,.roles-main p{margin:0}
+.roles-main h2{font-size:1.1rem}
+.roles-main .auto-card{margin:0;padding:20px;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius)}
+.roles-main label{display:grid;gap:8px;min-width:0}
+.roles-main textarea{width:100%;min-width:0;max-width:100%;padding:12px;border:1px solid var(--line);border-radius:8px}
+.roles-main #roles-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:8px 24px;margin:0;padding-left:20px;overflow-wrap:anywhere}
 .icon{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vertical-align:middle}
 .icon.big{width:54px;height:54px;color:var(--primary);stroke-width:1.4}.icon.pdf{color:#c2352b}.icon.green{color:#2c8a3e}
 

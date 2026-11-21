@@ -88,8 +88,7 @@
   title.append(heading, detail);
   const note = document.createElement('p');
   note.className = 'cand-note';
-  note.textContent = 'Keep this page\'s link private: it is the only way to open your application. ' +
-    'When AI drafts are ready, review them below; downloads appear when your resume is verified.';
+  note.textContent = 'Keep this link private. Review drafts below; downloads appear after verification.';
   const actions = document.createElement('div');
   actions.className = 'cand-actions';
   const copy = document.createElement('button');

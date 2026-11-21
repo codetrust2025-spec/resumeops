@@ -92,7 +92,7 @@ def main():
         expired['mode'] = '401'
         page.get_by_role('button', name='Continue').click()
         expect(page.locator('#auth-banner')).to_be_visible()
-        expect(page.locator('#auth-banner')).to_contain_text('ResumeOps keeps your work')
+        expect(page.locator('#auth-banner')).to_contain_text('resume your saved work')
         assert page.get_by_label('Employer').input_value() == 'Example Labs'
         # Signing in happens in another tab; this page continues by itself.
         with context.expect_page() as popup:
@@ -150,7 +150,7 @@ def main():
         page.get_by_label('Phone').fill('+1 555 0199')
         page.wait_for_timeout(600)
         page.reload()
-        expect(page.locator('#builder-status')).to_contain_text('Unsaved candidate details were restored')
+        expect(page.locator('#builder-status')).to_contain_text('Draft restored.')
         page.locator('#steps li[data-target="3"] button').click()
         expect(page.get_by_label('Full name')).to_have_value('Reload Draft Example')
         expect(page.get_by_label('Phone')).to_have_value('+1 555 0199')
@@ -195,7 +195,7 @@ def main():
         second.locator('#resume-upload').set_input_files({'name': 'second.txt', 'mimeType': 'text/plain',
                                                          'buffer': b'Another synthetic candidate.'})
         second.get_by_role('button', name='Import and prefill').click()
-        expect(second.locator('#resume-import-status')).to_contain_text('already open in another tab')
+        expect(second.locator('#resume-import-status')).to_contain_text('Import open in another tab')
         same_id = "(ResumeRecovery.read('import').then(work => work.id))"
         assert second.evaluate(same_id) == fresh.evaluate(same_id)
         second.close()
@@ -274,7 +274,7 @@ def main():
         expired['mode'] = '401'
         expect(same.locator('#auth-banner')).to_be_visible(timeout=10000)
         same.get_by_role('button', name='Sign in again').click()
-        expect(same.locator('#builder-status')).to_contain_text('Unsaved candidate details were restored', timeout=20000)
+        expect(same.locator('#builder-status')).to_contain_text('Draft restored.', timeout=20000)
         same.locator('#steps li[data-target="3"] button').click()
         expect(same.get_by_label('Full name')).to_have_value('Blocked Popup Typed Example')
         results['blocked_popup_same_tab_renewal'] = 'import extracted once and typed details restored'

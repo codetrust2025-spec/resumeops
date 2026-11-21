@@ -9,7 +9,7 @@ const auth = {'X-Candidate-Id': candidate, 'X-Candidate-Key': key};
 let latest = null;
 
 function describe(job) {
-  if (!job) return ['Received. The ResumeOps team will start preparing your resume soon.', null];
+  if (!job) return ['Received. Awaiting processing.', null];
   const percent = job.percent || 0;
   switch (job.status) {
     case 'complete':
@@ -21,9 +21,9 @@ function describe(job) {
     case 'handed_off':
       return [`Being prepared: ${job.stage || 'in progress'}.`, percent];
     case 'needs_input':
-      return ['The ResumeOps team is reviewing the drafts of your resume.', percent];
+      return ['Drafts under review.', percent];
     default:
-      return ['The ResumeOps team is looking at your application.', percent];
+      return ['Application under review.', percent];
   }
 }
 
@@ -40,7 +40,7 @@ async function load() {
     return true;
   }
   if (response.status === 403) {
-    $('st-state').textContent = 'This private link is not valid. Open it again from your application, or ask the ResumeOps team for a new link.';
+    $('st-state').textContent = 'Invalid private link. Open the saved link or request a replacement.';
     return false;
   }
   if (!response.ok) {

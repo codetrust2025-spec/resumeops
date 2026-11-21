@@ -356,9 +356,9 @@ async function preview() {
       node('p','Target role: ' + quality.role_title),
       node('p',quality.verified_claims + ' candidate-approved statements.'),
       node('p',quality.role_keywords_available ? quality.keyword_matches + ' relevant keyword matches.' :
-        'No sourced or curated keyword list is available for this title.'),
+        'No verified keyword list for this role.'),
       node('p',quality.experience_dates_support_level ? 'Selected experience level passes the date check.' :
-        'Check the selected experience level against the supplied employment dates.')]);
+        'Check experience level against employment dates.')]);
   }
   ai('ai-review').hidden=true;
   ai('ai-result').hidden=false;
@@ -375,7 +375,7 @@ async function init() {
   await ResumeAuth.ready();
   if (!await claimEditor()) {
     ai('ai-intake').hidden = true;
-    status('The AI builder is open in another tab. Close it and reload to continue here.');
+    status('Builder open in another tab. Close it and reload here.');
     return;
   }
   ResumeAuth.onBeforeRenewal(save);
@@ -410,7 +410,7 @@ async function init() {
   if (state.intake) fill(state.intake);
   if (state.queuing === true) state.queuing={id:state.draft.id,approval:state.approval};
   ai('ai-reset').addEventListener('click',handle(async () => {
-    if (!window.confirm('Clear the AI builder draft saved in this browser? Completed resumes and History will remain.')) return;
+    if (!window.confirm('Clear this browser draft? Completed resumes stay in History.')) return;
     await ResumeRecovery.remove('ai-builder');
     for (const key of Object.keys(state)) delete state[key];
     fill({});
@@ -418,7 +418,7 @@ async function init() {
     ai('ai-intake').hidden = false;
     ai('ai-review').hidden = true;
     ai('ai-result').hidden = true;
-    status('Saved draft cleared in this browser. Completed resumes remain in History.');
+    status('Draft cleared. Completed resumes stay in History.');
   }));
   ai('ai-form').addEventListener('input',() => {
     updateCounts(); save().catch(error => status(error.message));

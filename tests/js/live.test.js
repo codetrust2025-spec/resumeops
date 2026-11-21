@@ -35,7 +35,7 @@ test('unmeasured work holds the percentage and says so', () => {
   const view = Live.describe({...base, measured: false, stage_key: 'pdf', stage_label: 'Compile and validate local PDF',
     stage: 'Compiling LaTeX with pdfLaTeX', percent: 71, activity: 1030}, 1050, {});
   assert.equal(view.state, 'processing');
-  assert.match(view.status, /no measurable progress; percentage held · last activity 00:20 ago/);
+  assert.match(view.status, /Progress unmeasured · last activity 00:20 ago/);
 });
 
 test('stale heartbeat and slow stages raise warnings', () => {
@@ -99,7 +99,7 @@ test('GPU placement and the technical failure detail are reported, never invente
 
 test('deterministic and exhausted failures say they are not retried automatically', () => {
   const failed = {...base, status: 'failed', error: 'Processing failed.', last: 1050, next_retry: null};
-  assert.match(Live.describe({...failed, retryable: false}, 1060, {}).status, /not retried automatically/);
-  assert.match(Live.describe({...failed, retryable: true}, 1060, {}).status, /automatic retries used up/);
+  assert.match(Live.describe({...failed, retryable: false}, 1060, {}).status, /automatic retry unavailable/);
+  assert.match(Live.describe({...failed, retryable: true}, 1060, {}).status, /retry limit reached/);
   assert.match(Live.describe({...failed, next_retry: 1200}, 1060, {}).status, /automatic retry in 02:20/);
 });

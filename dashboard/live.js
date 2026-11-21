@@ -125,8 +125,8 @@
       if (job.error_detail && job.error_detail !== job.error) view.errorDetail = 'Technical detail: ' + job.error_detail;
       view.state = waitFor > 0 ? 'retrying' : 'failed';
       view.title = (waitFor > 0 ? 'Retry scheduled — ' : 'Failed — ') + percent + '%';
-      const stopped = job.retryable === false ? ' · not retried automatically: this error repeats for the same input. Correct the details or press Retry now.' :
-        job.next_retry === null ? ' · automatic retries used up. Press Retry now when the cause is fixed.' : '';
+      const stopped = job.retryable === false ? ' · automatic retry unavailable. Correct details or select Retry now.' :
+        job.next_retry === null ? ' · retry limit reached. Fix the cause, then Retry now.' : '';
       view.status = 'Attempt ' + (job.attempt || job.failures || 1) + ' failed' +
         (job.stage_label ? ' during ' + job.stage_label : '') +
         (stopped || (waitFor > 0 ? ' · automatic retry in ' + clock(waitFor) : ' · waiting for the watcher to retry'));
@@ -138,7 +138,7 @@
     if (job.measured === false) {
       view.state = 'processing';
       view.title = 'Processing Resume — ' + percent + '%';
-      view.status = 'Processing — this step reports no measurable progress; percentage held · last activity ' +
+      view.status = 'Progress unmeasured · last activity ' +
         clock(lastActivity) + ' ago';
     } else {
       view.title = 'Processing Resume — ' + percent + '%';

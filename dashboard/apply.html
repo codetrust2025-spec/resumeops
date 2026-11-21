@@ -12,10 +12,7 @@
 <main class="ap-main">
   <section class="ap-intro">
     <h1 id="ap-title">Apply with your details</h1>
-    <p>Fill in this form once. The ResumeOps team prepares a role-based, ATS-ready resume from your details with
-      local AI, and checks every AI draft against what you entered: nothing is invented. You get a private link to
-      follow your application and download your resume when it is ready. Fields marked
-      <span class="ap-req">*</span> are required.</p>
+    <p><span class="ap-req">*</span> Required</p>
   </section>
 
   <section id="ap-mine" class="ap-card" hidden aria-labelledby="ap-mine-title">
@@ -25,14 +22,13 @@
 
   <section id="ap-human" class="ap-card ap-human" hidden aria-labelledby="ap-human-title">
     <h2 id="ap-human-title">Quick check</h2>
-    <p class="ap-hint">This confirms a person is applying. It usually completes by itself.</p>
     <div id="ap-human-box"></div>
     <p id="ap-human-status" class="ap-status" role="status" aria-live="polite"></p>
   </section>
 
   <section id="ap-upload" class="ap-card" aria-labelledby="ap-upload-title">
     <h2 id="ap-upload-title">Upload your resume <span class="ap-opt">(optional)</span></h2>
-    <p class="ap-hint">A PDF or Word (DOCX) file fills in the form for you. Check every field before you submit.</p>
+    <p class="ap-hint">Review the imported details before submitting.</p>
     <label class="ap-file">Resume file (PDF or DOCX, up to 6 MB)
       <input type="file" id="ap-file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
     </label>
@@ -94,8 +90,7 @@
   <section id="ap-done" class="ap-card ap-done" hidden aria-labelledby="ap-done-title">
     <h2 id="ap-done-title">Application received</h2>
     <p id="ap-done-id"></p>
-    <p>This private link is the only way to follow your application and download your resume when it is ready.
-      Save it now (it is also kept on this device).</p>
+    <p>Save this private link for your status and downloads. It is also saved on this device.</p>
     <input id="ap-done-link" readonly aria-label="Your private link">
     <div class="ap-row-actions">
       <button type="button" id="ap-copy">Copy link</button>

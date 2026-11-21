@@ -67,7 +67,8 @@ class MinimalIntakeTests(unittest.TestCase):
                 identifier = jobs.enqueue(OWNER, payload(**candidate))
             with closing(jobs.connection()) as db:
                 row = db.execute('SELECT * FROM automation WHERE id=?', (identifier,)).fetchone()
-            jobs._prepare(row)
+            with patch('resume_bot.ollama.Ollama.generate', return_value={}):
+                jobs._prepare(row)
             with closing(jobs.connection()) as db:
                 waiting = db.execute('SELECT * FROM automation WHERE id=?', (identifier,)).fetchone()
             self.assertEqual(waiting['status'], 'needs_input')

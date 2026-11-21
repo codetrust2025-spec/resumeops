@@ -54,6 +54,21 @@ def fake_jobs(count=15):
 
 
 class DashboardLayoutTests(unittest.TestCase):
+    def test_all_pages_fit_phone_and_desktop_widths(self):
+        for width in (390, 1440):
+            page = self.browser.new_page(viewport={'width': width, 'height': 900})
+            try:
+                for route in ('/', '/ai-builder', '/workflow', '/operations', '/candidates',
+                              '/roles', '/apply', '/apply/status'):
+                    with self.subTest(width=width, route=route):
+                        response = page.goto(self.origin + route)
+                        self.assertEqual(response.status, 200)
+                        if route == '/roles':
+                            page.locator('#roles-list li').first.wait_for()
+                        self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth - innerWidth'), 0)
+            finally:
+                page.close()
+
     @classmethod
     def setUpClass(cls):
         from resume_bot.pipeline import CODE
