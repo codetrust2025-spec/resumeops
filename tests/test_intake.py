@@ -182,14 +182,21 @@ class DeskTests(unittest.TestCase):
             self.d.desk.start(made[0]['candidate'], OPERATOR)  # a started application no longer waits
             self.d.desk.submit(form(3), key())
 
-    def test_start_runs_the_upload_workflow_on_a_word_resume_of_the_form(self):
+    def test_start_runs_the_resume_workflow_on_the_details_as_typed(self):
         from automation_jobs import submission
-        from intake import form_document
         from resume_bot.automation import CONSENT_VERSION
-        from resume_bot.ingest import read_resume_text
-        applicant = form(projects=[{'name': 'Order Service', 'stack': 'Java, Spring Boot, MySQL',
-                                    'description': 'Built order endpoints with Spring Boot and MySQL.'}],
-                         certifications='Oracle Java SE 11 Developer', linkedin='https://www.linkedin.com/in/asha-example')
+        from resume_bot.generate import split_project
+        # Seen live: a Word resume made from the form and read back split every Projects line into a separate project
+        # (names apart from their descriptions) and dropped a year of completion. The typed details keep both.
+        applicant = form(projects=[
+            {'name': 'Enterprise HRMS Automation Platform', 'stack': 'Selenium WebDriver, Java, TestNG',
+             'description': 'Automated HRMS workflows and payroll testing.'},
+            {'name': 'Ledger', 'stack': 'Node.js, SQL',
+             'description': 'Managed database operations and bug fixes.\nBuilt REST endpoints for invoices.\n'
+                            'Wrote tests for the invoice service.\nAdded role-based access.\nDeployed with Docker.'}],
+            education=[{'degree': 'Bachelor of engineering', 'university': 'Example Engineering College (fictional)',
+                        'graduation_year': '2018', 'specialization': 'Mechanical engineering', 'cgpa': ''}],
+            certifications='Oracle Java SE 11 Developer', linkedin='https://www.linkedin.com/in/asha-example')
         first = self.d.desk.submit(applicant, key())
         started = self.d.desk.start(first['candidate'], OPERATOR)
         self.assertEqual((started['owner'], started['created']), (OPERATOR, True))
@@ -197,22 +204,19 @@ class DeskTests(unittest.TestCase):
         self.assertEqual((row['owner'], row['source'], row['candidate'], row['status']),
                          (OPERATOR, INTAKE_SOURCE, 'Asha Example 0', 'queued'))
         payload = json.loads(row['payload'])
-        # Exactly the request the dashboard makes for an uploaded Word resume (the same validation, unchanged).
-        document = base64.b64encode(form_document(applicant)).decode()
-        expected = submission({'consent': CONSENT_VERSION, 'role': 'Java Backend Developer', 'extension': 'docx',
-                               'document': document})
-        self.assertEqual(payload, expected)
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / 'application.docx'
-            path.write_bytes(base64.b64decode(payload['document']))
-            text = read_resume_text(path)
-        for fact in ('Asha Example 0', 'asha.0@example.com', '+91 90000 10000', 'Pune', 'TECHNICAL SKILLS',
-                     'Java, Spring Boot, MySQL, JUnit', 'WORK EXPERIENCE', 'Software Engineer — Example Labs (fictional)',
-                     'Jan 2022 – Present', 'Built Spring Boot REST APIs for order workflows with Java and MySQL.',
-                     'PROJECTS', 'Order Service | Java, Spring Boot, MySQL', 'EDUCATION', 'B.Tech',
-                     'Example Institute (fictional)', 'Year of completion: 2021', 'CERTIFICATIONS',
-                     'Oracle Java SE 11 Developer', 'LinkedIn: https://www.linkedin.com/in/asha-example'):
-            self.assertIn(fact, text)
+        # Exactly the request the dashboard makes for "Create a verified resume" with the details filled in.
+        role, candidate = __import__('intake').form_facts(applicant)
+        self.assertEqual(payload, submission({'consent': CONSENT_VERSION, 'role': role, 'candidate': candidate}))
+        self.assertEqual(payload, intake_request(applicant)[0])
+        profile = payload['profile']
+        projects = [split_project(project) for project in profile['projects']]
+        self.assertEqual([name for name, _, _ in projects], ['Enterprise HRMS Automation Platform', 'Ledger'])
+        self.assertEqual(projects[0][1], ['Selenium WebDriver', 'Java', 'TestNG'])
+        self.assertEqual(len(projects[1][2]), 5, 'every description line stays with its project')
+        self.assertEqual([(entry['degree'], entry['end']) for entry in profile['education']],
+                         [('Bachelor of engineering', '2018')])
+        self.assertIn('Oracle Java SE 11 Developer', profile['certifications'])
+        self.assertEqual(profile['linkedin'], 'https://www.linkedin.com/in/asha-example')
         again = self.d.desk.start(first['candidate'], OPERATOR)
         self.assertEqual((again['job'], again['created']), (started['job'], False), 'never processed twice')
         self.assertEqual(len(self.d.rows('SELECT 1 FROM automation')), 1)
@@ -222,17 +226,12 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(len(self.d.rows('SELECT 1 FROM automation WHERE owner=?', OPERATOR)), 7)
 
     def test_a_fresher_application_becomes_a_resume_without_employment(self):
-        from intake import form_document
-        from resume_bot.ingest import read_resume_text
         applicant = form(fresher=True, work_experience=[])
         first = self.d.desk.submit(applicant, key())
         self.d.desk.start(first['candidate'], OPERATOR)
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / 'application.docx'
-            path.write_bytes(form_document(applicant))
-            text = read_resume_text(path)
-        self.assertNotIn('WORK EXPERIENCE', text)
-        self.assertIn('PROJECTS', text)
+        profile = json.loads(started_job(self.d, first['candidate'])['payload'])['profile']
+        self.assertEqual(profile['experience'], [])
+        self.assertTrue(profile['projects'])
 
     def test_corrections_after_a_start_show_and_can_be_started_again(self):
         secret = key()

@@ -5,9 +5,10 @@ How it fits ResumeOps:
   the form (so a retried submission after a lost response is recognised, and the key never travels back from the
   server); only its SHA-256 is stored. The private link /apply/status#c=<id>&k=<key> is the candidate's access.
 * A submission is saved in one transaction and waits (never lost; the same facts from another device are recognised).
-  The operator controls processing: Start processing on the Candidates page turns the form into a Word resume and
-  runs the operator's own document-upload workflow on it, unchanged (AI drafting for the selected role, the review of
-  drafts in the operator's dashboard, ATS, LaTeX, PDF, Overleaf). The same details are never processed twice.
+  The operator controls processing: Start processing on the Candidates page runs the operator's own "Create a
+  verified resume" workflow, unchanged, on the details exactly as the candidate typed them (AI drafting for the
+  selected role, the review of drafts in the operator's dashboard, ATS, LaTeX, PDF, Overleaf). The same details are
+  never processed twice.
 * The candidate only submits details and follows progress / downloads the finished resume through the private link;
   they see nothing else of the operator's resumes.
 * Mandatory facts are checked here (personal, education, employment unless a fresher, skills, projects, target
@@ -124,8 +125,9 @@ def _rows(form, key):
     return kept
 
 
-def intake_request(form):
-    """(automation request, summary) from the public form; IntakeError (with the field) for anything missing.
+def form_facts(form):
+    """(target role, candidate details) from the public form, checked; IntakeError (with the field) for anything
+    missing. The details have the shape of the dashboard's own candidate form (automation.attested_profile).
 
     Mandatory: name, email, phone, city/location, target role; at least one education entry (degree, institution,
     year); at least one job (employer, job title, start, end or Present, what you did) unless the candidate is a
@@ -204,6 +206,15 @@ def intake_request(form):
         candidate['years_of_experience'] = int(years) if years == int(years) else years
     elif fresher:
         candidate['years_of_experience'] = 0
+    return role, candidate
+
+
+def intake_request(form):
+    """(automation request, summary) from the public form; IntakeError (with the field) for anything missing.
+    The request identifies an application (duplicates, corrections); processing starts from start()."""
+    from resume_bot.automation import CONSENT_VERSION
+
+    role, candidate = form_facts(form)
     try:
         request = submission({'consent': CONSENT_VERSION, 'role': role, 'candidate': candidate})
     except ValueError as error:
@@ -246,86 +257,9 @@ CANDIDATE_JOB_FIELDS = ('id', 'status', 'stage', 'percent', 'role', 'created', '
                         'queue_paused')
 
 
-def form_document(form):
-    """A Word resume (DOCX) holding exactly what the candidate entered, laid out like a resume. Start processing
-    sends it through the operator's own document-upload workflow, unchanged."""
-    from xml.sax.saxutils import escape
-
-    def text(value):
-        return ' '.join(''.join(ch for ch in str(value or '') if ch.isprintable() or ch == '\n').split())
-
-    def lines(value):
-        return [line for line in (text(raw).lstrip('•*·-– ').strip() for raw in str(value or '').splitlines()) if line]
-
-    def rows(name):
-        return [row for row in form.get(name) or [] if isinstance(row, dict)]
-
-    out = [text(form.get('full_name')),
-           ' | '.join(text(form.get(key)) for key in ('email', 'phone', 'location') if text(form.get(key)))]
-    links = [f'{label}: {text(form.get(key))}' for key, label in
-             (('linkedin', 'LinkedIn'), ('github', 'GitHub'), ('portfolio', 'Portfolio')) if text(form.get(key))]
-    if links:
-        out.append(' | '.join(links))
-    if text(form.get('skills')):
-        out += ['', 'TECHNICAL SKILLS', text(form.get('skills'))]
-    if rows('work_experience') and form.get('fresher') is not True:
-        out += ['', 'WORK EXPERIENCE']
-        for row in rows('work_experience'):
-            place = ', '.join(part for part in (text(row.get('company')), text(row.get('location'))) if part)
-            out += [' — '.join(part for part in (text(row.get('position')), place) if part),
-                    ' – '.join(part for part in (text(row.get('start')), text(row.get('end'))) if part)]
-            out += ['• ' + line for line in lines(row.get('responsibilities'))]
-            out.append('')
-    if rows('projects'):
-        out += ['', 'PROJECTS']
-        for row in rows('projects'):
-            out.append(' | '.join(part for part in (text(row.get('name')), text(row.get('stack'))) if part))
-            out += ['• ' + line for line in lines(row.get('description'))]
-            out.append('')
-    if rows('education'):
-        out += ['', 'EDUCATION']
-        for row in rows('education'):
-            degree = ', '.join(part for part in (text(row.get('degree')), text(row.get('specialization'))) if part)
-            out += [degree, text(row.get('university'))]
-            year = [f'Year of completion: {text(row.get("graduation_year"))}'] if text(row.get('graduation_year')) else []
-            year += [f'CGPA / percentage: {text(row.get("cgpa"))}'] if text(row.get('cgpa')) else []
-            if year:
-                out.append(' | '.join(year))
-            out.append('')
-    for key, heading in (('certifications', 'CERTIFICATIONS'), ('achievements', 'ACHIEVEMENTS')):
-        if lines(form.get(key)):
-            out += ['', heading] + ['• ' + line for line in lines(form.get(key))]
-    while out and not out[-1]:
-        out.pop()
-    namespace = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
-    body = ''.join(f'<w:p><w:r><w:t xml:space="preserve">{escape(line)}</w:t></w:r></w:p>' if line else '<w:p/>'
-                   for line in out)
-    import io
-    import zipfile
-    data = io.BytesIO()
-    with zipfile.ZipFile(data, 'w', zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr('[Content_Types].xml', (
-            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-            '<Default Extension="xml" ContentType="application/xml"/>'
-            '<Override PartName="/word/document.xml" ContentType="application/'
-            'vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'))
-        archive.writestr('_rels/.rels', (
-            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
-            'officeDocument" Target="word/document.xml"/></Relationships>'))
-        archive.writestr('word/document.xml', (
-            f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="{namespace}">'
-            f'<w:body>{body}</w:body></w:document>'))
-    return data.getvalue()
-
-
 class IntakeDesk:
     """Applications from the public form. A submission is saved and waits: the operator starts processing it from
-    the Candidates page (start), which runs the operator's own document-upload workflow on a Word resume made from
-    the form. The candidate follows progress and downloads the finished resume through their private link."""
+    the Candidates page (start), which runs the operator's own resume workflow on the candidate's typed details. The candidate follows progress and downloads the finished resume through their private link."""
 
     def __init__(self, workspace, automation):
         self.workspace = workspace
@@ -479,11 +413,11 @@ class IntakeDesk:
     # Operator ------------------------------------------------------------------------------------------------
 
     def start(self, candidate, operator_owner):
-        """Start processing an application (Start processing on the Candidates page). The candidate's form becomes
-        a Word resume (form_document) that goes through the operator's own document-upload workflow, unchanged: the
-        same request the dashboard makes for an uploaded DOCX, as the operator's resume labelled with the candidate's
-        name, reviewed in the operator's dashboard. The same details again are the same resume (never processed
-        twice). Returns {'candidate', 'job', 'owner', 'created'}."""
+        """Start processing an application (Start processing on the Candidates page): the operator's own "Create a
+        verified resume" workflow, unchanged (AI drafting for the role, the review of drafts in the operator's
+        dashboard, ATS, LaTeX, PDF, Overleaf), with the candidate's details as typed, as the operator's resume
+        labelled with the candidate's name. The same details again are the same resume (never processed twice).
+        Returns {'candidate', 'job', 'owner', 'created'}."""
         from resume_bot.automation import CONSENT_VERSION
         with closing(self.automation.connection()) as db:
             row = db.execute('SELECT form, name, role, digest, client, scrubbed FROM intake WHERE candidate=?',
@@ -491,8 +425,11 @@ class IntakeDesk:
         if not row or row['scrubbed'] or not row['form']:
             raise IntakeError('Application not found.', None, 404)
         form = json.loads(row['form'])
-        request = submission({'consent': CONSENT_VERSION, 'role': row['role'] or form.get('role'), 'extension': 'docx',
-                              'document': base64.b64encode(form_document(form)).decode('ascii')})
+        role, details = form_facts(form)
+        # The dashboard's own "Create a verified resume" request with the details filled in, exactly as the candidate
+        # typed them (the workflow keeps them as stated facts). Seen live: a Word resume made from the form and read
+        # back lost structure (every line of Projects became a separate project; a year of completion was dropped).
+        request = submission({'consent': CONSENT_VERSION, 'role': row['role'] or role, 'candidate': details})
         identifier = self.automation.request_id(request)[0]
         with closing(self.automation.connection()) as db, db:
             db.execute('BEGIN IMMEDIATE')
