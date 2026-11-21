@@ -30,7 +30,8 @@ function stats() {
   const items = [['Applications', data.candidates.filter(entry => !entry.deleted).length],
     ['Waiting in queue', counts.queued || 0], ['Preparing', counts.processing || 0],
     ['Waiting for the candidate', counts.needs_input || 0], ['Complete', counts.complete || 0],
-    ['Stopped', counts.blocked || 0], ['GPU slots in use', `${data.gpu?.busy ?? 0} of ${data.gpu?.slots ?? 1}`]];
+    ['Stopped', counts.blocked || 0], ['GPU slots in use', `${data.gpu?.busy ?? 0} of ${data.gpu?.slots ?? 1}`],
+    ['Deleted by candidates', data.candidates.filter(entry => entry.deleted).length]];
   $('cd-stats').replaceChildren(...items.map(([label, value]) => {
     const box = el('div', null, 'cd-stat');
     box.append(el('strong', String(value)), el('span', label));
@@ -103,10 +104,11 @@ function render() {
   stats();
   const term = $('cd-search').value.trim().toLowerCase();
   const wanted = $('cd-status').value;
-  const shown = data.candidates.filter(entry => (!wanted || bucket(entry) === wanted) && (!term ||
+  // Applications their candidates deleted keep no details; they are only counted above.
+  const shown = data.candidates.filter(entry => !entry.deleted && (!wanted || bucket(entry) === wanted) && (!term ||
     [entry.name, entry.email, entry.phone, entry.candidate, entry.role].some(item => (item || '').toLowerCase().includes(term))));
   $('cd-rows').replaceChildren(...shown.map(row));
-  $('cd-empty').hidden = data.candidates.length > 0;
+  $('cd-empty').hidden = data.candidates.some(entry => !entry.deleted);
 }
 
 async function newLink(entry) {
