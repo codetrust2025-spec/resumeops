@@ -150,8 +150,9 @@ class AcceptanceCases(unittest.TestCase):
 
         profile = packet['profile']
         self.assertEqual(profile['headline'], 'GCP Data Engineer')
-        self.assertTrue(profile['summary'].startswith('GCP Data Engineer with hands-on experience'), profile['summary'])
-        self.assertIn('3 years of professional experience and a B.Tech in Information Technology.', profile['summary'])
+        self.assertTrue(profile['summary'].startswith('GCP Data Engineer candidate focused on '), profile['summary'])
+        self.assertNotIn('years', profile['summary'])
+        self.assertNotIn('B.Tech', profile['summary'])
         self.assertEqual(profile['experience'][0]['bullets'], GCP_DRAFTS[:5])
         narrative = self.printed(profile)
         for other in ('Frontend', 'React', 'Redux', 'TypeScript', 'JavaScript', 'HTML', 'CSS', 'Jest', 'Material UI',
@@ -192,7 +193,7 @@ class AcceptanceCases(unittest.TestCase):
         self.assertEqual(work['value'].split('\n'), JAVA_DRAFTS[:5])
 
         profile = packet['profile']
-        self.assertTrue(profile['summary'].startswith('Java Backend Developer with hands-on experience'), profile['summary'])
+        self.assertTrue(profile['summary'].startswith('Java Backend Developer candidate focused on '), profile['summary'])
         self.assertEqual(profile['experience'][0]['bullets'], JAVA_DRAFTS[:5])
         narrative = self.printed(profile)
         for other in ('BigQuery', 'Dataflow', 'Pub/Sub', 'Cloud Composer', 'Airflow', 'Python', 'GCP', 'Sales Warehouse'):
