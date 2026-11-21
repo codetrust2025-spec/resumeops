@@ -301,3 +301,70 @@ class ReviewOnceTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class GroundedDraftTests(unittest.TestCase):
+    """A candidate's application (grounded=True): drafts and proposed projects name only technologies the candidate
+    stated. Seen live: drafted work lines named Kafka, Oracle and Mockito that the candidate never listed, and
+    Technical Skills then printed them as the tools of confirmed work."""
+    JAVA = {'role': 'java-backend-developer', 'keywords': ['Java', 'Spring Boot', 'MySQL', 'Kafka', 'Oracle', 'Mockito']}
+
+    def candidate(self):
+        return profile(skills=['Java', 'Spring Boot', 'MySQL', 'JUnit', 'Docker'], jobs=[
+            {'company': 'Example Pharmacy Pvt Ltd', 'position': 'Software Engineer', 'start': 'Jan 2021', 'end': 'Present',
+             'location': '', 'bullets': ['Built Spring Boot REST APIs for prescription refill orders with Java and MySQL.']}])
+
+    def test_drafted_lines_name_only_the_candidates_own_technologies(self):
+        drafts = {'roles': [{'index': 0, 'bullets': [
+            'Scheduled refill reminders in Spring Boot with Java services that read dosage plans from MySQL tables.',
+            'Wrote JUnit tests for the refill reminder service to check schedule and dosage rules before each release.',
+            'Packaged the refill services in Docker containers for consistent local and test environments.',
+            'Designed MySQL indexes for refill order lookups by pharmacy branch and prescription number.',
+            'Developed REST APIs for prescription status updates with Kafka for message brokering.',  # never stated
+            'Integrated Oracle databases with MySQL for patient record storage and retrieval.',  # never stated
+            'Wrote Mockito tests for the refill order service exception handling paths.']}],  # never stated
+            'skills': []}
+        model = Model(drafts=drafts)
+        with patch('resume_bot.generate.generate', model):
+            work, _ = draft_role_content(self.candidate(), self.JAVA, 'Java Backend Developer', 3, [0], False, object(),
+                                         grounded=True)
+        kept = ' '.join(work.get(0, []))
+        self.assertIn('Scheduled refill reminders', kept)
+        for unstated in ('Kafka', 'Oracle', 'Mockito'):
+            self.assertNotIn(unstated, kept)
+        facts = json.loads(model.prompts[0].split('FACTS:\n', 1)[1].split('\nThe previous')[0])
+        offered = set(facts['target_role_technologies'])
+        self.assertTrue({'Java', 'Spring Boot', 'MySQL'} <= offered)
+        self.assertFalse({'Kafka', 'Oracle', 'Mockito'} & offered, 'only the candidate\'s technologies are offered')
+        self.assertIn('ONLY technologies the candidate has stated', model.prompts[0])
+
+    def test_without_grounding_the_role_decides_as_before(self):
+        drafts = {'roles': [{'index': 0, 'bullets': [
+            'Developed REST APIs for prescription status updates with Kafka for message brokering between services.',
+            'Scheduled refill reminders in Spring Boot with Java services that read dosage plans from MySQL tables.',
+            'Designed MySQL indexes for refill order lookups by pharmacy branch and prescription number.']}],
+            'skills': []}
+        with patch('resume_bot.generate.generate', Model(drafts=drafts)):
+            work, _ = draft_role_content(self.candidate(), self.JAVA, 'Java Backend Developer', 3, [0], False, object())
+        self.assertIn('Kafka', ' '.join(work.get(0, [])), "the operator's own resumes keep role-based drafts")
+
+    def test_proposed_projects_use_only_the_candidates_technologies(self):
+        projects = [{'name': 'Refill Reminder Service', 'problem': 'Patients miss prescription refills.',
+                     'stack': ['Java', 'Spring Boot', 'Kafka', 'MySQL'],
+                     'architecture': 'A Spring Boot service with a MySQL schema for reminders.',
+                     'features': 'Reminder scheduling and refill status.', 'responsibilities': 'Backend design.',
+                     'bullets': ['Built Spring Boot endpoints for refill reminders with Java and MySQL storage.',
+                                 'Designed MySQL tables for reminder schedules and refill status history records.',
+                                 'Implemented Kafka consumers that publish refill reminder events to subscribers.',
+                                 'Wrote Spring Boot services in Java that compute the next refill reminder date.']}]
+        model = Model(projects=projects)
+        with patch('resume_bot.generate.generate', model):
+            proposals = propose_projects(self.candidate(), self.JAVA, 'Java Backend Developer', 3, object(),
+                                         grounded=True)
+        self.assertTrue(proposals)
+        for proposal in proposals:
+            self.assertNotIn('Kafka', proposal['stack'])
+            self.assertFalse(any('Kafka' in bullet for bullet in proposal['bullets']))
+        facts = json.loads(model.prompts[0].split('FACTS:\n', 1)[1])
+        self.assertNotIn('role_technologies', facts)
+        self.assertNotIn('Kafka', facts['candidate_skills'])
