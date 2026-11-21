@@ -83,9 +83,14 @@ tr.cd-focus > td { background: #fff7e0; }
   #cd-rows > tr:not(.cd-details-row) { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-top: 10px; }
   #cd-rows > tr.cd-details-row { border: 0; padding: 0; margin-top: -6px; }
   #cd-rows > tr.cd-details-row > td { border: 1px solid var(--line); border-top: 0; border-radius: 0 0 12px 12px; padding: 12px; }
-  .cd-outputs { margin-top: 6px; }
-  .cd-outputs button, .cd-outputs a { min-height: 44px; flex: 1 1 calc(50% - 6px); justify-content: center; display: inline-flex; align-items: center; }
-  .cd-outputs .cd-start { flex-basis: 100%; }
+  /* Actions in a two-column grid: downloads look like buttons, the ATS score and Start take a full row. */
+  .cd-outputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+  .cd-outputs > button, .cd-outputs > a { min-height: 44px; margin: 0; display: flex; align-items: center;
+    justify-content: center; text-align: center; padding: 0 8px; }
+  .cd-outputs > a.cd-link { border: 1px solid var(--field); border-radius: 10px; background: #fff; font-weight: 600;
+    text-decoration: none; }
+  .cd-outputs > .cd-ats, .cd-outputs > .cd-start { grid-column: 1 / -1; }
+  .cd-outputs > .cd-ats { justify-self: start; }
   .cd-details { grid-template-columns: minmax(0, 1fr); }
   .cd-details dl { grid-template-columns: minmax(0, 1fr); }
   .cd-details dt { margin-top: 4px; }

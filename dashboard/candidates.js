@@ -1,5 +1,5 @@
 /* Operator view of public-form applications (/candidates): every application with everything the candidate entered,
-   Start processing (the operator's own document-upload workflow on the candidate's details), where each resume is,
+   Start processing (the operator's own resume workflow on the candidate's typed details), where each resume is,
    queue control, downloads, new private links and deletion. Reads /api/intake/candidates (operator accounts only). */
 'use strict';
 const $ = id => document.getElementById(id);
@@ -110,6 +110,14 @@ function row(entry) {
       go.type = 'button';
       go.addEventListener('click', () => start(entry, go));
       outputs.prepend(go);
+    } else if (status === 'complete' || status === 'blocked') {
+      // A finished or stopped resume can be prepared again from the same details (the earlier one stays).
+      const again = el('button', 'Process again', 'cd-small');
+      again.type = 'button';
+      again.addEventListener('click', () => {
+        if (window.confirm(`Prepare a new resume for ${entry.name} from the same details? The current one stays.`)) start(entry, again);
+      });
+      outputs.append(again);
     }
     if (status === 'needs_input' && !legacy) {
       const review = el('a', 'Review in My resumes', 'cd-link');
@@ -213,7 +221,7 @@ async function start(entry, button) {
   const result = await response.json().catch(() => ({}));
   $('cd-message').textContent = !response.ok ? (result.error || 'Could not start processing.') : result.created
     ? `Processing started for ${entry.name}. Its AI drafts appear for your review under My resumes.`
-    : `${entry.name}'s resume is already being prepared from these details.`;
+    : `${entry.name}'s resume was already prepared from these exact details; open it in My resumes.`;
   await refresh();
 }
 

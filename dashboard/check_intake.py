@@ -161,8 +161,14 @@ def main():
                     owner, identifier, payload, label = db.execute(
                         'SELECT owner, id, payload, candidate FROM automation').fetchone()
                 request = json.loads(payload)
-                # The operator's own document-upload workflow: a Word resume of the form, as the operator's resume.
-                assert (request['extension'], label) == ('docx', 'Kiran Example'), (request.get('extension'), label)
+                # The operator's own resume workflow on the details as typed: the project keeps its name, technologies
+                # and description, and the education its year (as the operator's resume, labelled with the name).
+                from resume_bot.generate import split_project
+                profile = request['profile']
+                assert label == 'Kiran Example', label
+                assert [split_project(p)[0] for p in profile['projects']] == ['Clinic Booking API'], profile['projects']
+                assert split_project(profile['projects'][0])[1] == ['Java', 'Spring Boot', 'MySQL'], profile['projects']
+                assert [e['end'] for e in profile['education']] == ['2015'], profile['education']
                 assert owner != __import__('intake').candidate_owner(candidate), 'an operator resume, not the candidate'
 
                 # Records link both ways. My resumes names the application; its link opens that candidate's details.
@@ -184,8 +190,14 @@ def main():
                 review.click()
                 expect(operator.locator(f'li[data-id="{identifier}"].auto-focus')).to_be_visible(timeout=15000)
                 with closing(__import__('sqlite3').connect(database)) as db, db:
-                    db.execute("UPDATE automation SET status='queued', stage='Submission saved' WHERE id=?", (identifier,))
+                    db.execute("UPDATE automation SET status='complete', stage='Verified resume ready' WHERE id=?",
+                               (identifier,))
                 operator.goto(origin + '/candidates')
+                # A finished resume can be prepared again from the same details (the operator's choice).
+                expect(operator.get_by_role('button', name='Process again')).to_be_visible(timeout=15000)
+                with closing(__import__('sqlite3').connect(database)) as db, db:
+                    db.execute("UPDATE automation SET status='queued', stage='Submission saved' WHERE id=?", (identifier,))
+                operator.reload()
 
                 # The candidate follows it, and downloads the finished resume; nothing else.
                 page.reload()
@@ -221,8 +233,8 @@ def main():
             server.RequestHandlerClass.stop_imports()
             server.server_close()
     print('Intake browser acceptance passed: phone form, Word prefill, local draft, private link, nothing processed '
-          'before Start, Candidates beside My resumes with its badge (desktop and phone), full details and Start '
-          'processing (upload workflow as the operator), resume and application linked both ways, the candidate\'s '
+          'before Start, Candidates beside My resumes with its badge (desktop and phone), full details, Start processing '
+          'and Process again (typed details as the operator), resume and application linked both ways, the candidate '
           'progress and PDF download, corrections flagged for the operator.')
 
 

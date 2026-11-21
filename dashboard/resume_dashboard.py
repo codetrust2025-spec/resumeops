@@ -871,8 +871,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             if purpose == 'action':
                 # Candidates submit details and download their resume; reviewing drafts, regenerating and deleting
                 # are the operator's (Candidates page and dashboard).
-                return self.send_json({'error': 'Your resume is prepared by the ResumeOps team. Use this link to follow '
-                                                'it and download it when it is ready.'}, 403)
+                return self.reject_post('Your resume is prepared by the ResumeOps team. Use this link to follow it and '
+                                        'download it when it is ready.')  # drains the body (Windows resets otherwise)
             try:
                 size = int(self.headers.get('Content-Length', ''))
             except ValueError:
@@ -936,12 +936,13 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
         def human_verify(self, size):
             """Exchange the Turnstile token from the form for a signed pass (see intake.HumanCheck)."""
             from intake import HumanCheckError, IntakeError
-            if self.public_origin() != web_origin or not intake.human.site_key():
-                return self.send_json({'error': 'The human check is not used at this address.'}, 404)
             if not 0 < size <= 4096:
                 return self.send_json({'error': 'Invalid request.'}, 413)
+            raw = self.rfile.read(size)  # read first: an unread body can reset the connection before the answer
+            if self.public_origin() != web_origin or not intake.human.site_key():
+                return self.send_json({'error': 'The human check is not used at this address.'}, 404)
             try:
-                body = json.loads(self.rfile.read(size))
+                body = json.loads(raw)
                 token = body.get('token') if isinstance(body, dict) else None
                 return self.send_json(intake.human.verify(token, self.headers.get('Cf-Connecting-IP'), web_host))
             except HumanCheckError as exc:
@@ -994,7 +995,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 candidate = request.get('candidate') if isinstance(request, dict) else None
                 candidate = candidate if isinstance(candidate, str) else ''
                 if self.path == '/api/intake/start':
-                    # Start processing: the operator's own document-upload workflow, as the operator's resume.
+                    # Start processing: the operator's own resume workflow on the typed details, as the operator's resume.
                     try:
                         return self.send_json(intake.start(candidate, self.session_owner(request_origin)), 202)
                     except AutomationCapacity as exc:
