@@ -900,7 +900,7 @@ def objective_problems(text, profile, role_title):
 OBJECTIVE_STRENGTHS = {
     'frontend': ('user experience', 'clear technical judgment', 'clear communication', 'attention to quality'),
     'mobile': ('user experience', 'clear technical judgment', 'clear communication', 'attention to quality'),
-    'qa': ('software quality', 'clear technical judgment', 'attention to detail', 'clear communication'),
+    'qa': ('attention to quality', 'clear technical judgment', 'attention to detail', 'clear communication'),
     'data_engineering': ('data accuracy', 'clear technical judgment', 'attention to detail', 'clear communication'),
     'data_science': ('analytical clarity', 'clear technical judgment', 'attention to detail', 'clear communication'),
     'analytics': ('analytical clarity', 'clear technical judgment', 'attention to detail', 'clear communication'),

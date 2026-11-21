@@ -109,8 +109,8 @@ class CareerObjectiveTests(unittest.TestCase):
         self.assertEqual(objective_problems(old, evidence, title), [])
         self.assertTrue(broad_objective_problems(old, evidence, title))
         with patch('resume_bot.generate.generate', side_effect=[
-                {'area': 'HRMS', 'strengths': ['software quality', 'attention to detail']},
-                {'strengths': ['software quality', 'attention to detail']}]) as model:
+                {'area': 'HRMS', 'strengths': ['clear technical judgment', 'attention to detail']},
+                {'strengths': ['clear technical judgment', 'attention to detail']}]) as model:
             text, mode = write_summary(evidence, title, 3, [], object())
         self.assertEqual(mode, 'ai')
         self.assertEqual(model.call_count, 2)
