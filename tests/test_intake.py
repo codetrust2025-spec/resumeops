@@ -303,6 +303,14 @@ class PrefillTests(unittest.TestCase):
         self.assertEqual(filled['work_experience'][0]['start'], '11 Jul 2022')
         self.assertEqual(filled['education'][0]['graduation_year'], '2015')
 
+    def test_a_heading_is_never_taken_for_the_name(self):
+        # Seen live: with a first line that is not a plain name, "Employment dates" became the full name.
+        text = self.TEXT.replace('Kiran Example\n', 'Kiran Example 1121 (fictional)\n')
+        filled = quick_prefill(text)
+        self.assertEqual(filled['full_name'], '')
+        self.assertEqual(filled['email'], 'kiran.example@example.com')
+        self.assertEqual(quick_prefill('Personal Details\nEmployment dates\n' + self.TEXT)['full_name'], '')
+
     def test_a_word_document_is_read(self):
         body = ''.join(f'<w:p><w:r><w:t xml:space="preserve">{escape(line)}</w:t></w:r></w:p>' for line in self.TEXT.splitlines())
         data = io.BytesIO()
