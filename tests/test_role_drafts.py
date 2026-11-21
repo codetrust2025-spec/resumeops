@@ -155,9 +155,9 @@ class DraftRoleContentTests(unittest.TestCase):
             write_summary(mixed, 'Frontend Developer', 3, FRONTEND['keywords'], object())
             propose_projects(mixed, FRONTEND, 'Frontend Developer', 3, object())
         summary_facts = json.loads(model.prompts[0].split('DATA:\n', 1)[1])
-        # The objective's model reads only the candidate's own work lines (to name their business area), never the
-        # skills list, so a skill that does not fit the role cannot reach the objective.
-        self.assertEqual(summary_facts['work_lines'], ['Built React.js screens with TypeScript.'])
+        # The objective model selects from role-wide priorities. It receives neither work lines nor the
+        # skills list.
+        self.assertNotIn('work_lines', summary_facts)
         self.assertNotIn('confirmed_skills', summary_facts)
         self.assertNotIn('Google Cloud', json.dumps(summary_facts))
         # No proposal came back, so the model was asked once more; the retry note follows the facts.
