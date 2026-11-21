@@ -988,6 +988,9 @@ class AutomationJobs:
         from resume_bot.ollama import Ollama, OllamaError
 
         key = (job['owner'], job['id'])
+        # A candidate's application (started by the operator, who confirms the drafts on the candidate's behalf):
+        # drafts and proposed projects name only the candidate's own technologies (generate.evidence_tools).
+        grounded = 'source' in job.keys() and job['source'] == INTAKE_SOURCE
         checkpoints = json.loads(job['checkpoints'])
         model = Ollama(model=self.workspace.model)
         request = json.loads(job['payload'])
@@ -1151,7 +1154,7 @@ class AutomationJobs:
             if missing or need_skills:
                 progress(28, f'AI drafting {label} content for your review')
                 work, skills = draft_role_content(facts, target, label, years, missing, need_skills, model,
-                                                  draft_progress)
+                                                  draft_progress, grounded=grounded)
                 # A job without lines is always asked about; a thin job that already has lines only when there are
                 # drafts to review (asking it again with nothing new would be an unnecessary question).
                 questions = [self._draft_question(facts, index, work.get(index), label,
@@ -1178,11 +1181,12 @@ class AutomationJobs:
                     proposals = checkpoints.get('proposals_made')
                     if proposals is None:
                         progress(29, 'Project selection: proposing role-specific projects')
+                        # Grounded: the candidate's own facts only (suggested skills are a question until confirmed).
                         proposals = checkpoint('proposals_made', propose_projects(
-                            {**facts, 'skills': [*role_skills, *skills]}, target, label, years,
+                            facts if grounded else {**facts, 'skills': [*role_skills, *skills]}, target, label, years,
                             model, proposal_progress,
                             avoid=[*(line for entry in facts['experience'] for line in entry['bullets']),
-                                   *(line for lines in work.values() for line in lines)]))
+                                   *(line for lines in work.values() for line in lines)], grounded=grounded))
                 checkpoints.update(draft=facts, questions=questions)
                 if proposals:
                     checkpoints['proposals'] = proposals
@@ -1227,7 +1231,7 @@ class AutomationJobs:
                     proposals = checkpoint('proposals_made', propose_projects(
                         facts, {'role': intelligence['role'], 'keywords': intelligence['terms']},
                         intelligence['label'], years, model, proposal_progress,
-                        avoid=[line for entry in facts['experience'] for line in entry['bullets']]))
+                        avoid=[line for entry in facts['experience'] for line in entry['bullets']], grounded=grounded))
                 if proposals:
                     # Suggestions are never resume content until the candidate confirms them.
                     checkpoints['proposals'] = proposals
