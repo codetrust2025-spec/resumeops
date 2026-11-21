@@ -507,7 +507,7 @@ class NeedsInputPageTests(unittest.TestCase):
                     page.locator('#auto-file').set_input_files({'name': 'resume.txt', 'mimeType': 'text/plain',
                                                                 'buffer': RESUME.encode()})
                     page.locator('#auto-consent').check()
-                    page.get_by_role('button', name='Create verified resume').click()
+                    page.get_by_role('button', name='Create Resume').click()
                     role_error = page.locator('label:has(input[name="role"]) + .field-error')
                     role_error.wait_for()
                     self.assertIn('target role', role_error.inner_text().lower())

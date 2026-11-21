@@ -1159,7 +1159,7 @@ class AutomationJobs:
             if missing or need_skills:
                 progress(28, f'AI drafting {label} content for your review')
                 work, skills = draft_role_content(facts, target, label, years, missing, need_skills, model,
-                                                  draft_progress, grounded=grounded)
+                                                  draft_progress, grounded=True)
                 # A job without lines is always asked about; a thin job that already has lines only when there are
                 # drafts to review (asking it again with nothing new would be an unnecessary question).
                 questions = [self._draft_question(facts, index, work.get(index), label,
@@ -1188,10 +1188,10 @@ class AutomationJobs:
                         progress(29, 'Project selection: proposing role-specific projects')
                         # Grounded: the candidate's own facts only (suggested skills are a question until confirmed).
                         proposals = checkpoint('proposals_made', propose_projects(
-                            facts if grounded else {**facts, 'skills': [*role_skills, *skills]}, target, label, years,
+                            facts, target, label, years,
                             model, proposal_progress,
                             avoid=[*(line for entry in facts['experience'] for line in entry['bullets']),
-                                   *(line for lines in work.values() for line in lines)], grounded=grounded))
+                                   *(line for lines in work.values() for line in lines)], grounded=True))
                 checkpoints.update(draft=facts, questions=questions)
                 if proposals:
                     checkpoints['proposals'] = proposals
@@ -1237,7 +1237,7 @@ class AutomationJobs:
                     proposals = checkpoint('proposals_made', propose_projects(
                         facts, {'role': intelligence['role'], 'keywords': intelligence['terms']},
                         intelligence['label'], years, model, proposal_progress,
-                        avoid=[line for entry in facts['experience'] for line in entry['bullets']], grounded=grounded))
+                        avoid=[line for entry in facts['experience'] for line in entry['bullets']], grounded=True))
                 if proposals:
                     # Suggestions are never resume content until the candidate confirms them.
                     checkpoints['proposals'] = proposals

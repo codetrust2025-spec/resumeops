@@ -210,7 +210,7 @@ class ReviewOnceTests(unittest.TestCase):
         self.workspace = Workspace(Path(self.temp.name), code_root=ROOT)
         self.jobs = AutomationJobs(self.workspace)
         self.jobs.start = lambda: None
-        candidate = {'full_name': 'Meera Example (fictional)', 'phone': '+91 90000 00009', 'email': '',
+        candidate = {'full_name': 'Meera Example (fictional)', 'phone': '+91 90000 00009', 'email': '', 'skills': 'React.js, TypeScript',
                      'work_experience': [{'company': 'Example Health Pvt Ltd', 'position': 'Software Engineer',
                                           'start': 'Jan 2021', 'end': 'Present'},
                                          {'company': 'Sample Systems', 'position': 'Associate Engineer',
@@ -237,14 +237,11 @@ class ReviewOnceTests(unittest.TestCase):
         self.assertEqual((row['status'], row['stage']), ('needs_input', 'Review AI drafts for Frontend Developer'))
         self.assertIsNone(row['job'], 'nothing is published before the review')
         job = self.jobs.list(OWNER)[0]
-        self.assertEqual([q['id'] for q in job['questions']], ['experience.0.bullets', 'experience.1.bullets', 'skills'])
-        self.assertTrue(all(q['drafted'] for q in job['questions']))
-        self.assertIn('React.js components', job['questions'][0]['value'])
-        self.assertEqual(job['questions'][2]['value'], 'JavaScript, HTML, React.js, TypeScript, CSS, Angular')
+        self.assertEqual([q['id'] for q in job['questions']], ['experience.0.bullets', 'experience.1.bullets'])
+        self.assertFalse(any(q['drafted'] for q in job['questions']), 'drafts using unstated tools are discarded')
+        self.assertEqual(job['questions'][0]['value'], '')
         self.assertEqual([p['name'] for p in job['proposals']], ['Practice Catalogue', 'Practice Planner'])
-        self.assertEqual(job['error'], 'AI drafted work lines from your job titles and dates and skill suggestions for '
-                                       'Frontend Developer. Keep only what is true for you and edit anything. Then '
-                                       'confirm once. Suggested projects are included as drafts: skip any you have not built.')
+        self.assertIn('confirm once', job['error'])
 
         with self.assertRaises(AnswerError):  # the projects are decided together with the drafts
             self.jobs.decide_projects(OWNER, self.id, [{'include': False}, {'include': False}])
@@ -252,7 +249,7 @@ class ReviewOnceTests(unittest.TestCase):
             self.jobs.answer(OWNER, self.id, {'experience.0.bullets': 'x', 'experience.1.bullets': '', 'skills': ''})
         self.jobs.answer(OWNER, self.id, {
             'experience.0.bullets': 'Built reusable React.js components with TypeScript for internal dashboards and forms.',
-            'experience.1.bullets': '', 'skills': 'React.js, TypeScript'},
+            'experience.1.bullets': ''},
             [{'include': True}, {'include': False}])
         checkpoints = json.loads(self.row()['checkpoints'])
         self.assertEqual(self.row()['status'], 'queued')
@@ -275,15 +272,26 @@ class ReviewOnceTests(unittest.TestCase):
         self.assertIn('Practice Catalogue', printed)
         self.assertNotIn('Example Health Pvt Ltd built', printed)
 
+    def test_operator_drafts_and_projects_do_not_trust_ai_skill_suggestions(self):
+        with patch('resume_bot.generate.draft_role_content', return_value=({}, ['Kafka'])) as draft, \
+                patch('resume_bot.generate.propose_projects', return_value=[]) as projects, \
+                patch('resume_bot.automation.generate', return_value={}):
+            self.jobs._prepare(self.row())
+        self.assertTrue(draft.call_args.kwargs['grounded'])
+        self.assertTrue(projects.call_args.kwargs['grounded'])
+        self.assertNotIn('Kafka', projects.call_args.args[0]['skills'])
+        self.assertEqual(set(projects.call_args.args[0]['skills']), {'React.js', 'TypeScript'})
+        self.assertIsNone(self.row()['job'], 'suggestions never publish without confirmation')
+
     def test_without_the_model_the_review_still_appears_with_empty_fields(self):
         self.model = Model(fail=True)
         self.prepare()
         job = self.jobs.list(OWNER)[0]
         self.assertEqual(job['status'], 'needs_input')
         self.assertFalse(any(q['drafted'] for q in job['questions']))
-        self.assertEqual([q['value'] for q in job['questions']], ['', '', ''])
+        self.assertEqual([q['value'] for q in job['questions']], ['', ''])
         self.jobs.answer(OWNER, self.id, {'experience.0.bullets': 'Fixed Angular form defects.',
-                                          'experience.1.bullets': '', 'skills': 'Angular'})
+                                          'experience.1.bullets': ''})
         self.assertEqual(self.row()['status'], 'queued')
 
     def test_regenerating_a_finished_resume_drafts_work_for_the_new_role(self):

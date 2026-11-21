@@ -183,11 +183,12 @@ class ReviewAndResumeTests(unittest.TestCase):
         self.jobs = AutomationJobs(self.workspace)
         self.jobs.start = lambda: None
         candidate = {'full_name': 'Arun Kumar (fictional)', 'phone': '+91 9000000000', 'email': 'arun.kumar@example.com',
-                     'skills': 'React.js, TypeScript, Redux Toolkit, REST APIs, Jest, Git',
+                     'skills': 'React.js, TypeScript, Redux Toolkit, REST APIs, Jest, Git, Python, SQL, BigQuery, Dataflow, Pub/Sub, Cloud Storage, Cloud Composer, Apache Beam',
                      'work_experience': [{'company': 'DemoTech Solutions Pvt Ltd (fictional)', 'position': 'Frontend Developer',
                                           'start': 'July 2023', 'end': 'Present'}],
                      'education': [{'degree': 'B.Tech - Information Technology',
                                     'university': 'Example Institute of Technology (fictional)', 'graduation_year': '2022'}]}
+        # Drafting may use only stated tools, including for an operator's career-transition resume.
         self.id = self.jobs.enqueue(OWNER, {'consent': CONSENT_VERSION, 'role': 'GCP Data Engineer', 'candidate': candidate})
 
     def row(self):

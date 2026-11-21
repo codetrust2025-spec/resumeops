@@ -136,7 +136,7 @@ class AcceptanceCases(unittest.TestCase):
     def test_react_input_with_gcp_data_engineer_selected_gives_a_gcp_resume(self):
         candidate = {'full_name': 'Arun Kumar (fictional)', 'phone': '+91 9000000000', 'email': 'arun.kumar@example.com',
                      'skills': 'React.js, JavaScript (ES6+), TypeScript, HTML5, CSS3, Redux Toolkit, React Router, '
-                               'REST APIs, Material UI, Jest, Git',
+                               'REST APIs, Material UI, Jest, Git, Python, SQL, BigQuery, Dataflow, Pub/Sub, Cloud Storage, Cloud Composer, Apache Beam, Apache Spark, Dataproc',
                      'work_experience': [{'company': 'DemoTech Solutions Pvt Ltd (fictional)', 'position': 'Frontend Developer',
                                           'start': 'July 2023', 'end': 'Present',
                                           'responsibilities': 'Developed responsive web pages using React.js.'}],
@@ -175,7 +175,7 @@ class AcceptanceCases(unittest.TestCase):
 
     def test_gcp_input_with_java_backend_selected_gives_a_java_resume(self):
         candidate = {'full_name': 'Ravi Example (fictional)', 'phone': '+91 9000000001', 'email': 'ravi@example.com',
-                     'skills': 'Python, SQL, BigQuery, Dataflow, Pub/Sub, Apache Airflow, Cloud Composer, Git',
+                     'skills': 'Python, SQL, BigQuery, Dataflow, Pub/Sub, Apache Airflow, Cloud Composer, Git, Java, Spring Boot, REST APIs, Spring Data JPA, Hibernate, Spring Security, JUnit, Mockito, Maven, Kafka, MySQL',
                      'work_experience': [{'company': 'Sample Data Labs (fictional)', 'position': 'GCP Data Engineer',
                                           'start': 'Jan 2022', 'end': 'Present',
                                           'responsibilities': 'Built Dataflow pipelines that load event data into BigQuery.\n'
@@ -207,9 +207,24 @@ class AcceptanceCases(unittest.TestCase):
         self.assertEqual(len(stored['experience'][0]['bullets']), 8, 'own GCP lines kept beside the Java lines')
         self.assertTrue(any(p.startswith('Sales Warehouse') for p in stored['projects']))
 
+    def test_new_role_does_not_establish_candidate_technology_expertise(self):
+        candidate = {'full_name': 'Example Applicant', 'phone': '+91 9000000001', 'skills': 'Python, BigQuery',
+                     'work_experience': [{'company': 'Example', 'position': 'Engineer', 'start': '2022',
+                                          'end': 'Present', 'responsibilities': 'Built BigQuery reporting views.'}],
+                     'education': EDUCATION}
+        ident = self.jobs.enqueue(OWNER, {'consent': CONSENT_VERSION, 'role': 'Java Backend Developer',
+                                          'candidate': candidate})
+        enqueue = self.prepare(ident, JAVA_MODEL())
+        job = self.jobs.list(OWNER, ident)[0]
+        self.assertEqual(job['status'], 'needs_input')
+        self.assertTrue(any(q['field'] == 'skills' for q in job['questions']))
+        self.assertFalse(any(q['field'] == 'bullets' and q['drafted'] for q in job['questions']))
+        self.assertEqual(job['proposals'], [])
+        enqueue.assert_not_called()
+
     def test_a_regenerated_resume_gets_work_lines_for_the_new_role(self):
         facts = {'full_name': 'Ravi Example (fictional)', 'email': '', 'phone': '+91 9000000001', 'location': '',
-                 'skills': ['Python', 'BigQuery', 'Dataflow', 'SQL', 'Git'],
+                 'skills': ['Python', 'BigQuery', 'Dataflow', 'SQL', 'Git', *'Java, Spring Boot, REST APIs, Spring Data JPA, Hibernate, Spring Security, JUnit, Mockito, Maven, Kafka, MySQL'.split(', ')],
                  'experience': [{'company': 'Sample Data Labs (fictional)', 'position': 'GCP Data Engineer',
                                  'start': 'Jan 2022', 'end': 'Present', 'location': '',
                                  'bullets': ['Built Dataflow pipelines that load event data into BigQuery.',

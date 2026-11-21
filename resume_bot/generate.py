@@ -1425,7 +1425,7 @@ def draft_role_content(profile, target, role_title, years, missing, need_skills,
                                 and not any(matched_terms([t], h) for h in have)]
                 skills = (missing_lead + skills)[:12]
             # Grounded: only the candidate's own technologies (a suggested skill is a question until confirmed).
-            allowed = ({'role': own, 'own': own} if grounded
+            allowed = ({'role': [s for s in own if skill_fits_role(s, target)], 'own': own} if grounded
                        else {'role': vocabulary + on_role + skills + GENERIC_TOOLS, 'own': on_role + GENERIC_TOOLS})
             wanted = {role['index'] for role in batch}
             for item in (data.get('roles') if isinstance(data.get('roles'), list) else []):

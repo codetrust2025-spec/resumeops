@@ -260,7 +260,7 @@ class SparseJobTests(unittest.TestCase):
 
     def questions(self, lines):
         candidate = {'full_name': 'Asha Example (fictional)', 'phone': '+91 9000000002', 'email': 'asha@example.com',
-                     'skills': 'Python, Django, PostgreSQL, Git',
+                     'skills': 'Python, Django, PostgreSQL, Git, FastAPI, Pydantic, Redis, Django REST Framework',
                      'work_experience': [{'company': 'Example Cloud (fictional)', 'position': 'Backend Engineer',
                                           'start': 'Jan 2022', 'end': 'Present', 'responsibilities': '\n'.join(lines)}],
                      'education': [{'degree': 'B.E. Computer Engineering', 'university': 'Example Institute (fictional)',
@@ -300,7 +300,7 @@ class ReviewTests(unittest.TestCase):
         self.jobs = AutomationJobs(self.workspace)
         self.jobs.start = lambda: None
         candidate = {'full_name': 'Arun Kumar (fictional)', 'phone': '+91 9000000000', 'email': 'arun.kumar@example.com',
-                     'skills': 'React.js, TypeScript, Git',
+                     'skills': 'React.js, TypeScript, Git, Python, SQL, BigQuery, Dataflow, Pub/Sub, Cloud Storage, Cloud Composer, Apache Beam, Apache Spark, Dataproc',
                      'work_experience': [{'company': 'DemoTech Solutions Pvt Ltd (fictional)', 'position': 'Frontend Developer',
                                           'start': 'July 2023', 'end': 'Present'}],
                      'education': [{'degree': 'B.Tech - Information Technology', 'university': 'Example Institute (fictional)',

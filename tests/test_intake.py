@@ -204,7 +204,7 @@ class DeskTests(unittest.TestCase):
         self.assertEqual((row['owner'], row['source'], row['candidate'], row['status']),
                          (OPERATOR, INTAKE_SOURCE, 'Asha Example 0', 'queued'))
         payload = json.loads(row['payload'])
-        # Exactly the request the dashboard makes for "Create a verified resume" with the details filled in.
+        # Exactly the request the dashboard makes for "Create Resume" with the details filled in.
         role, candidate = __import__('intake').form_facts(applicant)
         self.assertEqual(payload, submission({'consent': CONSENT_VERSION, 'role': role, 'candidate': candidate}))
         self.assertEqual(payload, intake_request(applicant)[0])

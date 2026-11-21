@@ -215,11 +215,8 @@ def check():
                     page.goto(origin)
                     target = page.get_by_label('Target role')
                     target.fill('Full Stack Developer')
-                    # Documents plus typed details: an optional section under the upload field, where name and
-                    # phone are not required, and whatever is typed is sent with the documents.
-                    extra = page.locator('#auto-extra')
-                    expect(extra).to_be_visible()
-                    extra.locator(':scope > summary').click()
+                    # Typed facts remain available inline with uploads, without an optional-details accordion.
+                    expect(page.locator('#auto-extra')).to_have_count(0)
                     expect(page.get_by_label('Full name')).to_be_visible()
                     assert not page.get_by_label('Full name').evaluate('node => node.required')
                     page.get_by_text('More details', exact=True).click()
@@ -234,14 +231,13 @@ def check():
                         sent.append(route.request.post_data_json)
                         route.fulfill(status=400, content_type='application/json', body='{"error": "Checked."}')
                     page.route('**/api/automation', refuse)
-                    page.get_by_role('button', name='Create verified resume').click()
+                    page.get_by_role('button', name='Create Resume').click()
                     expect(page.get_by_text('Checked.')).to_be_visible()
                     page.unroute('**/api/automation')
                     assert len(sent) == 1 and len(sent[0]['documents']) == 1, sent
                     assert sent[0]['candidate']['skills'] == 'Kubernetes' and sent[0]['candidate']['full_name'] == '', sent
                     page.get_by_text('More details', exact=True).click()  # closed again, as the AI-first flow expects
-                    page.get_by_label('AI-first').check()
-                    expect(extra).to_be_hidden()
+                    page.get_by_label('Enter Manually').check()
                     page.get_by_label('Full name').fill('Fresher Synthetic')
                     page.get_by_label('Phone', exact=True).fill('+44 7700 900456')
                     page.get_by_text('More details', exact=True).click()
@@ -257,7 +253,7 @@ def check():
                     page.locator('#auto-consent').check()
                     with page.expect_response(lambda response: response.url.endswith('/api/automation') and
                                               response.request.method == 'POST') as accepted:
-                        page.get_by_role('button', name='Create verified resume').click()
+                        page.get_by_role('button', name='Create Resume').click()
                     assert accepted.value.status == 202, accepted.value.text()
                     # SQL and JavaScript are none of Full Stack Developer's own stack: the role's skills are confirmed
                     # once (here the fake model suggests nothing, so the candidate's own skills are kept as listed).
