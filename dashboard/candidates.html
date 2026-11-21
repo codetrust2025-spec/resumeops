@@ -34,6 +34,18 @@
       <button type="button" id="cd-pause">Pause processing</button>
     </div>
   </section>
+  <section class="cd-card" aria-labelledby="cd-human-title">
+    <h2 id="cd-human-title">Bot protection (Cloudflare Turnstile)</h2>
+    <p id="cd-human-state" role="status"></p>
+    <form id="cd-human-form" class="cd-human" autocomplete="off">
+      <label>Site key <input id="cd-human-site" spellcheck="false" autocomplete="off"></label>
+      <label>Secret key <input id="cd-human-secret" type="password" spellcheck="false" autocomplete="new-password"></label>
+      <div class="cd-inline"><button type="submit">Save and turn on</button>
+        <button type="button" id="cd-human-off">Turn off</button></div>
+      <p class="cd-hint">Create a Turnstile widget for resumeops.tech in Cloudflare, then paste its two keys here. The
+        secret stays on this computer and is never shown again.</p>
+    </form>
+  </section>
   <section class="cd-card">
     <div class="cd-tools">
       <input type="search" id="cd-search" placeholder="Search name, email, phone, ID or role" aria-label="Search candidates">

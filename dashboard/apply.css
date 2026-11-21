@@ -59,3 +59,4 @@ input:focus, textarea:focus { outline: 3px solid rgba(31,85,181,.25); border-col
   .ap-intro h1 { font-size: 1.35rem; }
   .ap-row-actions { grid-template-columns: minmax(0, 1fr); }
 }
+#ap-human-box { min-height: 66px; }

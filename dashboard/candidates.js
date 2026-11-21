@@ -131,7 +131,26 @@ async function refresh() {
   data = await response.json();
   $('cd-message').textContent = '';
   if (!$('cd-form-url').value) $('cd-form-url').value = data.form_url;
+  showHuman(data.human_check);
   render();
+}
+
+function showHuman(state) {
+  if (!state) return;
+  $('cd-human-state').textContent = !state.configured
+    ? 'Off: anyone can submit without a check (rate limits still apply).'
+    : state.test_keys ? 'On with Cloudflare TEST keys: every check passes. Replace them with your real keys.'
+      : `On: new applications and uploads need the check (site key ${state.site_key}).`;
+  $('cd-human-off').hidden = !state.configured;
+}
+
+async function saveHuman(siteKey, secret) {
+  const response = await ResumeAuth.call('/api/intake/human-check', {method: 'POST',
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify({site_key: siteKey, secret})});
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) { $('cd-human-state').textContent = result.error || 'Could not save the keys.'; return; }
+  $('cd-human-secret').value = '';
+  showHuman(result);
 }
 
 async function init() {
@@ -146,6 +165,13 @@ async function init() {
     await ResumeAuth.call('/api/intake/queue', {method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({paused})});
     await refresh();
+  });
+  $('cd-human-form').addEventListener('submit', event => {
+    event.preventDefault();
+    saveHuman($('cd-human-site').value.trim(), $('cd-human-secret').value.trim());
+  });
+  $('cd-human-off').addEventListener('click', () => {
+    if (window.confirm('Turn off the human check? The form then accepts applications without it.')) saveHuman('', '');
   });
   await ResumeAuth.ready();
   for (;;) {

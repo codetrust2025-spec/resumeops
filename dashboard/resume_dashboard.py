@@ -29,6 +29,7 @@ APPLY_ASSETS = {'apply.js': 'text/javascript', 'apply.css': 'text/css', 'candida
                 'candidate.css': 'text/css', 'automation.js': 'text/javascript', 'automation.css': 'text/css',
                 'builder.css': 'text/css', 'recovery.js': 'text/javascript'}
 PREFILL_BODY = 6 * 1024 * 1024 * 4 // 3 + 4096
+TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com'
 ARTIFACTS = ('resume.pdf', 'overleaf.pdf', 'main.tex', 'overleaf-project.zip',
              'result.json', 'audit.json', 'profile.json')
 LOGS = ('watcher.log', 'alerts.log', 'current-alert.txt', 'windows-suite-final.log',
@@ -498,15 +499,18 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
         def log_message(self, *args):
             pass
 
-        def send_content(self, data, mime, status=200, filename=None):
+        def send_content(self, data, mime, status=200, filename=None, sources=''):
             self.send_response(status)
             self.send_header('Content-Type', mime)
             self.send_header('Content-Length', str(len(data)))
-            self.send_header('Cache-Control', 'no-store')
+            # no-transform: Cloudflare must not rewrite responses (its Web Analytics auto-setup would otherwise add a
+            # third-party beacon that this policy blocks, leaving console errors on every public page).
+            self.send_header('Cache-Control', 'no-store, no-transform')
             self.send_header('X-Content-Type-Options', 'nosniff')
             ancestors = "'self'" if mime == 'application/pdf' else "'none'"
             self.send_header('Content-Security-Policy',
-                             f"default-src 'self'; frame-ancestors {ancestors}; base-uri 'none'; form-action 'none'")
+                             f"default-src 'self';{sources} frame-ancestors {ancestors}; base-uri 'none'; "
+                             "form-action 'none'")
             if filename:
                 self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
             self.end_headers()
@@ -645,7 +649,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                     return self.send_json({'error': 'An operator account is required for this route.'}, 404)
                 from resume_bot import gpu_gate
                 summary = {'queue': automation.queue_summary(), 'form_url': (web_origin or origin) + '/apply',
-                           'gpu': {'slots': gpu_gate.slots(), 'busy': gpu_gate.busy()}}
+                           'gpu': {'slots': gpu_gate.slots(), 'busy': gpu_gate.busy()},
+                           'human_check': intake.human.status()}
                 if url.path == '/api/intake/summary':
                     return self.send_json(summary)
                 return self.send_json({**summary, 'candidates': intake.candidates(), 'now': time.time()})
@@ -785,7 +790,12 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             if not intake.limiter.allow('read', self.intake_client(public)):
                 return self.send_json({'error': 'Too many requests. Wait a moment and retry.'}, 429)
             if url.path in ('/apply', '/apply/'):
-                return self.send_content(Path(__file__).with_name('apply.html').read_bytes(), 'text/html; charset=utf-8')
+                # The form page may load Cloudflare Turnstile (script and its frame); nothing else is allowed.
+                return self.send_content(Path(__file__).with_name('apply.html').read_bytes(), 'text/html; charset=utf-8',
+                                         sources=f" script-src 'self' {TURNSTILE_ORIGIN}; frame-src {TURNSTILE_ORIGIN};")
+            if url.path == '/apply/api/config':
+                # The Turnstile site key when the human check is on for this address (never for this machine).
+                return self.send_json({'turnstile': intake.human.site_key() if public == web_origin else None})
             if url.path == '/apply/status':
                 return self.send_content(candidate_page(Path(__file__).with_name('automation.html').read_bytes()),
                                          'text/html; charset=utf-8')
@@ -839,14 +849,15 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             return self.send_json({'error': 'Not found.'}, 404)
 
         def apply_post(self):
-            from intake import FORM_LIMIT, IntakeDuplicate, IntakeError, prefill_owner
+            from intake import FORM_LIMIT, HumanCheckError, IntakeDuplicate, IntakeError, client_tag, prefill_owner
             public = self.public_origin()
             if public is None or self.headers.get('Origin') != public:
                 return self.reject_post('Request not authorized.')
             if self.headers.get_content_type() != 'application/json':
                 return self.reject_post('Invalid request.')
             path = urlsplit(self.path).path
-            purpose = {'/apply/api/submit': 'submit', '/apply/api/prefill': 'prefill'}.get(path, 'action')
+            purpose = {'/apply/api/submit': 'submit', '/apply/api/prefill': 'prefill',
+                       '/apply/api/verify': 'verify'}.get(path, 'action')
             if not intake.limiter.allow(purpose, self.intake_client(public)):
                 return self.send_json({'error': 'Many applications are arriving from this network. Your form is kept '
                                                 'and sent again automatically.', 'retry': True}, 429)
@@ -864,8 +875,13 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 size = int(self.headers.get('Content-Length', ''))
             except ValueError:
                 size = 0
+            if purpose == 'verify':
+                return self.human_verify(size)
             if not 0 < size <= (FORM_LIMIT if purpose == 'submit' else PREFILL_BODY):
                 return self.send_json({'error': 'The upload is too large (PDF or DOCX up to 6 MB).'}, 413)
+            # The human check covers new applications and uploads that arrive through the public site once the
+            # operator turned it on; corrections and follow-ups are already proven by the candidate's private key.
+            checked = public == web_origin and bool(intake.human.site_key())
             if not intake.heavy.acquire(timeout=15):
                 return self.send_json({'error': 'Busy receiving other applications. Sending again shortly.',
                                        'retry': True}, 503)
@@ -877,9 +893,19 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 body = json.loads(raw)
                 if not isinstance(body, dict):
                     raise ValueError('Invalid request.')
+                proven = None
+                if checked and (purpose == 'prefill' or (body.get('candidate') is None
+                                                         and not intake.known_key(body.get('key')))):
+                    proven = intake.human.check(self.headers.get('X-Apply-Pass'), purpose)
                 if purpose == 'prefill':
-                    return self.prefill(body, prefill_owner)
-                result = intake.submit(body.get('form'), body.get('key'), body.get('candidate'))
+                    response = self.prefill(body, prefill_owner)
+                    if proven:
+                        intake.human.record(proven, 'prefill')
+                    return response
+                result = intake.submit(body.get('form'), body.get('key'), body.get('candidate'),
+                                       client_tag(self.intake_client(public)))
+                if proven and result['created']:
+                    intake.human.record(proven, 'submit')
                 session = body.get('prefill_session')
                 if isinstance(session, str) and re.fullmatch(r'[A-Za-z0-9_-]{20,64}', session):
                     try:  # the uploaded document and its extraction are not kept once the form is in
@@ -889,6 +915,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return self.send_json(result, 201 if result['created'] else 200)
             except IntakeDuplicate as exc:
                 return self.send_json({'error': str(exc), 'candidate': exc.candidate}, exc.status)
+            except HumanCheckError as exc:
+                return self.send_json({'error': str(exc), 'human_check': True}, exc.status)
             except IntakeError as exc:
                 return self.send_json({'error': str(exc), 'field': exc.field}, exc.status)
             except AutomationCapacity as exc:
@@ -902,6 +930,24 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return self.send_json({'error': 'Upload interrupted. Sending again.', 'retry': True}, 408)
             finally:
                 intake.heavy.release()
+
+        def human_verify(self, size):
+            """Exchange the Turnstile token from the form for a signed pass (see intake.HumanCheck)."""
+            from intake import HumanCheckError, IntakeError
+            if self.public_origin() != web_origin or not intake.human.site_key():
+                return self.send_json({'error': 'The human check is not used at this address.'}, 404)
+            if not 0 < size <= 4096:
+                return self.send_json({'error': 'Invalid request.'}, 413)
+            try:
+                body = json.loads(self.rfile.read(size))
+                token = body.get('token') if isinstance(body, dict) else None
+                return self.send_json(intake.human.verify(token, self.headers.get('Cf-Connecting-IP'), web_host))
+            except HumanCheckError as exc:
+                return self.send_json({'error': str(exc), 'human_check': True}, exc.status)
+            except IntakeError as exc:
+                return self.send_json({'error': str(exc), 'retry': True}, exc.status)
+            except (ValueError, UnicodeError):
+                return self.send_json({'error': 'Invalid request.'}, 400)
 
         def prefill(self, body, prefill_owner):
             """Read an uploaded PDF/DOCX now (no GPU) and queue its AI extraction for a fuller prefill."""
@@ -932,6 +978,12 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 if not 0 < size <= 4096 or self.headers.get_content_type() != 'application/json':
                     return self.send_json({'error': 'Invalid request.'}, 413)
                 request = json.loads(self.rfile.read(size))
+                if self.path == '/api/intake/human-check':
+                    # The operator saves the Turnstile keys (both empty turns the check off). The secret is stored
+                    # on this machine and never sent back; the response is the public status only.
+                    if not isinstance(request, dict):
+                        return self.send_json({'error': 'Invalid request.'}, 400)
+                    return self.send_json(intake.human.configure(request.get('site_key'), request.get('secret')))
                 if self.path == '/api/intake/queue':
                     if not isinstance(request, dict) or not isinstance(request.get('paused'), bool):
                         return self.send_json({'error': 'Invalid request.'}, 400)
@@ -1061,7 +1113,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             request_origin = self.request_origin()
             if (self.path not in ('/api/automation', '/api/automation/answer', '/api/automation/projects',
                                   '/api/automation/regenerate', '/api/automation/delete', '/api/intake/key',
-                                  '/api/intake/queue', '/api/roles', '/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry', '/api/ai-draft', '/api/ai-review', '/api/ai-queue') or request_origin is None
+                                  '/api/intake/queue', '/api/intake/human-check', '/api/roles', '/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry', '/api/ai-draft', '/api/ai-review', '/api/ai-queue') or request_origin is None
                     or self.headers.get('Origin') != request_origin
                     or not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token)):
                 return self.reject_post('Request not authorized.')
@@ -1071,7 +1123,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return self.submit_automation(request_origin)
             if self.path in ('/api/automation/answer', '/api/automation/projects', '/api/automation/regenerate', '/api/automation/delete'):
                 return self.automation_action(request_origin, self.path.rsplit('/', 1)[1])
-            if self.path in ('/api/intake/key', '/api/intake/queue'):
+            if self.path in ('/api/intake/key', '/api/intake/queue', '/api/intake/human-check'):
                 if not self.is_operator(request_origin):
                     return self.reject_post('An operator account is required for this route.')
                 return self.intake_operator_post()

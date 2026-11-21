@@ -22,7 +22,10 @@ RETRY_LIMIT = 8
 # Public candidate intake (dashboard/intake.py) has its own capacity: its submissions never make an account's own
 # submission wait or fail, and a burst of candidates is saved rather than refused.
 INTAKE_SOURCE = 'intake'
-INTAKE_PENDING_LIMIT = int(os.environ.get('RESUMEOPS_INTAKE_PENDING_LIMIT', '1000'))
+INTAKE_PENDING_LIMIT = int(os.environ.get('RESUMEOPS_INTAKE_PENDING_LIMIT', '500'))
+# Applications waiting at once from one network (a hashed address). A campus drive behind one address fits; a flood
+# from one address stops here instead of filling the GPU queue.
+INTAKE_CLIENT_LIMIT = int(os.environ.get('RESUMEOPS_INTAKE_CLIENT_LIMIT', '200'))
 QUEUE_PAUSED = '.resumeops-queue-paused'  # operator switch: while present, no new preparation starts
 DELETE_ONE_PHRASE = 'DELETE'
 DELETE_ALL_PHRASE = 'DELETE ALL'
@@ -327,7 +330,8 @@ class AutomationJobs:
             # origin: the candidate's own work lines (from documents, the form or typed answers), as opposed to AI
             # drafts, so a role resume never presents drafted target-role work as employment.
             # source: 'intake' for public candidate submissions, NULL for an account's own (see enqueue).
-            for column in ('notice', 'role', 'candidate', 'facts', 'origin', 'source'):
+            # client: a hashed network tag of a public submission, for the per-network limit and fair order.
+            for column in ('notice', 'role', 'candidate', 'facts', 'origin', 'source', 'client'):
                 if column not in columns:
                     db.execute(f'ALTER TABLE automation ADD COLUMN {column} TEXT')
             # Who deleted what, and when: one row per Delete or Delete all request, kept when the resumes go (it
@@ -375,10 +379,11 @@ class AutomationJobs:
         raw = json.dumps(request, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
         return hashlib.sha256(raw.encode()).hexdigest(), raw
 
-    def insert(self, db, owner, request, source=None, candidate=None):
+    def insert(self, db, owner, request, source=None, candidate=None, client=None):
         """Save a validated request inside the caller's transaction (``BEGIN IMMEDIATE``); the same request from
         the same owner is the same job (never processed twice). Account submissions keep their limits (four in
-        progress per account, 24 waiting overall); intake submissions have their own, larger limit."""
+        progress per account, 24 waiting overall); intake submissions have their own, larger limit, and at most
+        INTAKE_CLIENT_LIMIT of them wait at once from one network (``client``)."""
         identifier, raw = self.request_id(request)
         if db.execute('SELECT 1 FROM automation WHERE owner=? AND id=?', (owner, identifier)).fetchone():
             return identifier
@@ -390,19 +395,30 @@ class AutomationJobs:
             if pending >= 4 or waiting >= INTAKE_PENDING_LIMIT:
                 raise AutomationCapacity('Applications are queued to capacity right now. Your form is kept on this '
                                          'device; it is sent again automatically.')
+            if client and db.execute("SELECT count(*) FROM automation WHERE source=? AND client=? AND status IN "
+                                     "('queued','processing','retrying')", (INTAKE_SOURCE, client)).fetchone()[0] \
+                    >= INTAKE_CLIENT_LIMIT:
+                raise AutomationCapacity('Many applications from your network are waiting to be prepared. Your form '
+                                         'is kept on this device; it is sent again automatically.')
         else:
             global_pending = db.execute('SELECT count(*) FROM automation WHERE payload IS NOT NULL AND source IS NULL'
                                         ).fetchone()[0]
             if pending >= 4 or global_pending >= 24:
                 raise AutomationCapacity('The automation queue is busy. Try again shortly.')
         now = time.time()
-        db.execute('INSERT INTO automation(owner,id,payload,created,updated,role,source,candidate) VALUES (?,?,?,?,?,?,?,?)',
-                   (owner, identifier, raw, now, now, request['role'], source, candidate))
+        db.execute('INSERT INTO automation(owner,id,payload,created,updated,role,source,candidate,client) '
+                   'VALUES (?,?,?,?,?,?,?,?,?)',
+                   (owner, identifier, raw, now, now, request['role'], source, candidate, client))
         return identifier
 
     # Preparation order: an account's own submissions first, then public intake, each oldest first (a job that
-    # waited for the candidate's review keeps its place).
+    # waited for the candidate's review keeps its place). Within each, the queue takes turns between networks
+    # (accounts): the first waiting job of every network, then the second of every network, and so on, so 200
+    # applications from one address never hold back a candidate applying from another.
     ORDER = "ORDER BY (source IS NOT NULL), created"
+    FAIR = ("SELECT * FROM (SELECT *, row_number() OVER (PARTITION BY (source IS NOT NULL), COALESCE(client, owner) "
+            "ORDER BY created) AS fair_rank FROM automation WHERE {where}) "
+            "ORDER BY (source IS NOT NULL), fair_rank, created")
 
     def paused(self):
         return (self.workspace.root / QUEUE_PAUSED).is_file()
@@ -418,8 +434,8 @@ class AutomationJobs:
     def queue_positions(self, db=None):
         """{(owner, id): jobs ahead} for every job waiting to be prepared, in preparation order."""
         with (nullcontext(db) if db is not None else closing(self.connection())) as connection:
-            rows = connection.execute("SELECT owner, id, status FROM automation WHERE status IN "
-                                      f"('queued','retrying','processing') {self.ORDER}").fetchall()
+            rows = connection.execute(self.FAIR.format(
+                where="status IN ('queued','retrying','processing')")).fetchall()
         return {(row['owner'], row['id']): index for index, row in enumerate(rows)}
 
     def queue_summary(self):
@@ -778,8 +794,8 @@ class AutomationJobs:
         role = select_target(role)
         with closing(self.connection()) as db, db:
             db.execute('BEGIN IMMEDIATE')
-            row = db.execute('SELECT facts, candidate, origin, notice, source FROM automation WHERE owner=? AND id=?',
-                             (owner, identifier)).fetchone()
+            row = db.execute('SELECT facts, candidate, origin, notice, source, client FROM automation '
+                             'WHERE owner=? AND id=?', (owner, identifier)).fetchone()
             if not row or not row['facts']:
                 raise AnswerError('Only a finished resume can be regenerated.')
             facts = json.loads(row['facts'])
@@ -794,9 +810,10 @@ class AutomationJobs:
                 now = time.time()
                 # A candidate's regenerated resume stays in the intake queue (source), like the one it came from.
                 db.execute('INSERT INTO automation(owner,id,payload,checkpoints,created,updated,role,candidate,percent,stage,'
-                           "origin,source) VALUES (?,?,?,?,?,?,?,?,30,'Verified facts reused from an earlier resume',?,?)",
+                           "origin,source,client) VALUES (?,?,?,?,?,?,?,?,30,'Verified facts reused from an earlier resume',"
+                           '?,?,?)',
                            (owner, new_id, payload, checkpoints, now, now, role, row['candidate'], json.dumps(origin),
-                            row['source']))
+                            row['source'], row['client']))
         self.start()
         self.wake.set()
         return new_id
@@ -906,8 +923,8 @@ class AutomationJobs:
                 self.stopping.wait(3)
                 continue
             with closing(self.connection()) as db, db:
-                job = db.execute("SELECT * FROM automation WHERE status IN ('queued','retrying') AND next_retry<=? "
-                                 f"{self.ORDER} LIMIT 1", (time.time(),)).fetchone()
+                job = db.execute(self.FAIR.format(where="status IN ('queued','retrying') AND next_retry<=?")
+                                 + ' LIMIT 1', (time.time(),)).fetchone()
                 if job:
                     db.execute("UPDATE automation SET status='processing',updated=? WHERE owner=? AND id=?",
                                (time.time(), job['owner'], job['id']))
