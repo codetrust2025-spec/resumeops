@@ -213,6 +213,84 @@ function check(data) {
 }
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+// The human check (Cloudflare Turnstile) runs only when the operator turned it on. It runs once; the server's signed
+// pass then covers this browser's uploads and applications for an hour, so a retried application needs no new check.
+const PASS = 'resumeops-apply-pass';
+const human = {siteKey: null, widget: null, waiters: []};
+let humanReady = Promise.resolve();
+
+function validPass() {
+  const saved = store.get(PASS);
+  return saved && saved.pass && saved.expires * 1000 > Date.now() + 60000 ? saved.pass : null;
+}
+
+function humanStatus(text) { $('ap-human-status').textContent = text; }
+
+async function humanSetup() {
+  try {
+    const response = await fetch('/apply/api/config', {credentials: 'same-origin', cache: 'no-store'});
+    human.siteKey = (await response.json()).turnstile || null;
+  } catch { human.siteKey = null; }
+  if (!human.siteKey) return;
+  $('ap-human').hidden = false;
+  if (validPass()) humanStatus('Check complete.');
+  try {
+    await new Promise((resolve, reject) => {
+      const script = Object.assign(document.createElement('script'), {
+        src: 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit', async: true,
+        onload: resolve, onerror: reject});
+      document.head.append(script);
+    });
+  } catch {
+    humanStatus('The check could not load. Check your connection, then reload the page. Your form is kept.');
+    return;
+  }
+  human.widget = window.turnstile.render('#ap-human-box', {
+    sitekey: human.siteKey, action: 'apply',
+    callback: token => redeem(token),
+    'expired-callback': () => { if (!validPass()) humanStatus('The check expired. It runs again by itself.'); },
+    'error-callback': () => { humanStatus('The check could not run. Reload the page to try again. Your form is kept.'); },
+  });
+}
+
+async function redeem(token) {
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      const response = await fetch('/apply/api/verify', {method: 'POST', credentials: 'same-origin', cache: 'no-store',
+        headers: {'Content-Type': 'application/json'}, body: JSON.stringify({token})});
+      const result = await response.json();
+      if (response.ok && result.pass) {
+        store.set(PASS, result);
+        humanStatus('Check complete.');
+        human.waiters.splice(0).forEach(resolve => resolve());
+        return;
+      }
+      if (!result.retry) { humanStatus(result.error || 'The check did not pass. It runs again.'); resetHuman(); return; }
+    } catch { /* network: try again */ }
+    await pause(1500 * attempt);
+  }
+  humanStatus('The check could not be confirmed. Reload the page to try again. Your form is kept.');
+}
+
+function resetHuman() {
+  store.drop(PASS);
+  if (window.turnstile && human.widget !== null) window.turnstile.reset(human.widget);
+}
+
+// Headers proving the check for an upload or a new application ({} when the check is off).
+async function humanHeaders() {
+  await humanReady;
+  if (!human.siteKey) return {};
+  let pass = validPass();
+  if (!pass) {
+    humanStatus('Complete this check to send your details. Your form is kept.');
+    $('ap-human').scrollIntoView({block: 'center'});
+    await new Promise(resolve => human.waiters.push(resolve));
+    pass = validPass();
+  }
+  return pass ? {'X-Apply-Pass': pass} : {};
+}
+
 let sending = false;
 
 async function send(pending) {
@@ -224,8 +302,9 @@ async function send(pending) {
       $('ap-sending').textContent = attempt === 1 ? 'Sending your application…' : `Busy right now: sending again (attempt ${attempt})…`;
       let response;
       try {
+        const proof = pending.candidate ? {} : await humanHeaders();  // corrections are proven by the private key
         response = await fetch('/apply/api/submit', {method: 'POST', credentials: 'same-origin', cache: 'no-store',
-          headers: {'Content-Type': 'application/json'}, signal: AbortSignal.timeout(60000),
+          headers: {'Content-Type': 'application/json', ...proof}, signal: AbortSignal.timeout(60000),
           body: JSON.stringify({form: pending.form, key: pending.key, candidate: pending.candidate || undefined,
             prefill_session: session})});
       } catch {
@@ -235,6 +314,7 @@ async function send(pending) {
       let result = {};
       try { result = await response.json(); } catch { /* an HTML error page from the network */ }
       if (response.ok) { done(pending, result); return; }
+      if (result.human_check) { resetHuman(); continue; }  // the next attempt waits for a completed check
       if (result.retry || [408, 429, 500, 502, 503, 504, 520, 522, 524].includes(response.status)) {
         await pause(Math.min(30000, 1500 * attempt) + Math.random() * 1500);
         continue;
@@ -311,10 +391,12 @@ async function prefill(file) {
   let result;
   for (let attempt = 1; ; attempt++) {
     try {
+      const proof = await humanHeaders();
       const response = await fetch('/apply/api/prefill', {method: 'POST', credentials: 'same-origin',
-        headers: {'Content-Type': 'application/json'}, signal: AbortSignal.timeout(60000),
+        headers: {'Content-Type': 'application/json', ...proof}, signal: AbortSignal.timeout(60000),
         body: JSON.stringify({extension, document: btoa(binary), session})});
       result = await response.json();
+      if (result.human_check && attempt < 6) { resetHuman(); status.textContent = 'Complete the quick check at the top to read your file.'; continue; }
       if ((response.status === 503 || response.status === 429) && attempt < 6) { await pause(2000 * attempt); continue; }
       if (!response.ok) { status.textContent = result.error || 'Could not read this file. Fill in the form instead.'; return; }
       break;
@@ -378,6 +460,7 @@ async function editMode() {
 }
 
 async function init() {
+  humanReady = humanSetup();
   for (const spec of PERSONAL) $('ap-personal').append(field(spec));
   $('ap-role-fields').append(field(['role', 'Target role', 'text', true, 'e.g. Java Backend Developer']));
   $('ap-role-fields').querySelector('input').setAttribute('list', 'ap-roles');

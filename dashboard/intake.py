@@ -57,6 +57,11 @@ def new_candidate_id():
     return 'RO-' + ''.join(secrets.choice(ID_ALPHABET) for _ in range(10))
 
 
+def client_tag(address):
+    """A network's tag for limits and fair queueing: a hash, so no address is stored."""
+    return hashlib.sha256(('resumeops-client\0' + str(address)).encode('utf-8')).hexdigest()[:24]
+
+
 def prefill_owner(session):
     """The import-queue owner of one browser's prefill uploads (never an account or candidate owner)."""
     return hashlib.sha256(('intake-prefill\0' + session).encode('utf-8')).hexdigest()
@@ -207,9 +212,11 @@ def intake_request(form):
 
 
 class RateLimiter:
-    """Token buckets per (purpose, client). A campus drive shares one address, so limits are generous; they stop
-    floods, not candidates."""
-    LIMITS = {'submit': (600, 600), 'prefill': (600, 600), 'read': (12000, 600), 'action': (2000, 600)}
+    """Token buckets per (purpose, client): (capacity, seconds to refill it). A campus drive shares one address, so
+    a few hundred applications an hour still fit; a flood from one address stops here. Uploads cost GPU time (the AI
+    reading), so they have their own, smaller budget."""
+    LIMITS = {'submit': (300, 3600), 'prefill': (200, 3600), 'verify': (600, 600), 'read': (12000, 600),
+              'action': (2000, 600)}
 
     def __init__(self):
         self.lock = threading.Lock()
@@ -235,6 +242,7 @@ class IntakeDesk:
         self.workspace = workspace
         self.automation = automation
         self.limiter = RateLimiter()
+        self.human = HumanCheck(workspace.root)
         # Requests that parse uploads or write the database run at most 16 at a time; the rest are told to retry in
         # a moment (the page retries by itself), so a burst never exhausts memory or threads.
         self.heavy = threading.BoundedSemaphore(16)
@@ -253,9 +261,10 @@ class IntakeDesk:
                          ensure_ascii=False, sort_keys=True)
         return hashlib.sha256(raw.encode('utf-8')).hexdigest()
 
-    def submit(self, form, key, candidate=None):
+    def submit(self, form, key, candidate=None, client=None):
         """Save an application (or, with ``candidate``, a correction from that candidate). Returns
-        {'candidate', 'job', 'created'}. The same key again returns the same candidate (a retried request)."""
+        {'candidate', 'job', 'created'}. The same key again returns the same candidate (a retried request).
+        ``client`` is the sender's network tag (client_tag) for the per-network limit and fair queueing."""
         if not isinstance(key, str) or not KEY_PATTERN.fullmatch(key):
             raise IntakeError('The page could not create a private key. Reload the page and submit again.')
         request, summary = intake_request(form)
@@ -268,7 +277,7 @@ class IntakeDesk:
             if candidate is not None:
                 if not mine or mine['candidate'] != candidate or mine['scrubbed']:
                     raise IntakeError('This private link is not valid.', None, 403)
-                job = self.automation.insert(db, mine['owner'], request, INTAKE_SOURCE, summary['name'])
+                job = self.automation.insert(db, mine['owner'], request, INTAKE_SOURCE, summary['name'], client)
                 db.execute('UPDATE intake SET updated=?, name=?, email=?, phone=?, role=?, form=?, digest=? '
                            'WHERE candidate=?', (now, summary['name'], summary['email'], summary['phone'],
                                                   summary['role'], stored, digest, candidate))
@@ -292,11 +301,18 @@ class IntakeDesk:
                            'form, digest) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                            (candidate_id, owner, key_digest(key), now, now, summary['name'], summary['email'],
                             summary['phone'], summary['role'], stored, digest))
-                job = self.automation.insert(db, owner, request, INTAKE_SOURCE, summary['name'])
+                job = self.automation.insert(db, owner, request, INTAKE_SOURCE, summary['name'], client)
                 result = {'candidate': candidate_id, 'job': job, 'created': True}
         self.automation.start()
         self.automation.wake.set()
         return result
+
+    def known_key(self, key):
+        """Whether an application with this private key is already saved (a retried submission creates nothing)."""
+        if not isinstance(key, str) or not KEY_PATTERN.fullmatch(key):
+            return False
+        with closing(self.automation.connection()) as db:
+            return bool(db.execute('SELECT 1 FROM intake WHERE key_hash=?', (key_digest(key),)).fetchone())
 
     def authorize(self, candidate, key):
         """The candidate's owner key when the private key matches (None otherwise)."""
@@ -373,3 +389,163 @@ class IntakeDesk:
                     entry['job']['queue_ahead'] = ahead[(person['owner'], row['id'])]
             out.append(entry)
         return out
+
+
+SITEVERIFY = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
+TURNSTILE_KEY = re.compile(r'[0-9A-Za-z_-]{10,120}')
+# Cloudflare's published test secrets (they accept only the dummy token and report hostname example.com).
+TEST_SECRETS = {'1x0000000000000000000000000000000AA', '2x0000000000000000000000000000000AA',
+                '3x0000000000000000000000000000000AA'}
+
+
+class HumanCheckError(IntakeError):
+    def __init__(self, message):
+        super().__init__(message, None, 403)
+
+
+class HumanCheck:
+    """Cloudflare Turnstile for the public form, off until the operator saves a site key and secret.
+
+    The browser passes the Turnstile check once and receives a signed pass (valid PASS_SECONDS) that covers its
+    uploads and applications, so retries of a pending application never need a new challenge. A pass is good for
+    PASS_USES of each kind, which stops one solved check from feeding a flood. Requests from this machine (the
+    operator, release checks) are not checked. The secret never leaves the server: settings() is never sent."""
+    PASS_SECONDS = 3600
+    PASS_USES = {'submit': 10, 'prefill': 20}
+
+    def __init__(self, root):
+        self.root = root
+        self.lock = threading.Lock()
+        self.uses = {}
+
+    # Keys -------------------------------------------------------------------------------------------------------
+
+    def _settings_path(self):
+        return self.root / '.resumeops-turnstile.json'
+
+    def settings(self):
+        """{'site_key', 'secret'} when configured (environment first, then the operator's saved keys), else None."""
+        import os
+        site_key, secret = os.environ.get('RESUMEOPS_TURNSTILE_SITE_KEY'), os.environ.get('RESUMEOPS_TURNSTILE_SECRET')
+        if not (site_key and secret):
+            try:
+                saved = json.loads(self._settings_path().read_text(encoding='utf-8'))
+                site_key, secret = saved.get('site_key'), saved.get('secret')
+            except (OSError, ValueError, AttributeError):
+                return None
+        if isinstance(site_key, str) and isinstance(secret, str) and TURNSTILE_KEY.fullmatch(site_key) \
+                and TURNSTILE_KEY.fullmatch(secret):
+            return {'site_key': site_key, 'secret': secret}
+        return None
+
+    def site_key(self):
+        settings = self.settings()
+        return settings['site_key'] if settings else None
+
+    def configure(self, site_key, secret):
+        """Save the keys (both empty: turn the check off). Returns the public status."""
+        if site_key == '' and secret == '':
+            self._settings_path().unlink(missing_ok=True)
+            return self.status()
+        if not (isinstance(site_key, str) and TURNSTILE_KEY.fullmatch(site_key.strip())
+                and isinstance(secret, str) and TURNSTILE_KEY.fullmatch(secret.strip())):
+            raise IntakeError('Paste the Turnstile site key and secret key exactly as Cloudflare shows them.', None, 400)
+        path = self._settings_path()
+        temporary = path.with_suffix('.tmp')
+        temporary.write_text(json.dumps({'site_key': site_key.strip(), 'secret': secret.strip(),
+                                         'saved': time.time()}), encoding='utf-8')
+        temporary.replace(path)
+        return self.status()
+
+    def status(self):
+        site_key = self.site_key()
+        return {'configured': bool(site_key), 'site_key': site_key,
+                'test_keys': bool(site_key) and self.settings()['secret'] in TEST_SECRETS}
+
+    # Verification -----------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def siteverify(secret, token, remote_ip):
+        """Cloudflare's verdict on a Turnstile token (JSON with success, hostname, error-codes)."""
+        import urllib.parse
+        import urllib.request
+        import uuid
+        data = urllib.parse.urlencode({'secret': secret, 'response': token, 'remoteip': remote_ip or '',
+                                       'idempotency_key': str(uuid.uuid4())}).encode()
+        request = urllib.request.Request(SITEVERIFY, data=data, method='POST',
+                                         headers={'Content-Type': 'application/x-www-form-urlencoded'})
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read())
+
+    def verify(self, token, remote_ip, host):
+        """Exchange a Turnstile token for a pass. Raises HumanCheckError when the check failed."""
+        settings = self.settings()
+        if not settings:
+            raise HumanCheckError('The human check is not turned on.')
+        if not isinstance(token, str) or not 0 < len(token) <= 2048:
+            raise HumanCheckError('Complete the check above the Submit button, then try again.')
+        try:
+            result = self.siteverify(settings['secret'], token, remote_ip)
+        except (OSError, ValueError) as error:
+            raise IntakeError('The human check could not be confirmed right now. Trying again shortly.', None,
+                              503) from error
+        test = settings['secret'] in TEST_SECRETS
+        if not result.get('success') or (not test and result.get('hostname') != host):
+            raise HumanCheckError('The human check did not pass. Complete it again, then submit.')
+        return self.issue()
+
+    # Passes -----------------------------------------------------------------------------------------------------
+
+    def _pass_key(self):
+        path = self.root / '.resumeops-apply-pass.key'
+        with self.lock:
+            try:
+                key = path.read_bytes()
+            except OSError:
+                key = b''
+            if len(key) < 32:
+                key = secrets.token_bytes(32)
+                path.write_bytes(key)
+            return key
+
+    def issue(self):
+        import hmac
+        body = base64.urlsafe_b64encode(json.dumps({'n': secrets.token_hex(12), 'e': int(time.time())
+                                                    + self.PASS_SECONDS}).encode()).decode().rstrip('=')
+        signature = hmac.new(self._pass_key(), body.encode(), 'sha256').hexdigest()
+        return {'pass': f'{body}.{signature}', 'expires': int(time.time()) + self.PASS_SECONDS}
+
+    def check(self, value, purpose):
+        """The pass's id when ``value`` is a valid, unexpired pass with uses left for ``purpose`` ('submit' or
+        'prefill'); raise HumanCheckError otherwise. A use is counted only by record(), once something was saved, so
+        retries of the same pending application never use the pass up."""
+        import hmac
+        message = 'Complete the check above the Submit button, then submit again. Your form is kept.'
+        if not isinstance(value, str) or value.count('.') != 1 or len(value) > 400:
+            raise HumanCheckError(message)
+        body, signature = value.split('.')
+        expected = hmac.new(self._pass_key(), body.encode(), 'sha256').hexdigest()
+        if not secrets.compare_digest(signature, expected):
+            raise HumanCheckError(message)
+        try:
+            claims = json.loads(base64.urlsafe_b64decode(body + '=' * (-len(body) % 4)))
+            nonce, expires = str(claims['n']), int(claims['e'])
+        except (ValueError, KeyError, TypeError, binascii.Error):
+            raise HumanCheckError(message) from None
+        now = time.time()
+        if expires < now:
+            raise HumanCheckError('The human check expired. Complete it again, then submit. Your form is kept.')
+        with self.lock:
+            if len(self.uses) > 50000:
+                self.uses = {k: v for k, v in self.uses.items() if v[1] >= now}
+            count, _ = self.uses.get((nonce, purpose), (0, expires))
+            if count >= self.PASS_USES[purpose]:
+                raise HumanCheckError('This browser has sent many applications. Complete the check again to send '
+                                      'more.')
+            self.uses.setdefault((nonce, purpose), (0, expires))
+        return nonce
+
+    def record(self, nonce, purpose):
+        with self.lock:
+            count, expires = self.uses.get((nonce, purpose), (0, time.time() + self.PASS_SECONDS))
+            self.uses[(nonce, purpose)] = (count + 1, expires)

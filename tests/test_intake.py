@@ -208,6 +208,19 @@ class DeskTests(unittest.TestCase):
             worker.join(5)
         self.assertEqual(prepared[:3], [identifier, first['job'], second['job']])
 
+    def test_one_network_has_its_own_limit_and_the_queue_takes_turns_between_networks(self):
+        with patch('automation_jobs.INTAKE_CLIENT_LIMIT', 3):
+            flood = [self.d.desk.submit(form(n), key(), client='net-a') for n in range(3)]
+            with self.assertRaises(AutomationCapacity):
+                self.d.desk.submit(form(3), key(), client='net-a')
+            other = self.d.desk.submit(form(4), key(), client='net-b')
+        ahead = self.d.jobs.queue_positions()
+        position = lambda result: ahead[(candidate_owner(result['candidate']), result['job'])]
+        # The candidate from another network is second, not fourth, behind the first of the three.
+        self.assertEqual([position(flood[0]), position(other), position(flood[1]), position(flood[2])], [0, 1, 2, 3])
+        stored = self.d.rows('SELECT DISTINCT client FROM automation WHERE source=?', INTAKE_SOURCE)
+        self.assertEqual(sorted(row[0] for row in stored), ['net-a', 'net-b'])
+
     def test_regenerating_a_candidates_resume_stays_in_the_intake_queue(self):
         first = self.d.desk.submit(form(), key())
         owner = candidate_owner(first['candidate'])
@@ -439,6 +452,77 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(self.call('/api/artifact?key=' + revision + '&name=resume.pdf', web=False)[0], 200)
         self.assertEqual(self.call('/api/artifact?key=' + revision + '&name=resume.pdf',
                                    headers={'Cf-Access-Jwt-Assertion': 'member'})[0], 404)
+
+    def headers_of(self, path, web=True):
+        merged = {'Host': 'resumeops.test', 'X-Forwarded-Proto': 'https', 'Cf-Connecting-IP': '203.0.113.7'} if web else {}
+        with urlopen(Request(self.origin + path, headers=merged), timeout=30) as response:
+            return response.headers
+
+    def test_responses_forbid_rewriting_and_only_the_form_may_load_turnstile(self):
+        form_headers = self.headers_of('/apply')
+        self.assertIn('no-transform', form_headers['Cache-Control'])  # no injected analytics beacon
+        self.assertIn('no-store', form_headers['Cache-Control'])
+        policy = form_headers['Content-Security-Policy']
+        self.assertIn("script-src 'self' https://challenges.cloudflare.com", policy)
+        self.assertIn('frame-src https://challenges.cloudflare.com', policy)
+        self.assertIn("frame-ancestors 'none'", policy)
+        for path in ('/apply/status', '/apply/assets/apply.js', '/apply/api/catalog'):
+            headers = self.headers_of(path)
+            self.assertIn('no-transform', headers['Cache-Control'], path)
+            self.assertNotIn('challenges.cloudflare.com', headers['Content-Security-Policy'], path)
+        self.assertIn('no-transform', self.headers_of('/', web=False)['Cache-Control'])
+        self.assertEqual(json.loads(self.call('/apply/api/config')[1]), {'turnstile': None})
+
+    def test_turnstile_guards_new_applications_and_uploads_through_the_site_once_turned_on(self):
+        from intake import HumanCheck
+        operator = {'X-Dashboard-Token': 'token'}
+        site, secret = '1x00000000000000000000AA', '1x0000000000000000000000000000000AA'
+        # Only the operator can turn it on; a member account cannot.
+        self.assertEqual(self.call('/api/intake/human-check', {'site_key': site, 'secret': secret},
+                                   headers={'Cf-Access-Jwt-Assertion': 'member', 'X-Dashboard-Token': 'token'})[0], 403)
+        status, body = self.call('/api/intake/human-check', {'site_key': site, 'secret': secret}, web=False,
+                                 headers=operator)
+        self.assertEqual((status, json.loads(body)), (200, {'configured': True, 'site_key': site, 'test_keys': True}))
+        summary = self.call('/api/intake/summary', web=False, headers=operator)[1]
+        self.assertEqual(json.loads(summary)['human_check']['configured'], True)
+        self.assertNotIn(secret.encode(), summary)  # the secret never leaves the server
+        self.assertEqual(json.loads(self.call('/apply/api/config')[1]), {'turnstile': site})
+        self.assertEqual(json.loads(self.call('/apply/api/config', web=False)[1]), {'turnstile': None})
+        # Through the site, a new application or an upload needs a pass.
+        status, body = self.call('/apply/api/submit', {'form': form(), 'key': key()})
+        self.assertEqual((status, json.loads(body).get('human_check')), (403, True))
+        upload = {'extension': 'docx', 'document': base64.b64encode(b'not a document').decode(), 'session': 'a' * 24}
+        status, body = self.call('/apply/api/prefill', upload)
+        self.assertEqual((status, json.loads(body).get('human_check')), (403, True))
+        with patch.object(HumanCheck, 'siteverify', return_value={'success': False, 'error-codes': ['invalid']}):
+            status, body = self.call('/apply/api/verify', {'token': 'XXXX.DUMMY.TOKEN.XXXX'})
+        self.assertEqual((status, json.loads(body).get('human_check')), (403, True))
+        with patch.object(HumanCheck, 'siteverify', return_value={'success': True, 'hostname': 'example.com'}) as cf:
+            status, body = self.call('/apply/api/verify', {'token': 'XXXX.DUMMY.TOKEN.XXXX'})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(cf.call_args.args, (secret, 'XXXX.DUMMY.TOKEN.XXXX', '203.0.113.7'))
+        proof = {'X-Apply-Pass': json.loads(body)['pass']}
+        mine = key()
+        status, body = self.call('/apply/api/submit', {'form': form(), 'key': mine}, headers=proof)
+        self.assertEqual(status, 201, body)
+        candidate = json.loads(body)['candidate']
+        forged = proof['X-Apply-Pass'][:-4] + ('0000' if not proof['X-Apply-Pass'].endswith('0000') else '1111')
+        self.assertEqual(self.call('/apply/api/submit', {'form': form(1), 'key': key()},
+                                   headers={'X-Apply-Pass': forged})[0], 403)
+        with patch.object(HumanCheck, 'PASS_USES', {'submit': 1, 'prefill': 1}):
+            # The pass is used up by one new application here, but a retry of the saved one needs no check.
+            self.assertEqual(self.call('/apply/api/submit', {'form': form(), 'key': mine})[0], 200)
+            status, body = self.call('/apply/api/submit', {'form': form(2), 'key': key()}, headers=proof)
+            self.assertEqual((status, json.loads(body).get('human_check')), (403, True))
+        # A correction is proven by the candidate's private key; this machine is never checked.
+        correction = {'form': form(), 'key': mine, 'candidate': candidate}
+        self.assertEqual(self.call('/apply/api/submit', correction)[0], 200)
+        self.assertEqual(self.call('/apply/api/submit', {'form': form(3), 'key': key()}, web=False)[0], 201)
+        # Turned off, the site accepts applications without a pass again.
+        status, body = self.call('/api/intake/human-check', {'site_key': '', 'secret': ''}, web=False, headers=operator)
+        self.assertEqual(json.loads(body)['configured'], False)
+        self.assertEqual(self.call('/apply/api/submit', {'form': form(4), 'key': key()})[0], 201)
+        self.assertEqual(self.call('/apply/api/verify', {'token': 'x'})[0], 404)
 
     def test_posts_need_the_sites_own_origin(self):
         status, _ = self.call('/apply/api/submit', {'form': form(), 'key': key()}, headers={'Origin': 'https://evil.test'})

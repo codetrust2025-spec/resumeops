@@ -52,3 +52,7 @@ dialog input { margin: 8px 0 12px; }
   tr { border-top: 1px solid var(--line); padding: 8px 0; }
   td { border: 0; padding: 4px 0; }
 }
+.cd-human { display: grid; gap: 10px; max-width: 520px; }
+.cd-human label { display: grid; gap: 4px; font-weight: 600; }
+.cd-human input { font: inherit; padding: 8px; border: 1px solid #c8cfdb; border-radius: 8px; }
+.cd-hint { color: #5b6475; font-size: .9rem; margin: 0; }
