@@ -224,7 +224,7 @@ async function send(pending) {
       $('ap-sending').textContent = attempt === 1 ? 'Sending your application…' : `Busy right now: sending again (attempt ${attempt})…`;
       let response;
       try {
-        response = await fetch('/apply/api/submit', {method: 'POST', credentials: 'omit', cache: 'no-store',
+        response = await fetch('/apply/api/submit', {method: 'POST', credentials: 'same-origin', cache: 'no-store',
           headers: {'Content-Type': 'application/json'}, signal: AbortSignal.timeout(60000),
           body: JSON.stringify({form: pending.form, key: pending.key, candidate: pending.candidate || undefined,
             prefill_session: session})});
@@ -311,7 +311,7 @@ async function prefill(file) {
   let result;
   for (let attempt = 1; ; attempt++) {
     try {
-      const response = await fetch('/apply/api/prefill', {method: 'POST', credentials: 'omit',
+      const response = await fetch('/apply/api/prefill', {method: 'POST', credentials: 'same-origin',
         headers: {'Content-Type': 'application/json'}, signal: AbortSignal.timeout(60000),
         body: JSON.stringify({extension, document: btoa(binary), session})});
       result = await response.json();
@@ -333,7 +333,7 @@ async function prefill(file) {
     let data;
     try {
       const response = await fetch('/apply/api/prefill?' + new URLSearchParams({session, id: result.ai.id}),
-        {credentials: 'omit', cache: 'no-store'});
+        {credentials: 'same-origin', cache: 'no-store'});
       if (!response.ok) break;
       data = await response.json();
     } catch { continue; }
@@ -351,7 +351,7 @@ async function prefill(file) {
 
 async function loadRoles() {
   try {
-    const response = await fetch('/apply/api/catalog?visible=1', {credentials: 'omit'});
+    const response = await fetch('/apply/api/catalog?visible=1', {credentials: 'same-origin'});
     const data = await response.json();
     $('ap-roles').replaceChildren(...data.roles.map(role => Object.assign(document.createElement('option'), {value: role.name})));
   } catch { /* free text still works */ }
@@ -365,7 +365,7 @@ async function editMode() {
   $('ap-title').textContent = 'Correct your details';
   $('ap-submit').textContent = 'Save corrections';
   try {
-    const response = await fetch('/apply/api/form', {credentials: 'omit', cache: 'no-store',
+    const response = await fetch('/apply/api/form', {credentials: 'same-origin', cache: 'no-store',
       headers: {'X-Candidate-Id': candidate, 'X-Candidate-Key': key}});
     if (!response.ok) throw new Error();
     const data = await response.json();

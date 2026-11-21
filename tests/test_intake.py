@@ -323,6 +323,14 @@ class PrefillTests(unittest.TestCase):
 
 
 class PageTests(unittest.TestCase):
+    def test_public_requests_carry_the_sites_cookies(self):
+        # Seen live: with credentials 'omit', a signed-in browser's Cloudflare Access cookie was not sent, so Access
+        # answered every /apply request with its login redirect and the status page showed no resumes.
+        for name in ('apply.js', 'candidate.js'):
+            source = (ROOT / 'dashboard' / name).read_text(encoding='utf-8')
+            self.assertNotIn("credentials: 'omit'", source, name)
+            self.assertIn("credentials: 'same-origin'", source, name)
+
     def test_the_status_page_carries_no_dashboard_token_and_only_public_files(self):
         html = candidate_page((ROOT / 'dashboard' / 'automation.html').read_bytes()).decode()
         self.assertNotIn('__TOKEN__', html)
