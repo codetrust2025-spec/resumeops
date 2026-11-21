@@ -154,6 +154,15 @@ SECTIONS = re.compile(r'^(professional\s+)?(summary|profile|objective|about me|(
 EMAIL = re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}')
 PHONE = re.compile(r'(?<![\w/])\+?\d[\d ().-]{7,}\d(?![\w/])')
 URL = re.compile(r'(?:https?://|www\.)[^\s|,;()<>]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|io|dev|me|net|org|in|app|site)/[^\s|,;()<>]*', re.I)
+
+
+def find_phone(text):
+    """The first phone number in the text outside email addresses and links: the digits of
+    "ravi.9876543210@example.com" or "9876543210@example.com" are part of the address, not the candidate's phone."""
+    masked = URL.sub(lambda m: ' ' * len(m.group(0)), EMAIL.sub(lambda m: ' ' * len(m.group(0)), text or ''))
+    return PHONE.search(masked)
+
+
 PRESENT = re.compile(r'present|current|now|till date|to date|ongoing', re.I)
 
 
@@ -485,7 +494,7 @@ def repair(out, source, name_hint=''):
         match = EMAIL.search(source)
         out['email'] = match.group(0) if match else ''
     if not out['phone']:
-        match = PHONE.search(source)
+        match = find_phone(source)
         out['phone'] = match.group(0).strip() if match else ''
     elif PHONE.search(out['phone']):
         # Keep the number only: a cell note such as "(Mobile)" is not part of a client-ready header.

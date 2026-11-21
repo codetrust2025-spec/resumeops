@@ -28,6 +28,7 @@ from intake import (IntakeDesk, IntakeDuplicate, IntakeError, candidate_owner, c
                     intake_request)
 from resume_dashboard import DashboardServer, Workspace, handler  # noqa: E402
 from resume_bot import gpu_gate  # noqa: E402
+from resume_bot.ingest import find_phone  # noqa: E402
 from resume_bot.prefill import document_text, quick_prefill  # noqa: E402
 
 
@@ -310,6 +311,17 @@ class PrefillTests(unittest.TestCase):
         self.assertEqual(filled['full_name'], '')
         self.assertEqual(filled['email'], 'kiran.example@example.com')
         self.assertEqual(quick_prefill('Personal Details\nEmployment dates\n' + self.TEXT)['full_name'], '')
+
+    def test_the_phone_is_never_taken_from_an_email_address_or_link(self):
+        # Seen live: "meera.1121150700@example.com | +91 90000 31313" prefilled the phone as 1121150700.
+        for contact in ('kiran.9876543210@example.com | +91 90000 77777',
+                        '9876543210@example.com | +91 90000 77777',
+                        'https://example.com/u/98765432101 | kiran.example@example.com | +91 90000 77777'):
+            with self.subTest(contact=contact):
+                text = self.TEXT.replace('kiran.example@example.com | +91 90000 77777', contact)
+                self.assertEqual(quick_prefill(text)['phone'], '+91 90000 77777')
+                self.assertEqual(find_phone(text).group(0), '+91 90000 77777')
+        self.assertIsNone(find_phone('Email: 9876543210@example.com'))
 
     def test_a_word_document_is_read(self):
         body = ''.join(f'<w:p><w:r><w:t xml:space="preserve">{escape(line)}</w:t></w:r></w:p>' for line in self.TEXT.splitlines())
