@@ -8,6 +8,18 @@ const opened = new Set();  // applications whose details are shown (kept across 
 // /candidates#RO-XXXXXXXXXX (from a resume in My resumes) opens that application's details once it is listed.
 let linked = (location.hash.match(/^#(RO-[2-9A-HJKMNP-Z]{10})$/) || [])[1] || null;
 
+// Share via WhatsApp: a professional invitation with the public form link, prefilled. wa.me opens the WhatsApp app on
+// a phone and WhatsApp Web or Desktop on a computer; the operator picks the contact and taps send.
+function whatsappLink(formUrl) {
+  const text = ['Hello,', '',
+    'Please share your details through the ResumeOps application form so our team can prepare your professional, '
+      + 'ATS-friendly resume. It takes a few minutes and needs no login or account:',
+    formUrl, '',
+    'After you submit, you get a private link to follow your application and download your resume when it is ready.',
+    '', 'Thank you!'].join('\n');
+  return 'https://wa.me/?text=' + encodeURIComponent(text);
+}
+
 const LABELS = {submitted: 'Not started', queued: 'Waiting in queue', retrying: 'Retrying', processing: 'Preparing',
   handed_off: 'Building', needs_input: 'Waiting for your review', complete: 'Complete', blocked: 'Stopped'};
 
@@ -287,7 +299,11 @@ async function refresh() {
   // The list refreshes every few seconds: it clears only its own loading error, never the result of an action
   // (seen in CI: "Processing started" vanished before it could be read).
   if (message.dataset.loading) { message.textContent = ''; delete message.dataset.loading; }
-  if (!$('cd-form-url').value) $('cd-form-url').value = data.form_url;
+  if (!$('cd-form-url').value) {
+    $('cd-form-url').value = data.form_url;
+    $('cd-whatsapp').href = whatsappLink(data.form_url);
+    $('cd-whatsapp').hidden = false;
+  }
   showHuman(data.human_check);
   render();
   showLinked();
