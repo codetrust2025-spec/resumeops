@@ -62,8 +62,12 @@ def verify_completed(page, workspace, candidate, *, education_first, builder):
     for excluded in ('Unconfirmed Vendor Tool', 'Increased revenue', 'Unbuilt portfolio idea',
                      'Unearned certification', 'Testing', DRAFT['professional_summary']):
         assert excluded not in text, (excluded, text)
-    sections = ['career objective', 'technical skills', 'professional work experience', 'projects',
-                'certifications', 'education']
+    # The six-section order, with a section printed only when it has content (the strict text match above already
+    # rejects an empty heading).
+    sections = [section for section, key in (('career objective', 'summary'), ('technical skills', 'skills'),
+                                             ('professional work experience', 'experience'), ('projects', 'projects'),
+                                             ('certifications', 'certifications'), ('education', 'education'))
+                if request['profile'].get(key)]
     positions = [text.casefold().index(section) for section in sections]
     assert positions == sorted(positions), positions
     page.locator('[data-tab="tab-latex"]').click()

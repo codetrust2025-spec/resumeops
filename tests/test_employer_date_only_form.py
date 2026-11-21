@@ -4,6 +4,7 @@ This fixture uses fabricated names and companies solely for tests; the productio
 candidate's uploaded evidence is never committed to the repository.
 """
 import json
+import re
 import sys
 import tempfile
 from contextlib import closing
@@ -143,7 +144,10 @@ class EmployerDateOnlyTests(unittest.TestCase):
             self.assertNotIn('draft', saved)
             self.assertNotIn('extraction', saved)
 
-    def test_dates_only_document_reaches_the_watcher_without_optional_review(self):
+    def test_dates_only_document_gets_ai_drafts_skills_and_projects_then_a_complete_resume(self):
+        """The regression this guards: an upload stating only employers and dates skipped AI drafting, so the
+        resume went out with every job, the skills and the projects empty. Now the AI drafts the role's work, skills
+        and projects, the candidate confirms them once, and every section of the resume has content."""
         sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'dashboard'))
         from automation_jobs import AutomationJobs
         from resume_dashboard import Workspace
@@ -151,26 +155,66 @@ class EmployerDateOnlyTests(unittest.TestCase):
         data = raw_profile()
         repair(data, SOURCE)
         owner, identity = 'a' * 64, 'b' * 64
+        work = {
+            0: ['Provisioned GCP Compute Engine and Cloud Storage resources with Terraform modules for each environment.',
+                'Deployed containerised services to Google Kubernetes Engine with Helm charts and rolling updates.',
+                'Configured Cloud Monitoring alerts and dashboards for the production Kubernetes clusters.'],
+            1: ['Wrote Terraform for VPC networks, firewall rules and Cloud NAT in a shared GCP project.',
+                'Built Cloud Build pipelines that test and deploy Docker images to Cloud Run.'],
+            2: ['Managed IAM roles and service accounts for GCP projects with least-privilege policies.',
+                'Automated Linux server patching with Ansible playbooks and Bash scripts.'],
+            3: ['Maintained Linux servers and Bash scripts for nightly backups to Cloud Storage.',
+                'Monitored application logs in Cloud Logging and fixed recurring Linux service failures.']}
+        proposals = [{'name': name, 'problem': 'A fictional practice problem.',
+                      'stack': ['GCP', 'Terraform', 'Kubernetes'], 'architecture': 'Infrastructure as code.',
+                      'features': ['Environments'], 'responsibilities': 'Build the platform.',
+                      'bullets': [f'Provisioned the {name} GKE cluster and VPC network with Terraform modules.',
+                                  f'Deployed the {name} services to Google Kubernetes Engine with Helm charts.',
+                                  f'Configured Cloud Monitoring alerts for the {name} Kubernetes workloads.',
+                                  f'Automated {name} releases with Cloud Build triggers and Docker images.',
+                                  f'Managed {name} IAM service accounts with least-privilege Terraform policies.']}
+                     for name in ('Practice Platform', 'Practice Landing Zone')]
         with tempfile.TemporaryDirectory() as folder:
             workspace = Workspace(Path(folder))
             jobs = AutomationJobs(workspace)
+            jobs.start = lambda: None
             with closing(jobs.connection()) as db, db:
                 db.execute("INSERT INTO automation (owner,id,payload,status,created,updated,checkpoints) "
                            "VALUES (?,?,?,'queued',1,1,?)",
                            (owner, identity, json.dumps({'role': 'GCP Cloud Engineer', 'extension': 'docx',
                                                         'consent': CONSENT_VERSION}),
                             json.dumps({'source': SOURCE})))
-                row = db.execute('SELECT * FROM automation').fetchone()
-            with patch('resume_bot.automation.extract_profile', return_value=data), \
-                    patch('resume_bot.automation.generate', return_value={}), \
-                    patch('resume_bot.generate.generate', return_value={}), \
-                    patch('resume_bot.generate.draft_role_content') as drafts, \
-                    patch('resume_bot.generate.propose_projects') as projects:
-                jobs._prepare(row)
-            drafts.assert_not_called()
-            projects.assert_not_called()
+
+            def prepare():
+                with closing(jobs.connection()) as db:
+                    row = db.execute('SELECT * FROM automation').fetchone()
+                with patch('resume_bot.automation.extract_profile', return_value=data), \
+                        patch('resume_bot.automation.generate', return_value={}), \
+                        patch('resume_bot.generate.generate', return_value={}), \
+                        patch('resume_bot.generate.draft_role_content',
+                              return_value=(work, ['GCP', 'Terraform', 'Kubernetes', 'Docker', 'Linux'])) as drafts, \
+                        patch('resume_bot.generate.propose_projects', return_value=proposals):
+                    jobs._prepare(row)
+                return drafts
+
+            drafts = prepare()
+            self.assertEqual(drafts.call_args.args[4], [0, 1, 2, 3], 'every job known only by employer and dates')
             result = jobs.list(owner, identity)[0]
-            self.assertNotEqual(result['status'], 'needs_input')
+            self.assertEqual(result['status'], 'needs_input')
+            self.assertEqual(list(workspace.private_inbox.glob('*.json')), [], 'nothing is built before the review')
+            questions = result['questions']
+            self.assertEqual([q['id'] for q in questions],
+                             ['experience.0.bullets', 'experience.1.bullets', 'experience.2.bullets',
+                              'experience.3.bullets', 'skills'])
+            self.assertEqual(questions[0]['label'],
+                             'Work at Example Health Services Pvt Ltd (11 Jul 2022 - 08 Apr 2025) (AI draft)')
+            self.assertNotIn('position', json.dumps([q['field'] for q in questions]), 'no job title is asked')
+            self.assertEqual([p['name'] for p in result['proposals']], ['Practice Platform', 'Practice Landing Zone'])
+            self.assertIn('work lines from your employers and dates', result['error'])
+
+            jobs.answer(owner, identity, {q['id']: q['value'] for q in questions}, [{'include': True}, {'include': False}])
+            prepare()
+            result = jobs.list(owner, identity)[0]
             queued = list(workspace.private_inbox.glob('*.json'))
             self.assertEqual(len(queued), 1, result)
             from resume_bot.automation import verified_automation
@@ -181,7 +225,17 @@ class EmployerDateOnlyTests(unittest.TestCase):
             self.assertTrue(verified_automation(profile, packet['target'], approval), profile['summary'])
             self.assertEqual(profile['headline'], 'GCP Cloud Engineer')
             self.assertEqual(len(profile['experience']), 4)
-            self.assertTrue(all(not job['position'] for job in profile['experience']))
+            self.assertTrue(all(not job['position'] for job in profile['experience']), 'no job title is invented')
+            self.assertTrue(all(job['bullets'] for job in profile['experience']), 'every job describes the work')
+            self.assertTrue(profile['skills'])
+            self.assertEqual([p.split(' - ')[0] for p in profile['projects']], ['Practice Platform'])
+            self.assertGreaterEqual(len(profile['summary'].split()), 18, profile['summary'])
+            tex = render(profile, years=packet['target']['experience_years'], complete_sections=True)
+            sections = re.findall(r'\\section\*{([^}]+)}', tex)
+            self.assertEqual(sections, ['Career Objective', 'Technical Skills', 'Professional Work Experience',
+                                        'Projects', 'Education'])
+            for chunk in tex.split(r'\section*{')[1:]:
+                self.assertTrue(chunk.split('}', 1)[1].strip(), 'an empty section is never printed')
 
     def test_unrelated_resume_without_employer_table_is_unchanged(self):
         data = raw_profile()

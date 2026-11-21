@@ -141,7 +141,7 @@ def _build(profile, template='standard', years=None, *, complete_sections=False)
     terms = [skill for skill in profile.get('skills') or [] if skill not in concepts]
 
     def summary():
-        if complete_sections or profile.get('summary'):
+        if profile.get('summary'):
             doc.section('Career Objective')
         if profile.get('summary'):
             # Selective emphasis: the selected role, and one technology per sentence. The words stay exactly as
@@ -153,7 +153,7 @@ def _build(profile, template='standard', years=None, *, complete_sections=False)
             doc.raw(tex + r'\par' + '\n', profile['summary'])
 
     def skills():
-        if complete_sections or profile.get('skills'):
+        if profile.get('skills'):
             doc.section('Technical Skills')
         if profile.get('skills'):
             groups = profile.get('skill_groups') or [{'name': 'Skills', 'items': profile['skills']}]
@@ -167,7 +167,7 @@ def _build(profile, template='standard', years=None, *, complete_sections=False)
             doc.raw(paragraph(', '.join(profile['competencies'])) + r'\par' + '\n', ', '.join(profile['competencies']))
 
     def experience():
-        if complete_sections or profile.get('experience'):
+        if profile.get('experience'):
             doc.section('Professional Work Experience')
         for x in profile['experience']:
             doc.entry(x['position'], x['company'], ' -- '.join(p for p in (x['start'], x['end']) if p), x.get('location', ''))
@@ -175,7 +175,7 @@ def _build(profile, template='standard', years=None, *, complete_sections=False)
             doc.raw(r'\vspace{2pt}' + '\n')
 
     def projects():
-        if complete_sections or profile.get('projects'):
+        if profile.get('projects'):
             doc.section('Projects')
         for project in profile.get('projects', []):
             name, stack, details = _split_project(project)
@@ -184,7 +184,7 @@ def _build(profile, template='standard', years=None, *, complete_sections=False)
             doc.bullets(details, terms)
 
     def education():
-        if complete_sections or profile.get('education'):
+        if profile.get('education'):
             doc.section('Education')
         for x in profile['education']:
             doc.entry(x['degree'], x['institution'], ' -- '.join(p for p in (x['start'], x['end']) if p),
@@ -196,13 +196,10 @@ def _build(profile, template='standard', years=None, *, complete_sections=False)
             doc.bullets(profile[field])
 
     def certifications():
-        if complete_sections:
-            doc.section('Certifications')
-            doc.bullets(profile.get('certifications', []))
-        else:
-            listed('certifications', 'Certifications')
+        listed('certifications', 'Certifications')
 
-    # Career Objective, Technical Skills, Professional Work Experience, Projects, Certifications, Education
+    # Career Objective, Technical Skills, Professional Work Experience, Projects, Certifications, Education. A section
+    # with nothing in it is never printed: an empty heading reads as an unfinished resume.
     if complete_sections:
         order = (summary, skills, experience, projects, certifications, education, competencies)
     elif years is not None and years < 1:
