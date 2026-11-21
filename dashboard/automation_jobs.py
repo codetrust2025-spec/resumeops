@@ -614,14 +614,20 @@ class AutomationJobs:
         carry = [line for line in carry if line in (entry.get('bullets') or [])] if lines else []
         own = [line for line in entry.get('bullets') or [] if line not in carry]
         place = ' at ' + entry['company'] if entry.get('company') else ''
-        explanation = (f'AI drafted {label} lines from your job title and dates' + (' below your own lines' if own else '')
+        dates = ' - '.join(value for value in (entry.get('start'), entry.get('end')) if value)
+        # A job the documents give only an employer and dates for is named by them (no title is invented).
+        title = ('Work as ' + entry['position'] + place if entry.get('position') else
+                 'Work' + place + (f' ({dates})' if dates else ''))
+        explanation = (f'AI drafted {label} lines from your '
+                       + ('job title and dates' if entry.get('position') else 'employer and dates')
+                       + (' below your own lines' if own else '')
                        + '. Keep only what you actually did; edit or delete any line. These are drafts until you '
                        'confirm them.' + (' Your lines about other work are kept for other roles.' if carry else '')
                        if lines else 'In your own simple words, what did you do? One line each. Leave '
                        'it empty to list this job without details.')
         question = {'id': f'experience.{index}.bullets', 'section': 'experience', 'entry': index, 'field': 'bullets',
                     'drafted': bool(lines), 'value': '\n'.join([*own, *(lines or [])]),
-                    'label': f'Work as {entry["position"]}{place}' + (' (AI draft)' if lines else ''),
+                    'label': title + (' (AI draft)' if lines else ''),
                     'explanation': explanation}
         if carry:
             question['carry'] = carry
@@ -1023,13 +1029,6 @@ class AutomationJobs:
             # A designation is never a skill, and extraction notes are never resume text (any source, including a
             # resume regenerated from earlier facts).
             positions = [entry['position'] for entry in facts['experience']]
-            # An employer/date-only upload is complete for extraction. Optional AI suggestions
-            # would pause the build and could imply duties or credentials the upload never states.
-            employer_dates_only = (
-                ('documents' in request or request.get('extension') == 'docx')
-                and bool(positions)
-                and all(not entry['position'] and not entry['bullets'] for entry in facts['experience'])
-            )
             facts = {**facts, 'skills': [s for s in facts.get('skills', []) if not is_job_title(s, positions)],
                      'education': [{**entry, 'degree': without_note(entry['degree']) or entry['degree'],
                                     'details': without_note(entry.get('details', ''))} for entry in facts['education']]}
@@ -1059,12 +1058,17 @@ class AutomationJobs:
             sparse = lambda index, entry: (technical_job(entry['position']) and 2 * len(
                 [line for line in entry['bullets'] if not other_field_tools(line, tools, target)])
                 < draft_lines(index, entry['position']))
-            missing = ([] if employer_dates_only or checkpoints.get('drafts_reviewed') else
+            # Every upload gets this, including one that states only employers and dates (a candidate form): the
+            # AI drafts the work and skills for the selected role and the candidate confirms them once. A resume
+            # never goes out with jobs, skills or projects left empty because the documents did not describe them.
+            missing = ([] if checkpoints.get('drafts_reviewed') else
                        [index for index, entry in enumerate(facts['experience'])
                         if not entry['bullets'] or thin(entry) or sparse(index, entry)])
             role_skills = [s for s in facts['skills'] if skill_fits_role(s, target)]
-            need_skills = (not employer_dates_only and lacks_role_core(role_skills, target)
-                           and checkpoints.get('skills_reviewed') != label)
+            # A resume without a single skill for the role is never built: the skills are asked (with AI
+            # suggestions) until at least one the candidate has used is confirmed.
+            need_skills = not role_skills or (lacks_role_core(role_skills, target)
+                                              and checkpoints.get('skills_reviewed') != label)
             questions = []
             if missing or need_skills:
                 progress(28, f'AI drafting {label} content for your review')
@@ -1081,9 +1085,11 @@ class AutomationJobs:
                     questions.append({
                         'id': 'skills', 'section': 'profile', 'entry': None, 'field': 'skills', 'drafted': bool(skills),
                         'label': f'Skills for {label}' + (' (with AI suggestions)' if skills else ''),
-                        'explanation': (f'Your skills that fit {label}, plus AI suggestions for the role. Keep only tools '
-                                        'you have used; add or remove any.' if skills else
-                                        'List the tools and technologies you have used, separated by commas.'),
+                        'explanation': (('None of the skills you confirmed is used for ' + label + '. '
+                                         if checkpoints.get('skills_reviewed') == label else '')
+                                        + (f'Your skills that fit {label}, plus AI suggestions for the role. Keep only '
+                                           'tools you have used; add or remove any.' if skills else
+                                           'List the tools and technologies you have used, separated by commas.')),
                         'value': ', '.join(value),
                         # Skills for other fields stay in the candidate's facts, off this role's resume.
                         'carry': [s for s in facts['skills'] if s not in role_skills]})
@@ -1105,7 +1111,10 @@ class AutomationJobs:
                 offer_certifications(facts)
                 # Say exactly what was drafted and what is asked: "work lines" only when work lines were drafted.
                 has = lambda field, drafted: any(q['field'] == field and bool(q.get('drafted')) == drafted for q in questions)
-                drafted = [text for field, text in (('bullets', 'work lines from your job titles and dates'),
+                titled = all(facts['experience'][q['entry']]['position'] for q in questions
+                             if q['field'] == 'bullets' and q.get('drafted'))
+                drafted = [text for field, text in (('bullets', 'work lines from your job titles and dates' if titled
+                                                     else 'work lines from your employers and dates'),
                                                     ('skills', 'skill suggestions')) if has(field, True)]
                 asked = [text for field, text in (('bullets', 'what you did in these jobs (or leave a job without '
                                                               'details)'), ('skills', 'your skills')) if has(field, False)]
@@ -1133,7 +1142,7 @@ class AutomationJobs:
                 tailored = checkpoint('tailored', [profile, how])
             profile, how = tailored
             progress(55, 'Role-based summary, skills and evidence order prepared')
-            if not employer_dates_only and not role_projects(facts, target) and not checkpoints.get('projects_reviewed'):
+            if not role_projects(facts, target) and not checkpoints.get('projects_reviewed'):
                 proposals = checkpoints.get('proposals_made')
                 if proposals is None:
                     progress(56, 'Project selection: proposing role-specific projects')

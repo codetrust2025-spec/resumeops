@@ -66,17 +66,20 @@ class LayoutTests(unittest.TestCase):
         self.assertLess(fresher.index(r'\section*{Certifications}'), fresher.index(r'\section*{Education}'))
         self.assertLess(fresher.index(r'\section*{Education}'), fresher.index(r'\section*{Professional Work Experience}'))
 
-    def test_new_generation_uses_all_sections_in_order_even_without_claims(self):
+    def test_new_generation_uses_the_six_section_order_and_never_prints_an_empty_section(self):
+        tex = render(resume(), years=0, complete_sections=True)
+        self.assertEqual(re.findall(r'\\section\*{([^}]+)}', tex), SECTIONS)
         profile = resume(experience=[], projects=[], certifications=[])
         tex = render(profile, years=0, complete_sections=True)
-        sections = re.findall(r'\\section\*{([^}]+)}', tex)
-        self.assertEqual(sections, SECTIONS)
+        # An empty heading reads as an unfinished resume: a section with nothing in it is left out.
+        self.assertEqual(re.findall(r'\\section\*{([^}]+)}', tex), ['Career Objective', 'Technical Skills', 'Education'])
         text = ' '.join(expected_text(profile, 0, complete_sections=True))
         self.assertTrue(matches_pdf_text(text, profile, 0, complete_sections=True))
-        self.assertFalse(matches_pdf_text(text, profile, 0))
+        for heading in ('Professional Work Experience', 'Projects', 'Certifications'):
+            self.assertNotIn(heading.casefold(), text.casefold())
 
     def test_new_target_requests_enable_all_six_sections_without_private_automation(self):
-        profile = resume(experience=[], projects=[], certifications=[])
+        profile = resume()
         normalized_profile, target = normalize_request({
             'profile': profile,
             'target': {'role': 'java-backend-developer', 'experience_years': 0},

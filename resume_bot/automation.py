@@ -412,6 +412,9 @@ def apply_answers(draft, questions, answers):
         if question['field'] in DRAFTED_FIELDS:
             target = draft if question['entry'] is None else draft[question['section']][question['entry']]
             target[question['field']] = _drafted_answer(answers.get(qid), question['field'], qid)
+            if question['field'] == 'skills' and not target['skills']:
+                # A resume always has a Technical Skills section, so the candidate keeps at least one.
+                raise AnswerError('Keep or add at least one tool or technology you have used.', qid)
             continue
         value = answers.get(qid)
         value = ' '.join(value.split()) if isinstance(value, str) else ''
