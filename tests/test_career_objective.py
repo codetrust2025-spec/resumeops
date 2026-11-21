@@ -133,6 +133,11 @@ class CareerObjectiveTests(unittest.TestCase):
             with self.subTest(area=area):
                 self.assertEqual(objective_area(area, evidence), '')
         self.assertEqual(objective_area('booking service', evidence), 'booking service')
+        # Seen live: "payment apis work". Acronyms keep the candidate's spelling; ordinary words stay lower case.
+        payments = profile('Software Engineer', True, ('Built payment APIs for UPI refunds.',
+                                                       'Payment reports were checked weekly.'))
+        self.assertEqual(objective_area('Payment APIS', payments), 'payment APIs')
+        self.assertEqual(objective_area('upi refunds', payments), 'UPI refunds')
         with patch('resume_bot.generate.generate', side_effect=[{'area': 'healthcare platforms', 'strengths': []},
                                                                 {'area': 'hospital software', 'strengths': []}]) as model:
             text, mode = write_summary(evidence, 'Java Backend Developer', 3, [], object())

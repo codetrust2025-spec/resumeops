@@ -1015,7 +1015,12 @@ def objective_area(area, profile):
             or any(re.search(pattern, area) for _, pattern in CLAIM_VERBS)
             or matched_terms([place for place in places if len(place) > 3], area)):
         return ''
-    return area
+    # Acronyms keep the candidate's own spelling ("payment APIs", "UPI payments"), never "payment apis".
+    written = {}
+    for token in re.findall(r"[A-Za-z][A-Za-z'-]*", _objective_work_text(profile)):
+        if token != token.lower() and token != token.capitalize():
+            written.setdefault(token.lower(), token)
+    return ' '.join(written.get(word, word) for word in area.split())
 
 
 def _objective_seed(profile, role_title):
