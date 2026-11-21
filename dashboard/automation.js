@@ -363,10 +363,11 @@ function followMenus() {
 
 function placeMenu(button, panel) {
   if (!POPOVER) return;  // the fallback menu is positioned by CSS under its button
-  let height = panel.offsetHeight;
+  let height = panel.offsetHeight, width = panel.offsetWidth;
   if (!height) {  // not shown yet: measure it invisibly
     panel.classList.add('auto-measure');
     height = panel.offsetHeight;
+    width = panel.offsetWidth;
     panel.classList.remove('auto-measure');
   }
   const box = button.getBoundingClientRect();
@@ -374,7 +375,9 @@ function placeMenu(button, panel) {
   const below = view.clientHeight - box.bottom;
   const upward = below < height + 14 && box.top > below;
   panel.style.top = Math.max(8, upward ? box.top - 6 - height : box.bottom + 6) + 'px';
-  panel.style.right = Math.max(8, view.clientWidth - box.right) + 'px';
+  // Use viewport coordinates directly: fixed popovers can include the scrollbar gutter in their right inset.
+  panel.style.left = Math.max(8, Math.min(box.right - width, view.clientWidth - width - 8)) + 'px';
+  panel.style.right = 'auto';
 }
 
 function moreMenu(job, items) {
