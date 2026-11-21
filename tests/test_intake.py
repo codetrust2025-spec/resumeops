@@ -117,30 +117,38 @@ class ValidationTests(unittest.TestCase):
             intake_request(form(website='http://spam.example'))
 
 
+OPERATOR = 'e' * 64  # the operator's account in these tests
+
+
+def started_job(d, candidate):
+    """The automation row of the latest resume started from an application."""
+    return d.rows('SELECT a.* FROM automation a JOIN intake_runs r ON r.job_owner = a.owner AND r.job_id = a.id '
+                  'WHERE r.candidate=? ORDER BY r.started DESC', candidate)[0]
+
+
 class DeskTests(unittest.TestCase):
     def setUp(self):
         self.d = Desk(self)
 
-    def test_a_submission_is_saved_with_its_job_and_a_retry_is_the_same_application(self):
+    def test_a_submission_is_saved_and_waits_and_a_retry_is_the_same_application(self):
         secret = key()
         first = self.d.desk.submit(form(), secret)
         self.assertTrue(first['created'])
         self.assertRegex(first['candidate'], r'^RO-[2-9A-HJKMNP-Z]{10}$')
         again = self.d.desk.submit(form(), secret)
-        self.assertEqual((again['candidate'], again['job'], again['created']), (first['candidate'], first['job'], False))
-        rows = self.d.rows('SELECT owner, source, candidate, status FROM automation')
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]['owner'], candidate_owner(first['candidate']))
-        self.assertEqual((rows[0]['source'], rows[0]['candidate'], rows[0]['status']), (INTAKE_SOURCE, 'Asha Example 0', 'queued'))
+        self.assertEqual((again['candidate'], again['created']), (first['candidate'], False))
+        self.assertEqual(self.d.rows('SELECT 1 FROM automation'), [], 'nothing is processed until the operator starts it')
         stored = self.d.rows('SELECT key_hash, form FROM intake')[0]
         self.assertNotIn(secret, stored['key_hash'], 'only a hash of the private key is stored')
+        self.assertEqual(json.loads(stored['form'])['full_name'], 'Asha Example 0')
+        self.assertEqual(self.d.desk.candidate_jobs(first['candidate']), [])
 
-    def test_the_same_facts_from_another_device_are_not_processed_twice(self):
+    def test_the_same_facts_from_another_device_are_not_saved_twice(self):
         first = self.d.desk.submit(form(), key())
         with self.assertRaises(IntakeDuplicate) as caught:
             self.d.desk.submit(form(), key())
         self.assertEqual(caught.exception.candidate, first['candidate'])
-        self.assertEqual(len(self.d.rows('SELECT 1 FROM automation')), 1)
+        self.assertEqual(len(self.d.rows('SELECT 1 FROM intake')), 1)
 
     def test_private_key_access_and_corrections(self):
         secret = key()
@@ -152,8 +160,6 @@ class DeskTests(unittest.TestCase):
         self.assertIsNone(self.d.desk.authorize('RO-AAAAAAAAAA', secret))
         corrected = self.d.desk.submit(form(location='Bengaluru'), secret, first['candidate'])
         self.assertEqual(corrected['candidate'], first['candidate'])
-        self.assertNotEqual(corrected['job'], first['job'])
-        self.assertEqual(len(self.d.rows('SELECT 1 FROM automation WHERE owner=?', owner)), 2)
         self.assertEqual(self.d.desk.profile(first['candidate'])['form']['location'], 'Bengaluru')
         with self.assertRaises(IntakeError) as caught:  # another candidate's key cannot correct this one
             other = key()
@@ -168,29 +174,89 @@ class DeskTests(unittest.TestCase):
         self.assertIsNone(self.d.desk.authorize(first['candidate'], secret))
         self.assertIsNotNone(self.d.desk.authorize(first['candidate'], fresh))
 
-    def test_intake_has_its_own_capacity_and_never_blocks_an_account(self):
-        for n in range(30):
-            self.d.desk.submit(form(n), key())
-        account = 'a' * 64
-        self.d.jobs.enqueue(account, account_payload(99))
-        with patch('automation_jobs.INTAKE_PENDING_LIMIT', 31):
-            self.d.desk.submit(form(30), key())
+    def test_saved_applications_have_their_own_capacity(self):
+        made = [self.d.desk.submit(form(n), key()) for n in range(3)]
+        with patch('intake.INTAKE_WAITING_LIMIT', 3):
             with self.assertRaises(AutomationCapacity):
-                self.d.desk.submit(form(31), key())
+                self.d.desk.submit(form(3), key())
+            self.d.desk.start(made[0]['candidate'], OPERATOR)  # a started application no longer waits
+            self.d.desk.submit(form(3), key())
 
-    def test_accounts_are_prepared_first_then_applications_oldest_first_and_pause_holds_them(self):
+    def test_start_runs_the_upload_workflow_on_a_word_resume_of_the_form(self):
+        from automation_jobs import submission
+        from intake import form_document
+        from resume_bot.automation import CONSENT_VERSION
+        from resume_bot.ingest import read_resume_text
+        applicant = form(projects=[{'name': 'Order Service', 'stack': 'Java, Spring Boot, MySQL',
+                                    'description': 'Built order endpoints with Spring Boot and MySQL.'}],
+                         certifications='Oracle Java SE 11 Developer', linkedin='https://www.linkedin.com/in/asha-example')
+        first = self.d.desk.submit(applicant, key())
+        started = self.d.desk.start(first['candidate'], OPERATOR)
+        self.assertEqual((started['owner'], started['created']), (OPERATOR, True))
+        row = started_job(self.d, first['candidate'])
+        self.assertEqual((row['owner'], row['source'], row['candidate'], row['status']),
+                         (OPERATOR, INTAKE_SOURCE, 'Asha Example 0', 'queued'))
+        payload = json.loads(row['payload'])
+        # Exactly the request the dashboard makes for an uploaded Word resume (the same validation, unchanged).
+        document = base64.b64encode(form_document(applicant)).decode()
+        expected = submission({'consent': CONSENT_VERSION, 'role': 'Java Backend Developer', 'extension': 'docx',
+                               'document': document})
+        self.assertEqual(payload, expected)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'application.docx'
+            path.write_bytes(base64.b64decode(payload['document']))
+            text = read_resume_text(path)
+        for fact in ('Asha Example 0', 'asha.0@example.com', '+91 90000 10000', 'Pune', 'TECHNICAL SKILLS',
+                     'Java, Spring Boot, MySQL, JUnit', 'WORK EXPERIENCE', 'Software Engineer — Example Labs (fictional)',
+                     'Jan 2022 – Present', 'Built Spring Boot REST APIs for order workflows with Java and MySQL.',
+                     'PROJECTS', 'Order Service | Java, Spring Boot, MySQL', 'EDUCATION', 'B.Tech',
+                     'Example Institute (fictional)', 'Year of completion: 2021', 'CERTIFICATIONS',
+                     'Oracle Java SE 11 Developer', 'LinkedIn: https://www.linkedin.com/in/asha-example'):
+            self.assertIn(fact, text)
+        again = self.d.desk.start(first['candidate'], OPERATOR)
+        self.assertEqual((again['job'], again['created']), (started['job'], False), 'never processed twice')
+        self.assertEqual(len(self.d.rows('SELECT 1 FROM automation')), 1)
+        # The operator starts many at once: the intake limits apply, not an account's four in progress.
+        for n in range(1, 7):
+            self.d.desk.start(self.d.desk.submit(form(n), key())['candidate'], OPERATOR)
+        self.assertEqual(len(self.d.rows('SELECT 1 FROM automation WHERE owner=?', OPERATOR)), 7)
+
+    def test_a_fresher_application_becomes_a_resume_without_employment(self):
+        from intake import form_document
+        from resume_bot.ingest import read_resume_text
+        applicant = form(fresher=True, work_experience=[])
+        first = self.d.desk.submit(applicant, key())
+        self.d.desk.start(first['candidate'], OPERATOR)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'application.docx'
+            path.write_bytes(form_document(applicant))
+            text = read_resume_text(path)
+        self.assertNotIn('WORK EXPERIENCE', text)
+        self.assertIn('PROJECTS', text)
+
+    def test_corrections_after_a_start_show_and_can_be_started_again(self):
+        secret = key()
+        first = self.d.desk.submit(form(), secret)
+        self.d.desk.start(first['candidate'], OPERATOR)
+        entry = next(item for item in self.d.desk.candidates() if item['candidate'] == first['candidate'])
+        self.assertFalse(entry['details_changed'])
+        self.d.desk.submit(form(location='Bengaluru'), secret, first['candidate'])
+        entry = next(item for item in self.d.desk.candidates() if item['candidate'] == first['candidate'])
+        self.assertTrue(entry['details_changed'])
+        again = self.d.desk.start(first['candidate'], OPERATOR)
+        self.assertTrue(again['created'])
+        entry = next(item for item in self.d.desk.candidates() if item['candidate'] == first['candidate'])
+        self.assertEqual((entry['details_changed'], entry['versions'], entry['job']['id']), (False, 2, again['job']))
+
+    def test_accounts_are_prepared_first_then_started_applications_and_pause_holds_them(self):
         first = self.d.desk.submit(form(0), key())
         second = self.d.desk.submit(form(1), key())
+        jobs = [self.d.desk.start(item['candidate'], OPERATOR)['job'] for item in (first, second)]
         account = 'b' * 64
         identifier = self.d.jobs.enqueue(account, account_payload(5))
         ahead = self.d.jobs.queue_positions()
-        self.assertEqual(ahead[(account, identifier)], 0)
-        self.assertEqual(ahead[(candidate_owner(first['candidate']), first['job'])], 1)
-        self.assertEqual(ahead[(candidate_owner(second['candidate']), second['job'])], 2)
-        listed = self.d.jobs.list(candidate_owner(second['candidate']))[0]
-        self.assertEqual((listed['queue_ahead'], listed['queue_paused']), (2, False))
+        self.assertEqual([ahead[(account, identifier)], ahead[(OPERATOR, jobs[0])], ahead[(OPERATOR, jobs[1])]], [0, 1, 2])
         self.d.jobs.set_paused(True)
-        self.assertTrue(self.d.jobs.paused())
         prepared = []
         self.d.workspace.automation_ready = lambda: True
         with patch.object(self.d.jobs, '_prepare', side_effect=lambda job: prepared.append(job['id'])), \
@@ -206,51 +272,83 @@ class DeskTests(unittest.TestCase):
             self.d.jobs.stopping.set()
             self.d.jobs.wake.set()
             worker.join(5)
-        self.assertEqual(prepared[:3], [identifier, first['job'], second['job']])
+        self.assertEqual(prepared[:3], [identifier, *jobs])
 
     def test_one_network_has_its_own_limit_and_the_queue_takes_turns_between_networks(self):
+        flood = [self.d.desk.submit(form(n), key(), client='net-a') for n in range(4)]
+        other = self.d.desk.submit(form(9), key(), client='net-b')
         with patch('automation_jobs.INTAKE_CLIENT_LIMIT', 3):
-            flood = [self.d.desk.submit(form(n), key(), client='net-a') for n in range(3)]
+            jobs = [self.d.desk.start(item['candidate'], OPERATOR)['job'] for item in flood[:3]]
             with self.assertRaises(AutomationCapacity):
-                self.d.desk.submit(form(3), key(), client='net-a')
-            other = self.d.desk.submit(form(4), key(), client='net-b')
+                self.d.desk.start(flood[3]['candidate'], OPERATOR)
+            theirs = self.d.desk.start(other['candidate'], OPERATOR)['job']
         ahead = self.d.jobs.queue_positions()
-        position = lambda result: ahead[(candidate_owner(result['candidate']), result['job'])]
         # The candidate from another network is second, not fourth, behind the first of the three.
-        self.assertEqual([position(flood[0]), position(other), position(flood[1]), position(flood[2])], [0, 1, 2, 3])
+        self.assertEqual([ahead[(OPERATOR, job)] for job in (jobs[0], theirs, jobs[1], jobs[2])], [0, 1, 2, 3])
         stored = self.d.rows('SELECT DISTINCT client FROM automation WHERE source=?', INTAKE_SOURCE)
         self.assertEqual(sorted(row[0] for row in stored), ['net-a', 'net-b'])
 
-    def test_regenerating_a_candidates_resume_stays_in_the_intake_queue(self):
-        first = self.d.desk.submit(form(), key())
-        owner = candidate_owner(first['candidate'])
+    def test_regenerating_a_started_resume_stays_in_the_intake_queue(self):
+        first = self.d.desk.submit(form(), key(), client='net-a')
+        job = self.d.desk.start(first['candidate'], OPERATOR)['job']
         facts = intake_request(form())[0]['profile']
         with closing(self.d.jobs.connection()) as db, db:
             db.execute("UPDATE automation SET status='handed_off', facts=?, payload=NULL WHERE owner=?",
-                       (json.dumps(facts), owner))
-        new = self.d.jobs.regenerate(owner, first['job'], 'DevOps Engineer')
-        source = self.d.rows('SELECT source FROM automation WHERE id=?', new)[0]['source']
-        self.assertEqual(source, INTAKE_SOURCE)
+                       (json.dumps(facts), OPERATOR))
+        new = self.d.jobs.regenerate(OPERATOR, job, 'DevOps Engineer')
+        row = self.d.rows('SELECT source, client FROM automation WHERE id=?', new)[0]
+        self.assertEqual((row['source'], row['client']), (INTAKE_SOURCE, 'net-a'))
 
-    def test_the_operator_list_shows_every_candidate_with_the_latest_state(self):
+    def test_the_candidate_sees_only_progress_and_their_own_finished_files(self):
+        first = self.d.desk.submit(form(), key())
+        self.d.desk.start(first['candidate'], OPERATOR)
+        other = self.d.desk.submit(form(1), key())
+        self.d.desk.start(other['candidate'], OPERATOR)
+        [job] = self.d.desk.candidate_jobs(first['candidate'])
+        from intake import CANDIDATE_JOB_FIELDS
+        self.assertLessEqual(set(job), {*CANDIDATE_JOB_FIELDS, 'ats'})
+        self.assertEqual(job['status'], 'queued')
+        self.assertEqual(self.d.desk.candidate_revisions(first['candidate']), set())
+
+    def test_the_operator_list_shows_every_application_with_its_details_and_state(self):
         made = [self.d.desk.submit(form(n), key()) for n in range(3)]
-        listed = self.d.desk.candidates()
-        self.assertEqual({entry['candidate'] for entry in listed}, {item['candidate'] for item in made})
-        entry = next(item for item in listed if item['candidate'] == made[2]['candidate'])
-        self.assertEqual((entry['name'], entry['job']['status'], entry['job']['queue_ahead']), ('Asha Example 2', 'queued', 2))
+        self.d.desk.start(made[1]['candidate'], OPERATOR)
+        self.d.desk.start(made[2]['candidate'], OPERATOR)
+        listed = {entry['candidate']: entry for entry in self.d.desk.candidates()}
+        self.assertEqual(set(listed), {item['candidate'] for item in made})
+        waiting = listed[made[0]['candidate']]
+        self.assertEqual((waiting['started'], waiting.get('job')), (None, None))
+        self.assertEqual(waiting['form']['work_experience'][0]['responsibilities'].splitlines()[1],
+                         'Wrote JUnit tests for the order services and repositories.')
+        started = listed[made[2]['candidate']]
+        self.assertEqual((started['name'], started['job']['status'], started['job']['queue_ahead']),
+                         ('Asha Example 2', 'queued', 1))
 
-    def test_a_candidate_who_deletes_everything_leaves_no_contact_details(self):
+    def test_the_operator_deletes_an_application_with_its_resumes(self):
         secret = key()
         first = self.d.desk.submit(form(), secret)
-        owner = candidate_owner(first['candidate'])
-        self.assertFalse(self.d.desk.scrub_if_empty(owner), 'kept while a resume remains')
-        with closing(self.d.jobs.connection()) as db, db:
-            db.execute('DELETE FROM automation WHERE owner=?', (owner,))
-        self.assertTrue(self.d.desk.scrub_if_empty(owner))
+        self.d.desk.start(first['candidate'], OPERATOR)
+        result = self.d.desk.delete_application(first['candidate'], {'via': 'test'})
+        self.assertEqual((result['deleted'], result['kept']), (1, []))
+        self.assertEqual(self.d.rows('SELECT 1 FROM automation'), [])
         row = self.d.rows('SELECT name, email, phone, form, scrubbed FROM intake')[0]
         self.assertEqual((row['name'], row['email'], row['phone'], row['form']), (None, None, None, None))
         self.assertIsNone(self.d.desk.authorize(first['candidate'], secret))
+        self.assertEqual(self.d.rows('SELECT 1 FROM intake_runs'), [])
+        self.assertTrue(self.d.rows('SELECT 1 FROM audit'), 'the deletion is recorded')
         self.d.desk.submit(form(), key())  # the same person may apply again
+
+    def test_applications_saved_before_the_operator_started_processing_keep_their_resume(self):
+        first = self.d.desk.submit(form(), key())
+        owner = candidate_owner(first['candidate'])
+        with closing(self.d.jobs.connection()) as db, db:  # how the previous release saved an application
+            db.execute('DELETE FROM intake_runs')
+            self.d.jobs.insert(db, owner, intake_request(form())[0], INTAKE_SOURCE, 'Asha Example 0')
+        reopened = IntakeDesk(self.d.workspace, self.d.jobs)
+        [job] = reopened.candidate_jobs(first['candidate'])
+        self.assertEqual(job['status'], 'queued')
+        entry = next(item for item in reopened.candidates() if item['candidate'] == first['candidate'])
+        self.assertTrue(entry['job']['candidates_own'])
 
 
 class GpuGateTests(unittest.TestCase):
@@ -351,7 +449,7 @@ class PageTests(unittest.TestCase):
     def test_public_requests_carry_the_sites_cookies(self):
         # Seen live: with credentials 'omit', a signed-in browser's Cloudflare Access cookie was not sent, so Access
         # answered every /apply request with its login redirect and the status page showed no resumes.
-        for name in ('apply.js', 'candidate.js'):
+        for name in ('apply.js', 'apply-status.js', 'candidate.js'):
             source = (ROOT / 'dashboard' / name).read_text(encoding='utf-8')
             self.assertNotIn("credentials: 'omit'", source, name)
             self.assertIn("credentials: 'same-origin'", source, name)
@@ -411,7 +509,8 @@ class HttpTests(unittest.TestCase):
         self.assertIn(b'id="ap-form"', page)
         status, page = self.call('/apply/status')
         self.assertEqual(status, 200)
-        self.assertNotIn(b'token', page.split(b'</head>')[0].replace(b'dashboard-token" content=""', b''))
+        self.assertIn(b'/apply/assets/apply-status.js', page)
+        self.assertNotIn(b'token', page.lower())
         self.assertEqual(self.call('/apply/assets/apply.js')[0], 200)
         self.assertEqual(self.call('/apply/assets/resume_dashboard.py')[0], 404)
         self.assertEqual(self.call('/apply/assets/../automation_jobs.py')[0], 404)
@@ -419,6 +518,7 @@ class HttpTests(unittest.TestCase):
             self.assertEqual(self.call(path)[0], 403, path)
 
     def test_submit_follow_and_isolation_over_http(self):
+        from intake import IntakeDesk as Desk_
         secret = key()
         status, body = self.call('/apply/api/submit', {'form': form(), 'key': secret})
         self.assertEqual(status, 201, body)
@@ -430,28 +530,55 @@ class HttpTests(unittest.TestCase):
         self.assertEqual((status, json.loads(body)['field']), (400, 'email'))
         mine = {'X-Candidate-Id': candidate, 'X-Candidate-Key': secret}
         status, body = self.call('/apply/api/automation', headers=mine)
-        self.assertEqual(status, 200)
         listed = json.loads(body)
-        self.assertEqual(len(listed['jobs']), 1)
+        self.assertEqual((status, listed['jobs']), (200, []), 'saved, waiting for the operator')
         self.assertEqual(listed['candidate']['name'], 'Asha Example 0')
         self.assertNotIn('form', listed['candidate'])
         self.assertEqual(self.call('/apply/api/automation', headers={**mine, 'X-Candidate-Key': key()})[0], 403)
         self.assertEqual(json.loads(self.call('/apply/api/form', headers=mine)[1])['form']['location'], 'Pune')
-        # Another candidate never reaches this one's files; the operator does; a member account does not.
-        owner = candidate_owner(candidate)
-        folder = self.workspace.private_output / f'private-{owner}' / 'rev1'
+        # Only the operator starts processing; a member account cannot.
+        operator = {'X-Dashboard-Token': 'token'}
+        self.assertEqual(self.call('/api/intake/start', {'candidate': candidate},
+                                   headers={'Cf-Access-Jwt-Assertion': 'member', 'X-Dashboard-Token': 'token'})[0], 403)
+        status, body = self.call('/api/intake/start', {'candidate': candidate}, web=False, headers=operator)
+        self.assertEqual(status, 202, body)
+        started = json.loads(body)
+        status, body = self.call('/apply/api/automation', headers=mine)
+        [job] = json.loads(body)['jobs']
+        self.assertEqual((job['id'], job['status']), (started['job'], 'queued'))
+        self.assertFalse({'questions', 'proposals', 'overleaf', 'drafts'} & set(job), 'progress only')
+        # The candidate takes no processing actions.
+        for action in ('answer', 'projects', 'regenerate', 'delete'):
+            status, _ = self.call('/apply/api/automation/' + action, {'id': started['job']}, headers=mine)
+            self.assertEqual(status, 403, action)
+        # Downloads: only the finished resumes of this candidate's own application.
+        folder = self.workspace.private_output / f'private-{started["owner"]}' / 'rev1'
         folder.mkdir(parents=True)
         (folder / 'resume.pdf').write_bytes(b'%PDF-1.4 fictional')
-        revision = f'private-{owner}/rev1'
-        status, data = self.call('/apply/api/artifact?key=' + revision + '&name=resume.pdf', headers=mine)
-        self.assertEqual((status, data), (200, b'%PDF-1.4 fictional'))
+        revision = f'private-{started["owner"]}/rev1'
         other_key = key()
         other = json.loads(self.call('/apply/api/submit', {'form': form(2), 'key': other_key})[1])['candidate']
         theirs = {'X-Candidate-Id': other, 'X-Candidate-Key': other_key}
-        self.assertEqual(self.call('/apply/api/artifact?key=' + revision + '&name=resume.pdf', headers=theirs)[0], 404)
-        self.assertEqual(self.call('/api/artifact?key=' + revision + '&name=resume.pdf', web=False)[0], 200)
-        self.assertEqual(self.call('/api/artifact?key=' + revision + '&name=resume.pdf',
-                                   headers={'Cf-Access-Jwt-Assertion': 'member'})[0], 404)
+        self.assertEqual(self.call('/apply/api/artifact?key=' + revision + '&name=resume.pdf', headers=mine)[0], 404,
+                         'not finished yet')
+        with patch.object(Desk_, 'candidate_revisions', lambda desk, who: {revision} if who == candidate else set()):
+            status, data = self.call('/apply/api/artifact?key=' + revision + '&name=resume.pdf', headers=mine)
+            self.assertEqual((status, data), (200, b'%PDF-1.4 fictional'))
+            self.assertEqual(self.call('/apply/api/artifact?key=' + revision + '&name=resume.pdf', headers=theirs)[0], 404)
+            self.assertEqual(self.call('/apply/api/artifact?key=' + revision + '&name=main.py', headers=mine)[0], 404)
+        # The operator deletes an application (confirmed); a member account cannot.
+        self.assertEqual(self.call('/api/intake/delete', {'candidate': other}, web=False, headers=operator)[0], 400)
+        self.assertEqual(self.call('/api/intake/delete', {'candidate': other, 'confirm': 'DELETE'},
+                                   headers={'Cf-Access-Jwt-Assertion': 'member', 'X-Dashboard-Token': 'token'})[0], 403)
+        status, body = self.call('/api/intake/delete', {'candidate': other, 'confirm': 'DELETE'}, web=False,
+                                 headers=operator)
+        self.assertEqual((status, json.loads(body)['kept']), (200, []))
+        self.assertEqual(self.call('/apply/api/automation', headers=theirs)[0], 403)
+        # The operator sees the full details of every application.
+        listed = json.loads(self.call('/api/intake/candidates', web=False, headers=operator)[1])
+        entry = next(item for item in listed['candidates'] if item['candidate'] == candidate)
+        self.assertEqual(entry['form']['projects'][0]['name'], 'Order Service 0')
+        self.assertIsNotNone(entry['started'])
 
     def headers_of(self, path, web=True):
         merged = {'Host': 'resumeops.test', 'X-Forwarded-Proto': 'https', 'Cf-Connecting-IP': '203.0.113.7'} if web else {}
@@ -568,12 +695,12 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(len(set(candidates)), 150)
         with closing(sqlite3.connect(self.workspace.root / '.resumeops-automation.sqlite3')) as db:
             self.assertEqual(db.execute('SELECT count(*) FROM intake').fetchone()[0], 150)
-            self.assertEqual(db.execute("SELECT count(*) FROM automation WHERE source='intake' AND status='queued'").fetchone()[0], 150)
+            self.assertEqual(db.execute('SELECT count(*) FROM automation').fetchone()[0], 0, 'saved, not processed')
         # Every candidate reaches exactly their own application.
         for candidate, secret in results[:20]:
             status, body = self.call('/apply/api/automation', headers={'X-Candidate-Id': candidate, 'X-Candidate-Key': secret})
             self.assertEqual(status, 200)
-            self.assertEqual(len(json.loads(body)['jobs']), 1)
+            self.assertEqual(json.loads(body)['candidate']['candidate'], candidate)
         self.assertLess(elapsed, 120)
 
 

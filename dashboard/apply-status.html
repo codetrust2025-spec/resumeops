@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your application | ResumeOps</title>
+<link rel="stylesheet" href="/apply/assets/apply.css">
+<script defer src="/apply/assets/apply-status.js"></script>
+</head>
+<body>
+<header class="ap-bar"><a class="ap-brand" href="/apply">ResumeOps</a></header>
+<main class="ap-main">
+  <section class="ap-intro">
+    <h1>Your application</h1>
+    <p id="st-who"></p>
+  </section>
+
+  <section class="ap-card" aria-labelledby="st-state-title">
+    <h2 id="st-state-title">Status</h2>
+    <p id="st-state" role="status" aria-live="polite">Loading your application…</p>
+    <div id="st-progress" class="st-progress" hidden><div id="st-bar"></div></div>
+    <div id="st-files" class="st-files" hidden>
+      <button type="button" id="st-pdf" class="ap-primary">Download my resume (PDF)</button>
+      <button type="button" id="st-tex" class="st-secondary">Download the LaTeX source</button>
+    </div>
+    <p id="st-error" class="ap-error" role="alert"></p>
+  </section>
+
+  <section class="ap-card" aria-labelledby="st-more-title">
+    <h2 id="st-more-title">Your details</h2>
+    <p class="ap-hint">The ResumeOps team prepares and checks your resume from the details you submitted. Found a
+      mistake? Correct your details; the team works from the latest version.</p>
+    <div class="ap-row-actions">
+      <button type="button" id="st-copy">Copy this private link</button>
+      <a id="st-edit" class="st-secondary" href="/apply">Correct my details</a>
+    </div>
+  </section>
+</main>
+</body>
+</html>

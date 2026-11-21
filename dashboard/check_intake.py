@@ -12,6 +12,7 @@ import tempfile
 import threading
 import zipfile
 from contextlib import closing
+from unittest.mock import patch
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -108,66 +109,79 @@ def main():
                 candidate = link.split('#c=')[1].split('&')[0]
                 no_sideways_scroll(page)
 
-                # The candidate's own page: their application in the queue.
+                # The candidate's own page: the application waits for the operator.
                 page.goto(link)
-                expect(page.locator('.cand-banner')).to_contain_text(candidate)
-                expect(page.locator('.cand-banner')).to_contain_text('Kiran Example')
-                expect(page.locator('#auto-job-list li')).to_have_count(1)
-                expect(page.locator('#auto-job-list')).to_contain_text('next in the queue')
-                assert page.locator('#ai-form').is_hidden()
+                expect(page.locator('#st-who')).to_contain_text(candidate)
+                expect(page.locator('#st-who')).to_contain_text('Kiran Example')
+                expect(page.locator('#st-state')).to_contain_text('Received', timeout=15000)
+                assert page.locator('#st-files').is_hidden()
+                no_sideways_scroll(page)
+                with closing(__import__('sqlite3').connect(database)) as db:
+                    assert db.execute('SELECT count(*) FROM automation').fetchone()[0] == 0, 'nothing runs before Start'
+
+                # The operator's page: every detail the candidate entered, and Start processing (the local origin
+                # is the operator).
+                operator = browser.new_page(viewport={'width': 1366, 'height': 900})
+                operator.on('dialog', lambda dialog: dialog.accept())
+                operator.goto(origin + '/candidates')
+                expect(operator.locator('#cd-rows')).to_contain_text(candidate, timeout=15000)
+                expect(operator.locator('#cd-rows')).to_contain_text('Kiran Example')
+                expect(operator.locator('#cd-rows')).to_contain_text('Not started')
+                assert operator.locator('#cd-form-url').input_value() == origin + '/apply'
+                operator.get_by_role('button', name='Details').click()
+                details = operator.locator('.cd-details')
+                expect(details).to_contain_text('Associate Engineer at Demo Software Pvt Ltd')
+                expect(details).to_contain_text('Built Spring Boot REST APIs for appointment booking with Java and MySQL.')
+                expect(details).to_contain_text('Clinic Booking API')
+                expect(details).to_contain_text('Year of completion: 2015')
+                expect(details).to_contain_text('Pune')
+                operator.get_by_role('button', name='Start processing').click()
+                expect(operator.locator('#cd-message')).to_contain_text('Processing started', timeout=15000)
+                expect(operator.locator('#cd-rows')).to_contain_text('Waiting in queue', timeout=15000)
+                with closing(__import__('sqlite3').connect(database)) as db:
+                    owner, identifier, payload, label = db.execute(
+                        'SELECT owner, id, payload, candidate FROM automation').fetchone()
+                request = json.loads(payload)
+                # The operator's own document-upload workflow: a Word resume of the form, as the operator's resume.
+                assert (request['extension'], label) == ('docx', 'Kiran Example'), (request.get('extension'), label)
+                assert owner != __import__('intake').candidate_owner(candidate), 'an operator resume, not the candidate'
+
+                # The candidate follows it, and downloads the finished resume; nothing else.
+                page.reload()
+                expect(page.locator('#st-state')).to_contain_text('Queued for preparation', timeout=15000)
+                folder = workspace.private_output / f'private-{owner}' / 'rev1'
+                folder.mkdir(parents=True)
+                (folder / 'resume.pdf').write_bytes(b'%PDF-1.4 fictional resume')
+                revision = f'private-{owner}/rev1'
+                with patch('intake.IntakeDesk.candidate_jobs', lambda desk, who: [
+                        {'id': identifier, 'status': 'complete', 'percent': 100, 'stage': 'Verified resume ready',
+                         'revision': revision, 'ats': 97}] if who == candidate else []):
+                    page.reload()
+                    expect(page.locator('#st-state')).to_contain_text('Your resume is ready', timeout=15000)
+                    with page.expect_download() as download:
+                        page.locator('#st-pdf').click()
+                    assert download.value.suggested_filename == f'{candidate}-resume.pdf'
+                    assert Path(download.value.path()).read_bytes() == b'%PDF-1.4 fictional resume'
                 no_sideways_scroll(page)
 
-                # AI drafts wait for the candidate: the review card answers through the private key.
-                with closing(__import__('sqlite3').connect(database)) as db, db:
-                    owner, identifier, payload = db.execute('SELECT owner, id, payload FROM automation').fetchone()
-                    draft = json.loads(payload)['profile']
-                    questions = [{'id': 'experience.1.bullets', 'section': 'experience', 'entry': 1, 'field': 'bullets',
-                                  'drafted': True, 'label': 'Work as Associate Engineer at Demo Software Pvt Ltd (AI draft)',
-                                  'explanation': 'Keep only what you did.',
-                                  'value': 'Built Spring Boot REST APIs for appointment booking with Java and MySQL.\n'
-                                           'Wrote JUnit tests for the booking service with Mockito.'}]
-                    db.execute("UPDATE automation SET status='needs_input', stage='Review AI drafts for Java Backend "
-                               "Developer', error='AI drafted work lines. Then confirm once.', checkpoints=? "
-                               'WHERE owner=? AND id=?', (json.dumps({'draft': draft, 'questions': questions}),
-                                                          owner, identifier))
-                page.reload()
-                card = page.locator('.auto-answer')
-                expect(card).to_be_visible(timeout=15000)
-                expect(card.get_by_label('Work as Associate Engineer at Demo Software Pvt Ltd (AI draft)')).to_have_value(re.compile('JUnit'))
-                card.get_by_role('button', name='Confirm and continue').click()
-                expect(page.locator('.auto-answer')).to_have_count(0, timeout=15000)
-                with closing(__import__('sqlite3').connect(database)) as db:
-                    status, checkpoints = db.execute('SELECT status, checkpoints FROM automation').fetchone()
-                facts = json.loads(checkpoints)['facts']
-                assert status == 'queued', status
-                assert 'Wrote JUnit tests for the booking service with Mockito.' in facts['experience'][1]['bullets'], facts
-
-                # Corrections: the form opens with the candidate's facts and saves a new version.
+                # Corrections: the form opens with the candidate's facts and saves a new version; the operator sees
+                # that the details changed after processing started.
                 page.get_by_role('link', name='Correct my details').click()
                 expect(field('location')).to_have_value('Pune', timeout=15000)
                 field('location').fill('Mumbai')
                 page.locator('#ap-consent').check()
                 page.locator('#ap-submit').click()
                 expect(page.locator('#ap-done-id')).to_contain_text('corrected details saved', timeout=20000)
-                with closing(__import__('sqlite3').connect(database)) as db:
-                    versions = db.execute('SELECT count(*) FROM automation WHERE owner=?', (owner,)).fetchone()[0]
-                assert versions == 2, versions
-
-                # The operator's page lists the candidate (the local origin is the operator).
-                operator = browser.new_page(viewport={'width': 1366, 'height': 900})
-                operator.goto(origin + '/candidates')
-                expect(operator.locator('#cd-rows tr')).to_have_count(1, timeout=15000)
-                expect(operator.locator('#cd-rows')).to_contain_text(candidate)
-                expect(operator.locator('#cd-rows')).to_contain_text('Kiran Example')
-                assert operator.locator('#cd-form-url').input_value() == origin + '/apply'
-                expect(operator.locator('#cd-queue-state')).to_contain_text('paused')
+                operator.reload()
+                expect(operator.get_by_role('button', name='Start again with new details')).to_be_visible(timeout=15000)
                 browser.close()
         finally:
             server.shutdown()
             server.RequestHandlerClass.stop_imports()
             server.server_close()
-    print('Intake browser acceptance passed: phone form, Word prefill, local draft, private link, queue position, '
-          'AI-draft review through the private key, corrections and the operator list.')
+    print('Intake browser acceptance passed: phone form, Word prefill, local draft, private link, nothing processed '
+          'before Start, full details and Start processing for the operator (upload workflow as the operator), the '
+          "candidate's progress and PDF download, corrections flagged for the operator.")
 
 
 if __name__ == '__main__':

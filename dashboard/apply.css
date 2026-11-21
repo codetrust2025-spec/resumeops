@@ -60,3 +60,10 @@ input:focus, textarea:focus { outline: 3px solid rgba(31,85,181,.25); border-col
   .ap-row-actions { grid-template-columns: minmax(0, 1fr); }
 }
 #ap-human-box { min-height: 66px; }
+/* The candidate's status page */
+.st-progress { height: 8px; margin-top: 10px; border-radius: 8px; background: var(--tint); overflow: hidden; }
+#st-bar { height: 100%; width: 4%; background: var(--blue); transition: width .4s; }
+.st-files { display: grid; gap: 10px; margin-top: 12px; }
+.st-secondary { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 14px;
+  border: 1px solid var(--field); border-radius: 10px; background: #fff; color: var(--blue); font: inherit;
+  font-weight: 600; text-decoration: none; cursor: pointer; }

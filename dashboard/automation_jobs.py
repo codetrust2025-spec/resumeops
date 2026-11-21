@@ -379,16 +379,17 @@ class AutomationJobs:
         raw = json.dumps(request, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
         return hashlib.sha256(raw.encode()).hexdigest(), raw
 
-    def insert(self, db, owner, request, source=None, candidate=None, client=None):
+    def insert(self, db, owner, request, source=None, candidate=None, client=None, per_owner=True):
         """Save a validated request inside the caller's transaction (``BEGIN IMMEDIATE``); the same request from
         the same owner is the same job (never processed twice). Account submissions keep their limits (four in
         progress per account, 24 waiting overall); intake submissions have their own, larger limit, and at most
-        INTAKE_CLIENT_LIMIT of them wait at once from one network (``client``)."""
+        INTAKE_CLIENT_LIMIT of them wait at once from one network (``client``). ``per_owner=False``: the operator
+        starting candidates' applications, which the intake limits govern instead of an account's four."""
         identifier, raw = self.request_id(request)
         if db.execute('SELECT 1 FROM automation WHERE owner=? AND id=?', (owner, identifier)).fetchone():
             return identifier
         pending = db.execute("SELECT count(*) FROM automation WHERE status in ('queued','processing','retrying') AND owner=?",
-                             (owner,)).fetchone()[0]
+                             (owner,)).fetchone()[0] if per_owner else 0
         if source == INTAKE_SOURCE:
             waiting = db.execute('SELECT count(*) FROM automation WHERE payload IS NOT NULL AND source=?',
                                  (INTAKE_SOURCE,)).fetchone()[0]

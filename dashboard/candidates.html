@@ -19,8 +19,9 @@
   <section class="cd-card cd-head">
     <div>
       <h1>Candidates</h1>
-      <p>Applications from the public form, with their progress through AI drafting, candidate review, ATS, LaTeX,
-        PDF and Overleaf. Each candidate follows their own application through a private link.</p>
+      <p>Applications from the public form with everything each candidate entered. You start processing: it runs
+        your own upload workflow on the candidate's details, and you review the AI drafts under My resumes. Each
+        candidate follows their application and downloads the finished resume through a private link.</p>
     </div>
     <div class="cd-share">
       <label for="cd-form-url">Public form link</label>
@@ -50,8 +51,9 @@
     <div class="cd-tools">
       <input type="search" id="cd-search" placeholder="Search name, email, phone, ID or role" aria-label="Search candidates">
       <select id="cd-status" aria-label="Filter by status">
-        <option value="">All statuses</option><option value="queued">Waiting in queue</option>
-        <option value="processing">Preparing</option><option value="needs_input">Waiting for the candidate</option>
+        <option value="">All statuses</option><option value="submitted">Not started</option>
+        <option value="queued">Waiting in queue</option>
+        <option value="processing">Preparing</option><option value="needs_input">Waiting for your review</option>
         <option value="complete">Complete</option><option value="blocked">Stopped</option>
       </select>
     </div>

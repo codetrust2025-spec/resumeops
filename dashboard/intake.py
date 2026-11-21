@@ -4,11 +4,12 @@ How it fits ResumeOps:
 * Every candidate gets a unique ID (RO-XXXXXXXXXX) and a private key. The browser creates the key before it sends
   the form (so a retried submission after a lost response is recognised, and the key never travels back from the
   server); only its SHA-256 is stored. The private link /apply/status#c=<id>&k=<key> is the candidate's access.
-* A candidate is its own ResumeOps owner (sha256("candidate\\0" + id)), so the existing per-owner isolation applies to
-  every record, file and download, and the existing automation (AI drafting for the selected role, the one-time
-  review of drafts, ATS, LaTeX, PDF, Overleaf) runs unchanged.
-* A submission is saved in one transaction with its preparation job (never lost, never processed twice). The same
-  facts submitted again (another device) are recognised and not processed again.
+* A submission is saved in one transaction and waits (never lost; the same facts from another device are recognised).
+  The operator controls processing: Start processing on the Candidates page turns the form into a Word resume and
+  runs the operator's own document-upload workflow on it, unchanged (AI drafting for the selected role, the review of
+  drafts in the operator's dashboard, ATS, LaTeX, PDF, Overleaf). The same details are never processed twice.
+* The candidate only submits details and follows progress / downloads the finished resume through the private link;
+  they see nothing else of the operator's resumes.
 * Mandatory facts are checked here (personal, education, employment unless a fresher, skills, projects, target
   role); the AI only drafts what the candidate then confirms (resume_bot never adds unconfirmed claims).
 """
@@ -16,6 +17,7 @@ import base64
 import binascii
 import hashlib
 import json
+import os
 import re
 import secrets
 import threading
@@ -237,7 +239,94 @@ class RateLimiter:
             return True
 
 
+INTAKE_WAITING_LIMIT = int(os.environ.get('RESUMEOPS_INTAKE_WAITING_LIMIT', '2000'))  # saved, not yet started
+# What a candidate sees of a resume prepared from their application: progress and the finished files, never the
+# drafts, review questions, Overleaf project or any other resume of the operator's.
+CANDIDATE_JOB_FIELDS = ('id', 'status', 'stage', 'percent', 'role', 'created', 'updated', 'revision', 'queue_ahead',
+                        'queue_paused')
+
+
+def form_document(form):
+    """A Word resume (DOCX) holding exactly what the candidate entered, laid out like a resume. Start processing
+    sends it through the operator's own document-upload workflow, unchanged."""
+    from xml.sax.saxutils import escape
+
+    def text(value):
+        return ' '.join(''.join(ch for ch in str(value or '') if ch.isprintable() or ch == '\n').split())
+
+    def lines(value):
+        return [line for line in (text(raw).lstrip('•*·-– ').strip() for raw in str(value or '').splitlines()) if line]
+
+    def rows(name):
+        return [row for row in form.get(name) or [] if isinstance(row, dict)]
+
+    out = [text(form.get('full_name')),
+           ' | '.join(text(form.get(key)) for key in ('email', 'phone', 'location') if text(form.get(key)))]
+    links = [f'{label}: {text(form.get(key))}' for key, label in
+             (('linkedin', 'LinkedIn'), ('github', 'GitHub'), ('portfolio', 'Portfolio')) if text(form.get(key))]
+    if links:
+        out.append(' | '.join(links))
+    if text(form.get('skills')):
+        out += ['', 'TECHNICAL SKILLS', text(form.get('skills'))]
+    if rows('work_experience') and form.get('fresher') is not True:
+        out += ['', 'WORK EXPERIENCE']
+        for row in rows('work_experience'):
+            place = ', '.join(part for part in (text(row.get('company')), text(row.get('location'))) if part)
+            out += [' — '.join(part for part in (text(row.get('position')), place) if part),
+                    ' – '.join(part for part in (text(row.get('start')), text(row.get('end'))) if part)]
+            out += ['• ' + line for line in lines(row.get('responsibilities'))]
+            out.append('')
+    if rows('projects'):
+        out += ['', 'PROJECTS']
+        for row in rows('projects'):
+            out.append(' | '.join(part for part in (text(row.get('name')), text(row.get('stack'))) if part))
+            out += ['• ' + line for line in lines(row.get('description'))]
+            out.append('')
+    if rows('education'):
+        out += ['', 'EDUCATION']
+        for row in rows('education'):
+            degree = ', '.join(part for part in (text(row.get('degree')), text(row.get('specialization'))) if part)
+            out += [degree, text(row.get('university'))]
+            year = [f'Year of completion: {text(row.get("graduation_year"))}'] if text(row.get('graduation_year')) else []
+            year += [f'CGPA / percentage: {text(row.get("cgpa"))}'] if text(row.get('cgpa')) else []
+            if year:
+                out.append(' | '.join(year))
+            out.append('')
+    for key, heading in (('certifications', 'CERTIFICATIONS'), ('achievements', 'ACHIEVEMENTS')):
+        if lines(form.get(key)):
+            out += ['', heading] + ['• ' + line for line in lines(form.get(key))]
+    while out and not out[-1]:
+        out.pop()
+    namespace = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+    body = ''.join(f'<w:p><w:r><w:t xml:space="preserve">{escape(line)}</w:t></w:r></w:p>' if line else '<w:p/>'
+                   for line in out)
+    import io
+    import zipfile
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, 'w', zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr('[Content_Types].xml', (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/word/document.xml" ContentType="application/'
+            'vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'))
+        archive.writestr('_rels/.rels', (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
+            'officeDocument" Target="word/document.xml"/></Relationships>'))
+        archive.writestr('word/document.xml', (
+            f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="{namespace}">'
+            f'<w:body>{body}</w:body></w:document>'))
+    return data.getvalue()
+
+
 class IntakeDesk:
+    """Applications from the public form. A submission is saved and waits: the operator starts processing it from
+    the Candidates page (start), which runs the operator's own document-upload workflow on a Word resume made from
+    the form. The candidate follows progress and downloads the finished resume through their private link."""
+
     def __init__(self, workspace, automation):
         self.workspace = workspace
         self.automation = automation
@@ -251,7 +340,17 @@ class IntakeDesk:
                 candidate TEXT PRIMARY KEY, owner TEXT NOT NULL UNIQUE, key_hash TEXT NOT NULL UNIQUE,
                 created REAL NOT NULL, updated REAL NOT NULL, name TEXT, email TEXT, phone TEXT, role TEXT,
                 form TEXT, digest TEXT, scrubbed REAL)''')
+            if 'client' not in {row[1] for row in db.execute('PRAGMA table_info(intake)')}:
+                db.execute('ALTER TABLE intake ADD COLUMN client TEXT')  # the sender's network tag (client_tag)
             db.execute('CREATE INDEX IF NOT EXISTS intake_digest ON intake(digest)')
+            # Resumes prepared from an application: started by the operator (job_owner is the operator's account),
+            # or, for applications saved before processing became the operator's step, the candidate's own.
+            db.execute('''CREATE TABLE IF NOT EXISTS intake_runs (
+                candidate TEXT NOT NULL, job_owner TEXT NOT NULL, job_id TEXT NOT NULL, started REAL NOT NULL,
+                started_by TEXT, digest TEXT, PRIMARY KEY(candidate, job_owner, job_id))''')
+            db.execute('INSERT OR IGNORE INTO intake_runs(candidate, job_owner, job_id, started, started_by, digest) '
+                       'SELECT i.candidate, a.owner, a.id, a.created, NULL, i.digest FROM intake i '
+                       'JOIN automation a ON a.owner = i.owner WHERE a.source=?', (INTAKE_SOURCE,))
 
     # Candidates ----------------------------------------------------------------------------------------------
 
@@ -262,9 +361,9 @@ class IntakeDesk:
         return hashlib.sha256(raw.encode('utf-8')).hexdigest()
 
     def submit(self, form, key, candidate=None, client=None):
-        """Save an application (or, with ``candidate``, a correction from that candidate). Returns
-        {'candidate', 'job', 'created'}. The same key again returns the same candidate (a retried request).
-        ``client`` is the sender's network tag (client_tag) for the per-network limit and fair queueing."""
+        """Save an application, or with ``candidate`` that candidate's corrected details. Nothing is processed here:
+        the operator starts processing (start). Returns {'candidate', 'created'}; the same key again returns the same
+        candidate (a retried request). ``client`` is the sender's network tag (client_tag)."""
         if not isinstance(key, str) or not KEY_PATTERN.fullmatch(key):
             raise IntakeError('The page could not create a private key. Reload the page and submit again.')
         request, summary = intake_request(form)
@@ -277,35 +376,31 @@ class IntakeDesk:
             if candidate is not None:
                 if not mine or mine['candidate'] != candidate or mine['scrubbed']:
                     raise IntakeError('This private link is not valid.', None, 403)
-                job = self.automation.insert(db, mine['owner'], request, INTAKE_SOURCE, summary['name'], client)
                 db.execute('UPDATE intake SET updated=?, name=?, email=?, phone=?, role=?, form=?, digest=? '
                            'WHERE candidate=?', (now, summary['name'], summary['email'], summary['phone'],
                                                   summary['role'], stored, digest, candidate))
-                result = {'candidate': candidate, 'job': job, 'created': False}
-            elif mine:
+                return {'candidate': candidate, 'created': False}
+            if mine:
                 if mine['scrubbed']:
                     raise IntakeError('This application was deleted.', None, 410)
-                job = self.automation.request_id(request)[0]
-                result = {'candidate': mine['candidate'], 'job': job, 'created': False}
-            else:
-                same = db.execute('SELECT candidate FROM intake WHERE digest=? AND scrubbed IS NULL',
-                                  (digest,)).fetchone()
-                if same:
-                    raise IntakeDuplicate(same['candidate'])
-                for _ in range(8):
-                    candidate_id = new_candidate_id()
-                    if not db.execute('SELECT 1 FROM intake WHERE candidate=?', (candidate_id,)).fetchone():
-                        break
-                owner = candidate_owner(candidate_id)
-                db.execute('INSERT INTO intake(candidate, owner, key_hash, created, updated, name, email, phone, role, '
-                           'form, digest) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-                           (candidate_id, owner, key_digest(key), now, now, summary['name'], summary['email'],
-                            summary['phone'], summary['role'], stored, digest))
-                job = self.automation.insert(db, owner, request, INTAKE_SOURCE, summary['name'], client)
-                result = {'candidate': candidate_id, 'job': job, 'created': True}
-        self.automation.start()
-        self.automation.wake.set()
-        return result
+                return {'candidate': mine['candidate'], 'created': False}
+            same = db.execute('SELECT candidate FROM intake WHERE digest=? AND scrubbed IS NULL', (digest,)).fetchone()
+            if same:
+                raise IntakeDuplicate(same['candidate'])
+            waiting = db.execute('SELECT count(*) FROM intake i WHERE scrubbed IS NULL AND NOT EXISTS '
+                                 '(SELECT 1 FROM intake_runs r WHERE r.candidate = i.candidate)').fetchone()[0]
+            if waiting >= INTAKE_WAITING_LIMIT:
+                raise AutomationCapacity('Applications are at capacity right now. Your form is kept on this device; '
+                                         'it is sent again automatically.')
+            for _ in range(8):
+                candidate_id = new_candidate_id()
+                if not db.execute('SELECT 1 FROM intake WHERE candidate=?', (candidate_id,)).fetchone():
+                    break
+            db.execute('INSERT INTO intake(candidate, owner, key_hash, created, updated, name, email, phone, role, '
+                       'form, digest, client) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+                       (candidate_id, candidate_owner(candidate_id), key_digest(key), now, now, summary['name'],
+                        summary['email'], summary['phone'], summary['role'], stored, digest, client))
+            return {'candidate': candidate_id, 'created': True}
 
     def known_key(self, key):
         """Whether an application with this private key is already saved (a retried submission creates nothing)."""
@@ -338,9 +433,29 @@ class IntakeDesk:
         return {'candidate': row['candidate'], 'name': row['name'], 'role': row['role'], 'created': row['created'],
                 'form': json.loads(row['form'] or '{}')}
 
+    def runs(self, candidate):
+        with closing(self.automation.connection()) as db:
+            return db.execute('SELECT job_owner, job_id, started, digest FROM intake_runs WHERE candidate=? '
+                              'ORDER BY started DESC', (candidate,)).fetchall()
+
+    def candidate_jobs(self, candidate):
+        """The resumes prepared from this application, newest first, as the candidate may see them."""
+        out = []
+        for run in self.runs(candidate):
+            for job in self.automation.list(run['job_owner'], run['job_id']):
+                if job.get('id') == run['job_id']:
+                    entry = {key: job[key] for key in CANDIDATE_JOB_FIELDS if key in job}
+                    entry['ats'] = (job.get('ats') or {}).get('ats_readiness')
+                    out.append(entry)
+        return out
+
+    def candidate_revisions(self, candidate):
+        """The finished resumes this candidate may download (revision keys of their own applications only)."""
+        return {job['revision'] for job in self.candidate_jobs(candidate) if job.get('revision')}
+
     def scrub_if_empty(self, owner):
-        """After a candidate deletes their resumes: with none left, their contact details and form are removed too
-        (the ID stays, marked deleted, so the operator's list stays truthful)."""
+        """After a candidate's own resumes are gone: their contact details and form are removed too (the ID stays,
+        marked deleted, so the operator's list stays truthful)."""
         with closing(self.automation.connection()) as db, db:
             if db.execute('SELECT 1 FROM automation WHERE owner=?', (owner,)).fetchone():
                 return False
@@ -349,6 +464,59 @@ class IntakeDesk:
             return True
 
     # Operator ------------------------------------------------------------------------------------------------
+
+    def start(self, candidate, operator_owner):
+        """Start processing an application (Start processing on the Candidates page). The candidate's form becomes
+        a Word resume (form_document) that goes through the operator's own document-upload workflow, unchanged: the
+        same request the dashboard makes for an uploaded DOCX, as the operator's resume labelled with the candidate's
+        name, reviewed in the operator's dashboard. The same details again are the same resume (never processed
+        twice). Returns {'candidate', 'job', 'owner', 'created'}."""
+        from resume_bot.automation import CONSENT_VERSION
+        with closing(self.automation.connection()) as db:
+            row = db.execute('SELECT form, name, role, digest, client, scrubbed FROM intake WHERE candidate=?',
+                             (candidate,)).fetchone()
+        if not row or row['scrubbed'] or not row['form']:
+            raise IntakeError('Application not found.', None, 404)
+        form = json.loads(row['form'])
+        request = submission({'consent': CONSENT_VERSION, 'role': row['role'] or form.get('role'), 'extension': 'docx',
+                              'document': base64.b64encode(form_document(form)).decode('ascii')})
+        identifier = self.automation.request_id(request)[0]
+        with closing(self.automation.connection()) as db, db:
+            db.execute('BEGIN IMMEDIATE')
+            created = not db.execute('SELECT 1 FROM automation WHERE owner=? AND id=?',
+                                     (operator_owner, identifier)).fetchone()
+            job = self.automation.insert(db, operator_owner, request, INTAKE_SOURCE, row['name'], row['client'],
+                                         per_owner=False)
+            db.execute('INSERT OR IGNORE INTO intake_runs(candidate, job_owner, job_id, started, started_by, digest) '
+                       'VALUES (?,?,?,?,?,?)', (candidate, operator_owner, job, time.time(), operator_owner,
+                                                row['digest']))
+        self.automation.start()
+        self.automation.wake.set()
+        return {'candidate': candidate, 'job': job, 'owner': operator_owner, 'created': created}
+
+    def delete_application(self, candidate, client=None):
+        """The operator removes an application: every resume prepared from it (each deletion audited) and then the
+        candidate's details. A resume still being built is kept and reported; the details then stay too."""
+        from automation_jobs import DeleteBusy, DeleteFailed, DeleteRefused
+        with closing(self.automation.connection()) as db:
+            row = db.execute('SELECT owner, scrubbed FROM intake WHERE candidate=?', (candidate,)).fetchone()
+        if not row:
+            raise IntakeError('Application not found.', None, 404)
+        deleted, kept = 0, []
+        for run in self.runs(candidate):
+            try:
+                result = self.automation.delete(run['job_owner'], run['job_id'], client=client) or {}
+                deleted += result.get('deleted', 0)
+                kept += result.get('kept', [])
+            except (DeleteRefused, DeleteBusy, DeleteFailed) as error:
+                kept.append({'id': run['job_id'], 'reason': str(error)})
+        if not kept:
+            now = time.time()
+            with closing(self.automation.connection()) as db, db:
+                db.execute("UPDATE intake SET name=NULL, email=NULL, phone=NULL, form=NULL, digest=NULL, scrubbed=?, "
+                           'updated=? WHERE candidate=?', (now, now, candidate))
+                db.execute('DELETE FROM intake_runs WHERE candidate=?', (candidate,))
+        return {'candidate': candidate, 'deleted': deleted, 'kept': kept}
 
     def new_key(self, candidate):
         """A new private key for a candidate who lost their link (the old link stops working)."""
@@ -361,32 +529,42 @@ class IntakeDesk:
         return key
 
     def candidates(self, limit=1000):
-        """Every candidate with the state of their latest resume, newest first, and queue figures."""
+        """Every application, newest first, with everything the candidate entered and the state of the latest resume
+        prepared from it (``started`` is None until the operator starts processing)."""
         with closing(self.automation.connection()) as db:
-            people = db.execute('SELECT candidate, owner, created, updated, name, email, phone, role, scrubbed '
-                                'FROM intake ORDER BY created DESC LIMIT ?', (limit,)).fetchall()
-            rows = db.execute("SELECT owner, id, status, stage, percent, attempts, next_retry, error, created, updated, "
-                              'job, notice, role, candidate, NULL AS waiting, facts IS NOT NULL AS regenerable '
-                              'FROM automation WHERE source=? ORDER BY created', (INTAKE_SOURCE,)).fetchall()
+            people = db.execute('SELECT candidate, owner, created, updated, name, email, phone, role, form, digest, '
+                                'scrubbed FROM intake ORDER BY created DESC LIMIT ?', (limit,)).fetchall()
+            runs = db.execute('SELECT candidate, job_owner, job_id, started, digest FROM intake_runs '
+                              'ORDER BY started').fetchall()
+            jobs = {(row['owner'], row['id']): row for row in db.execute(
+                "SELECT owner, id, status, stage, percent, attempts, next_retry, error, created, updated, job, notice, "
+                'role, candidate, NULL AS waiting, facts IS NOT NULL AS regenerable FROM automation WHERE source=?',
+                (INTAKE_SOURCE,))}
             ahead = self.automation.queue_positions(db)
         latest, versions = {}, {}
-        for row in rows:
-            latest[row['owner']] = row
-            versions[row['owner']] = versions.get(row['owner'], 0) + 1
+        for run in runs:
+            if (run['job_owner'], run['job_id']) in jobs:
+                latest[run['candidate']] = run
+                versions[run['candidate']] = versions.get(run['candidate'], 0) + 1
         state = self.workspace.automation_state()
         out = []
         for person in people:
             entry = {key: person[key] for key in ('candidate', 'created', 'updated', 'name', 'email', 'phone', 'role')}
             entry['deleted'] = bool(person['scrubbed'])
-            row = latest.get(person['owner'])
-            if row is not None:
-                job = self.automation._status(row, state, person['owner'])
+            entry['form'] = json.loads(person['form']) if person['form'] else None
+            run = latest.get(person['candidate'])
+            entry['started'] = run['started'] if run else None
+            if run is not None:
+                row = jobs[(run['job_owner'], run['job_id'])]
+                job = self.automation._status(row, state, run['job_owner'])
                 entry.update(job={key: job.get(key) for key in (
                     'id', 'status', 'stage', 'percent', 'error', 'revision', 'overleaf', 'next_retry', 'updated')},
-                    ats=(job.get('ats') or {}).get('ats_readiness'), versions=versions[person['owner']],
-                    role=job.get('role') or entry['role'])
-                if (person['owner'], row['id']) in ahead and row['status'] in ('queued', 'retrying'):
-                    entry['job']['queue_ahead'] = ahead[(person['owner'], row['id'])]
+                    ats=(job.get('ats') or {}).get('ats_readiness'), versions=versions[person['candidate']],
+                    role=job.get('role') or entry['role'],
+                    details_changed=bool(person['digest']) and run['digest'] != person['digest'])
+                entry['job']['candidates_own'] = run['job_owner'] == person['owner']  # saved before operator start
+                if (run['job_owner'], row['id']) in ahead and row['status'] in ('queued', 'retrying'):
+                    entry['job']['queue_ahead'] = ahead[(run['job_owner'], row['id'])]
             out.append(entry)
         return out
 
