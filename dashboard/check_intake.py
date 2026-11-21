@@ -14,6 +14,7 @@ import zipfile
 from contextlib import closing
 from unittest.mock import patch
 from pathlib import Path
+from urllib.parse import unquote
 from xml.sax.saxutils import escape
 
 from playwright.sync_api import expect, sync_playwright
@@ -139,12 +140,25 @@ def main():
                 expect(handset.locator('#cd-rows')).to_contain_text('Kiran Example', timeout=15000)
                 start_box = handset.get_by_role('button', name='Start processing').bounding_box()
                 assert start_box and start_box['height'] >= 44, start_box
+                # Share via WhatsApp: visible on a phone, a whole-width touch target.
+                share = handset.get_by_role('link', name='Share via WhatsApp')
+                expect(share).to_be_visible()
+                share_box = share.bounding_box()
+                assert share_box and share_box['height'] >= 44 and share_box['width'] >= 300, share_box
                 no_sideways_scroll(handset)
                 operator.goto(origin + '/candidates')
                 expect(operator.locator('#cd-rows')).to_contain_text(candidate, timeout=15000)
                 expect(operator.locator('#cd-rows')).to_contain_text('Kiran Example')
                 expect(operator.locator('#cd-rows')).to_contain_text('Not started')
                 assert operator.locator('#cd-form-url').input_value() == origin + '/apply'
+                # ...and on a computer: one tap opens WhatsApp with a prefilled invitation holding the public form link.
+                share = operator.get_by_role('link', name='Share via WhatsApp')
+                expect(share).to_be_visible()
+                href = share.get_attribute('href')
+                assert href.startswith('https://wa.me/?text='), href
+                invitation = unquote(href.split('?text=', 1)[1])
+                assert origin + '/apply' in invitation and 'no login' in invitation, invitation
+                assert share.get_attribute('target') == '_blank', 'opens WhatsApp beside the dashboard'
                 operator.get_by_role('button', name='Details').click()
                 details = operator.locator('.cd-details')
                 expect(details).to_contain_text('Associate Engineer at Demo Software Pvt Ltd')
@@ -233,7 +247,7 @@ def main():
             server.RequestHandlerClass.stop_imports()
             server.server_close()
     print('Intake browser acceptance passed: phone form, Word prefill, local draft, private link, nothing processed '
-          'before Start, Candidates beside My resumes with its badge (desktop and phone), full details, Start processing '
+          'before Start, Candidates beside My resumes with its badge (desktop and phone), Share via WhatsApp with the form link, full details, Start processing '
           'and Process again (typed details as the operator), resume and application linked both ways, the candidate '
           'progress and PDF download, corrections flagged for the operator.')
 
