@@ -22,8 +22,15 @@
 .auto-navs{display:flex;gap:28px}
 .auto-navlink[hidden]{display:none}
 .auto-navlink-other::after{display:none}
-/* Phones keep the header to the brand and My resumes (the operator opens /candidates directly). */
-@media (max-width:600px){.auto-navlink-other{display:none}}
+/* Phones: the brand, then My resumes and Candidates as a full-width tab bar (both always reachable). */
+@media (max-width:600px){
+  .auto-bar{flex-wrap:wrap;height:auto;padding-top:8px}
+  .auto-brand{height:44px}
+  .auto-navs{width:100%;gap:0}
+  .auto-navlink{flex:1;justify-content:center;min-height:46px;font-size:1rem}
+  .auto-navlink .ic{width:20px;height:20px}
+  .auto-navlink-other::after{display:none}
+}
 .auto-navlink::after{content:"";position:absolute;left:0;right:0;bottom:9px;height:3px;border-radius:2px;background:#fff}
 
 /* Two panels */
