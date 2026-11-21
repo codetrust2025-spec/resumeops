@@ -137,6 +137,8 @@ def main():
                 expect(details).to_contain_text('Pune')
                 operator.get_by_role('button', name='Start processing').click()
                 expect(operator.locator('#cd-message')).to_contain_text('Processing started', timeout=15000)
+                operator.wait_for_timeout(6000)  # past a list refresh (every 5 s): seen in CI, it erased the message
+                expect(operator.locator('#cd-message')).to_contain_text('Processing started')
                 expect(operator.locator('#cd-rows')).to_contain_text('Waiting in queue', timeout=15000)
                 with closing(__import__('sqlite3').connect(database)) as db:
                     owner, identifier, payload, label = db.execute(
