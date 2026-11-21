@@ -123,7 +123,7 @@ def _split_project(project):
     return name, stack, parts
 
 
-def _build(profile, template='standard', years=None, *, complete_sections=False):
+def _build(profile, template='standard', years=None, *, complete_sections=False, career_objective=False):
     doc = _Doc()
     doc.raw(r'{\centering {\LARGE\bfseries ' + paragraph(profile['full_name']) + r'}\par' + '\n', profile['full_name'])
     if profile.get('headline'):
@@ -143,13 +143,15 @@ def _build(profile, template='standard', years=None, *, complete_sections=False)
     def summary():
         if profile.get('summary'):
             doc.section('Career Objective')
-        if profile.get('summary'):
-            # Selective emphasis: the selected role, and one technology per sentence. The words stay exactly as
-            # approved (sentences are rejoined with the single space they had).
             lead = [profile['headline']] if profile.get('headline') else []
-            sentences = re.split(r'(?<=[.!?]) (?=[A-Z0-9])', profile['summary'])
-            tex = ' '.join(emphasized(s, lead + terms if i == 0 else terms, 2 if i == 0 and lead else 1)
-                           for i, s in enumerate(sentences))
+            if career_objective:
+                from .generate import OBJECTIVE_EMPHASIS
+                tex = emphasized(profile['summary'], [*lead, *OBJECTIVE_EMPHASIS], 3)
+            else:
+                # Existing revisions keep their original LaTeX when rebuilt or retried.
+                sentences = re.split(r'(?<=[.!?]) (?=[A-Z0-9])', profile['summary'])
+                tex = ' '.join(emphasized(s, lead + terms if i == 0 else terms, 2 if i == 0 and lead else 1)
+                               for i, s in enumerate(sentences))
             doc.raw(tex + r'\par' + '\n', profile['summary'])
 
     def skills():
@@ -227,9 +229,9 @@ def _build(profile, template='standard', years=None, *, complete_sections=False)
     return content, doc.text
 
 
-def render(profile, template="standard", years=None, *, complete_sections=False):
+def render(profile, template="standard", years=None, *, complete_sections=False, career_objective=False):
     """Render the resume using the layout recorded when the generation job was submitted."""
-    return _build(profile, template, years, complete_sections=complete_sections)[0]
+    return _build(profile, template, years, complete_sections=complete_sections, career_objective=career_objective)[0]
 
 
 def expected_text(profile, years=None, *, complete_sections=False):

@@ -162,6 +162,10 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
             if not verified_automation(original, target, approval):
                 raise BuildError('Automated resume differs from the attested or source-verified facts.')
         polish_enabled = False
+    career_objective = bool(approval and (approval.get('automation') or {}).get('v') == 4)
+    layout = {'complete_sections': complete_sections}
+    if career_objective:
+        layout['career_objective'] = True
     uses_ai = polish_enabled or source.suffix != '.json'
     ai = (ai or Ollama()) if uses_ai else None
     model_name = getattr(ai, 'model', '') if uses_ai else 'disabled'
@@ -220,7 +224,7 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
             raise ValueError('Cached source fingerprint mismatch')
         t.units_done(1, 1, 'Saved revision matches the candidate input')
         t.enter('latex', 'Checking saved LaTeX and Overleaf ZIP')
-        _verify_upload_source(folder, cached, template, years, complete_sections=complete_sections)
+        _verify_upload_source(folder, cached, template, years, **layout)
         t.units_done(1, 1, 'Saved LaTeX matches the verified profile')
         t.enter('pdf', 'Verifying the saved local PDF')
         verify_pdf(folder / 'resume.pdf', cached, max_pages)
@@ -265,7 +269,7 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
     with tempfile.TemporaryDirectory(dir=folder.parent,prefix='resume-build-',ignore_cleanup_errors=True) as temp:
         working=Path(temp)
         t.enter('latex', 'Rendering LaTeX from the verified profile')
-        latex = render(profile, template, years, complete_sections=complete_sections)
+        latex = render(profile, template, years, **layout)
         (working/'main.tex').write_text(latex,encoding='utf8')
         t.units_done(1, 3, 'LaTeX rendered')
         (working/'profile.json').write_text(json.dumps(profile,indent=2,ensure_ascii=False),encoding='utf8')
@@ -310,7 +314,7 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
         folder.mkdir(parents=True,exist_ok=True)
         for item in ('main.tex','profile.json','resume.pdf','overleaf-project.zip','audit.json','result.json'):
             _replace(working/item,folder/item)
-    _verify_upload_source(folder, profile, template, years, complete_sections=complete_sections)
+    _verify_upload_source(folder, profile, template, years, **layout)
     if overleaf:
         report = _sync_overleaf(folder, report, profile, browser_profile, max_pages, refresh_overleaf, t)
     else:
@@ -350,8 +354,8 @@ def _finish(report, folder, overleaf, t):
     return report
 
 
-def _verify_upload_source(folder, profile, template, years=None, *, complete_sections=False):
-    expected = render(profile, template, years, complete_sections=complete_sections).encode('utf-8').replace(b'\r\n', b'\n')
+def _verify_upload_source(folder, profile, template, years=None, **layout):
+    expected = render(profile, template, years, **layout).encode('utf-8').replace(b'\r\n', b'\n')
     with zipfile.ZipFile(folder / 'overleaf-project.zip') as archive:
         if archive.namelist() != ['main.tex']:
             raise ValueError('Cached Overleaf ZIP contains unexpected files')

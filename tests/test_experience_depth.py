@@ -223,9 +223,9 @@ class ReviewAndResumeTests(unittest.TestCase):
         self.assertEqual(profile['experience'][0]['start'], 'July 2023')
         project_lines = sum(len(p.split(' | ')) - 1 for p in profile.get('projects', []))
         self.assertLessEqual(project_lines, len(bullets), 'projects never outweigh the experience')
-        self.assertTrue(profile['summary'].startswith('GCP Data Engineer with hands-on experience'), profile['summary'])
+        self.assertTrue(profile['summary'].startswith('GCP Data Engineer candidate focused on '), profile['summary'])
         self.assertNotIn('Frontend', profile['summary'], 'the selected role leads; no previous title')
-        self.assertIn('B.Tech in Information Technology', profile['summary'])
+        self.assertNotIn('B.Tech', profile['summary'])
         printed = json.dumps({k: profile[k] for k in ('summary', 'skills', 'experience', 'projects')})
         for other in ('React', 'Redux', 'TypeScript', 'Jest', 'REST APIs'):
             self.assertNotIn(other, printed.replace('Frontend Developer', ''), f'{other} is not GCP Data Engineer content')

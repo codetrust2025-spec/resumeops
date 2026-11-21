@@ -389,7 +389,7 @@ class SummaryAttributionTests(unittest.TestCase):
             text, how = write_summary(self.PROFILE, 'DevOps Engineer', 7, ['Kubernetes'], Writer())
         self.assertEqual(how, 'composed')
         self.assertNotIn('Transitioned', text)
-        self.assertIn('moving into a DevOps Engineer role', text)
+        self.assertTrue(text.startswith('DevOps Engineer candidate focused on '))
 
     def test_a_character_from_the_facts_is_allowed_in_a_composed_summary(self):
         # Production: a skill with an em dash was copied into the composed summary, and the builder's

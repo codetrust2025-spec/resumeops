@@ -18,7 +18,7 @@ from resume_bot import workflow
 from resume_bot.ai_review import role_intelligence
 from resume_bot.automation import CONSENT_VERSION, verified_automation, verified_request
 from resume_bot.generate import (clean_bullet, composed_summary, confirmed_project, propose_projects, skill_groups,
-                                 split_project, summary_problems, write_summary)
+                                 objective_problems, split_project, summary_problems, write_summary)
 from resume_bot.latex import render
 from resume_bot.profile import validate_profile
 from resume_bot.workflow import ROLES, analyze, load_roles, matched_terms, validate_catalog
@@ -148,7 +148,7 @@ class SummaryTests(unittest.TestCase):
     def test_unavailable_model_falls_back_to_facts(self):
         text, how = write_summary(facts(), 'Java Backend Developer', 3, ROLES['java-backend-developer']['keywords'], NoModel())
         self.assertEqual(how, 'composed')
-        self.assertEqual(summary_problems(text, facts(), 'Java Backend Developer', 3), [])
+        self.assertEqual(objective_problems(text, facts(), 'Java Backend Developer'), [])
 
     def test_every_role_gets_role_specific_content_from_its_own_skills(self):
         for name in VISIBLE:
