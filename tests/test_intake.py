@@ -281,6 +281,37 @@ class DeskTests(unittest.TestCase):
         self.assertNotIn(third['job'], (started['job'], again['job']))
         self.assertEqual(len(self.d.desk.runs(first['candidate'])), 3, 'every version stays linked')
 
+    def test_each_operator_sees_their_own_latest_version_after_a_delete_all(self):
+        # Seen live: Delete all in My resumes removed the jobs but left their links; Start then made a job with the same
+        # id, its link kept the old time, and a version from the local dashboard's account showed as the latest, with
+        # files that account isolation (rightly) refused: every PDF, LaTeX and Overleaf PDF link answered 404.
+        local, third = 'b' * 64, 'c' * 64
+        first = self.d.desk.submit(form(), key())
+        mine = self.d.desk.start(first['candidate'], OPERATOR)
+        with closing(self.d.jobs.connection()) as db, db:
+            db.execute('DELETE FROM automation WHERE owner=?', (OPERATOR,))  # Delete all in My resumes
+        time.sleep(0.02)
+        self.d.desk.start(first['candidate'], local)
+        time.sleep(0.02)
+        again = self.d.desk.start(first['candidate'], OPERATOR)
+        self.assertEqual((again['job'], again['created']), (mine['job'], True))
+        self.assertEqual(self.d.desk.runs(first['candidate'])[0]['job_owner'], OPERATOR, 'the new job is the latest')
+
+        def seen(viewer):
+            return next(e for e in self.d.desk.candidates(viewer=viewer) if e['candidate'] == first['candidate'])
+        self.assertEqual((seen(OPERATOR)['job']['id'], seen(OPERATOR)['job']['elsewhere']), (mine['job'], False))
+        # Each operator account sees its own latest version, even when another account's is newer.
+        with closing(self.d.jobs.connection()) as db, db:
+            db.execute("UPDATE automation SET status='handed_off'")
+        time.sleep(0.02)
+        newer = self.d.desk.start(first['candidate'], local, again=True)
+        self.assertEqual(seen(OPERATOR)['job']['id'], mine['job'])
+        self.assertEqual((seen(local)['job']['id'], seen(local)['job']['elsewhere']), (newer['job'], False))
+        # An account with no version of its own sees the latest one, marked as prepared elsewhere (no files offered).
+        self.assertEqual((seen(third)['job']['id'], seen(third)['job']['elsewhere']), (newer['job'], True))
+        self.assertEqual(seen(third)['versions'], 3)
+        self.assertFalse(seen(None)['job']['elsewhere'])
+
     def test_a_fresher_application_becomes_a_resume_without_employment(self):
         applicant = form(fresher=True, work_experience=[])
         first = self.d.desk.submit(applicant, key())

@@ -102,7 +102,10 @@ function row(entry) {
   }
   if (job.error && status === 'blocked') state.append(el('span', job.error, 'cd-error'));
   const outputs = el('td', null, 'cd-outputs');
-  if (status === 'complete' && job.revision) {
+  // A version prepared only in another operator account (the local dashboard on this computer, say): its files are
+  // that account's, so none are offered here (they could not be downloaded); Process again prepares one here.
+  if (job.elsewhere) outputs.append(el('span', 'Prepared in another ResumeOps account. Process again to get the files here.', 'cd-muted'));
+  if (status === 'complete' && job.revision && !job.elsewhere) {
     if (entry.ats) outputs.append(el('span', `ATS ${entry.ats}`, 'cd-ats'));
     outputs.append(download(entry, 'resume.pdf', 'PDF'), download(entry, 'main.tex', 'LaTeX'),
       download(entry, 'overleaf.pdf', 'Overleaf PDF'));
@@ -131,7 +134,7 @@ function row(entry) {
       });
       outputs.append(again);
     }
-    if (status === 'needs_input' && !legacy) {
+    if (status === 'needs_input' && !legacy && !job.elsewhere) {
       const review = el('a', 'Review in My resumes', 'cd-link');
       review.href = '/#resume-' + job.id;  // that resume's card in My resumes
       outputs.append(review);
