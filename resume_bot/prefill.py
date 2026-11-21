@@ -11,7 +11,7 @@ import re
 import tempfile
 from pathlib import Path
 
-from .ingest import (EMAIL, PHONE, SECTIONS, URL, _form_label, _lines, _looks_like_name, form_fields,
+from .ingest import (EMAIL, PHONE, SECTIONS, URL, _form_label, _lines, _looks_like_name, find_phone, form_fields,
                      read_resume_text, repair)
 
 PREFILL_EXTENSIONS = ('pdf', 'docx')
@@ -52,7 +52,7 @@ def quick_prefill(text):
     lines = _lines(text)
     labelled = {key: value for key, (value, _) in form_fields(text).items()}
     email = EMAIL.search(labelled.get('email', '')) or EMAIL.search(text)
-    phone = PHONE.search(labelled.get('phone', '')) or PHONE.search(text)
+    phone = PHONE.search(labelled.get('phone', '')) or find_phone(text)
     name = labelled.get('full_name', '')
     if not name:
         # The name heads the document: only lines above its first heading or labelled row are considered, and a
