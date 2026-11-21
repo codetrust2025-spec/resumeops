@@ -2,6 +2,8 @@
 :root { --ink: #0f1f3d; --text: #1d2b45; --muted: #5b6880; --line: #dfe6f0; --field: #cdd6e3; --blue: #1f55b5;
   --blue-dark: #173f8a; --tint: #e9f0fc; --red: #c4303c; --bg: #f2f5fa; }
 * { box-sizing: border-box; }
+/* A hidden part stays hidden whatever its layout (the form after a submission, a closed section). */
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 .ap-bar { background: linear-gradient(90deg, #0a2352 0%, #0f306b 55%, #0c2a5f 100%); padding: 0 16px; height: 56px; display: flex; align-items: center; }
 .ap-brand { color: #fff; font-weight: 700; font-size: 1.25rem; text-decoration: none; }

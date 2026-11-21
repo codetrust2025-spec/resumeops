@@ -102,6 +102,7 @@ def main():
                 page.locator('#ap-consent').check()
                 page.locator('#ap-submit').click()
                 expect(page.locator('#ap-done')).to_be_visible(timeout=20000)
+                expect(page.locator('#ap-form')).to_be_hidden()  # seen live: the form stayed under the receipt
                 link = page.locator('#ap-done-link').input_value()
                 assert '/apply/status#c=RO-' in link and '&k=' in link, link
                 candidate = link.split('#c=')[1].split('&')[0]
