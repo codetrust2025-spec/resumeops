@@ -249,13 +249,17 @@ async function newLink(entry) {
 
 async function refresh() {
   const response = await ResumeAuth.call('/api/intake/candidates');
+  const message = $('cd-message');
   if (!response.ok) {
-    $('cd-message').textContent = response.status === 404 || response.status === 403
+    message.textContent = response.status === 404 || response.status === 403
       ? 'Only operator accounts can see candidates.' : 'Could not load candidates.';
+    message.dataset.loading = '1';
     return;
   }
   data = await response.json();
-  $('cd-message').textContent = '';
+  // The list refreshes every few seconds: it clears only its own loading error, never the result of an action
+  // (seen in CI: "Processing started" vanished before it could be read).
+  if (message.dataset.loading) { message.textContent = ''; delete message.dataset.loading; }
   if (!$('cd-form-url').value) $('cd-form-url').value = data.form_url;
   showHuman(data.human_check);
   render();
