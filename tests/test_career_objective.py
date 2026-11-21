@@ -8,7 +8,7 @@ from unittest.mock import patch
 from resume_bot.automation import _verified_role_resume
 from resume_bot.claim_audit import matches_pdf_text
 from resume_bot.compile import compile_latex
-from resume_bot.generate import objective_problems, write_summary
+from resume_bot.generate import objective_problems, summary_problems, write_summary
 from resume_bot.ingest import read_resume_text
 from resume_bot.latex import render
 from resume_bot.profile import validate_profile
@@ -80,3 +80,66 @@ class CareerObjectiveTests(unittest.TestCase):
             with self.subTest(extra=extra):
                 self.assertTrue(objective_problems(safe.replace('business needs', extra),
                                                    evidence, 'Angular Developer'))
+
+    def test_every_objective_passes_the_summary_fact_check(self):
+        # Release 4911f58 was rolled back: the fallback objective said "solutions that teams can maintain", and a
+        # resume whose work never mentions maintaining failed the fact check every summary passes.
+        catalog = load_roles()
+        self.assertGreater(len(catalog), 10)
+        for experienced in (True, False):
+            for role in catalog.values():
+                title = role['name']
+                with self.subTest(role=title, experienced=experienced):
+                    evidence = profile('Frontend Developer', experienced)
+                    with patch('resume_bot.generate.generate', return_value={}):
+                        text, mode = write_summary(evidence, title, 3 if experienced else 0, [], object())
+                    self.assertEqual(mode, 'composed')
+                    self.assertEqual(objective_problems(text, evidence, title), [])
+                    self.assertEqual(summary_problems(text, evidence, title, None), [])
+                    self.assertTrue(40 <= len(text.split()) <= 55, text)
+                    self.assertNotRegex(text, r'(?i)\bmaintain\b|services\.$')
+
+    def test_role_families_get_their_own_fallback_wording(self):
+        evidence = profile('Frontend Developer', True)
+        expected = {'React.js Developer': 'accessible, well-tested interface features',
+                    'Java Backend Developer': 'practical, well-tested services',
+                    'Azure Data Engineer': 'accurate, well-documented data work',
+                    'QA Engineer': 'thorough, repeatable test cases'}
+        for title, work in expected.items():
+            with self.subTest(role=title), patch('resume_bot.generate.generate', return_value={}):
+                self.assertIn(work, write_summary(evidence, title, 3, [], object())[0])
+
+    def test_model_writes_three_sentence_endings_after_the_fixed_opening(self):
+        evidence = profile('Frontend Developer', True)
+        draft = {'aims': 'Aims to understand what users need and turn agreed requirements into clear, accessible '
+                         'screens.',
+                 'seeks': 'contribute careful reviews and steady improvements to the shared codebase',
+                 'values': 'Plain communication, honest estimates and steady learning.'}
+        with patch('resume_bot.generate.generate', return_value=draft) as model:
+            text, mode = write_summary(evidence, 'React.js Developer', 3, [], object())
+        self.assertEqual(mode, 'ai')
+        self.assertEqual(model.call_args.kwargs['schema']['required'], ['aims', 'seeks', 'values'])
+        self.assertEqual(text, 'React.js Developer candidate focused on dependable user interfaces and structured '
+                               'problem-solving. Aims to understand what users need and turn agreed requirements into '
+                               'clear, accessible screens. Seeks to contribute careful reviews and steady improvements '
+                               'to the shared codebase. Values plain communication, honest estimates and steady '
+                               'learning.')
+        self.assertEqual(summary_problems(text, evidence, 'React.js Developer', None), [])
+
+    def test_unstated_responsibilities_and_banned_words_are_named_for_the_retry(self):
+        evidence = profile('Frontend Developer', True)
+        drafts = [{'aims': 'maintain the interface code and keep every screen consistent for the people using it',
+                   'seeks': 'contribute careful reviews and steady improvements to the shared codebase',
+                   'values': 'plain communication, honest estimates and steady learning'},
+                  {'aims': 'apply experience with every screen and keep the interface consistent for its users',
+                   'seeks': 'contribute careful reviews and steady improvements to the shared codebase',
+                   'values': 'plain communication, honest estimates and steady learning'},
+                  {}]
+        with patch('resume_bot.generate.generate', side_effect=drafts) as model:
+            text, mode = write_summary(evidence, 'React.js Developer', 3, [], object())
+        self.assertEqual(mode, 'composed')
+        self.assertIn('claims responsibilities the resume does not state: maintained', model.call_args_list[1].args[1])
+        self.assertIn('such as "experience"', model.call_args_list[2].args[1])
+        # "user experience" is a priority the objective may name, not a claim of tenure.
+        self.assertNotIn('"experience"', '; '.join(objective_problems(
+            text.replace('steady learning', 'user experience'), evidence, 'React.js Developer')))
