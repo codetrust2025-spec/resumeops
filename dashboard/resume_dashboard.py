@@ -25,7 +25,8 @@ from urllib.parse import parse_qs, urlsplit
 from zipfile import BadZipFile, ZipFile
 
 # The public candidate pages' files (served under /apply/assets/, the only public path besides the pages).
-APPLY_ASSETS = {'apply.js': 'text/javascript', 'apply.css': 'text/css', 'candidate.js': 'text/javascript',
+APPLY_ASSETS = {'apply.js': 'text/javascript', 'apply.css': 'text/css', 'apply-status.js': 'text/javascript',
+                'candidate.js': 'text/javascript',
                 'candidate.css': 'text/css', 'automation.js': 'text/javascript', 'automation.css': 'text/css',
                 'builder.css': 'text/css', 'recovery.js': 'text/javascript'}
 PREFILL_BODY = 6 * 1024 * 1024 * 4 // 3 + 4096
@@ -797,7 +798,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 # The Turnstile site key when the human check is on for this address (never for this machine).
                 return self.send_json({'turnstile': intake.human.site_key() if public == web_origin else None})
             if url.path == '/apply/status':
-                return self.send_content(candidate_page(Path(__file__).with_name('automation.html').read_bytes()),
+                # The candidate's page: progress and the finished resume only (processing is the operator's).
+                return self.send_content(Path(__file__).with_name('apply-status.html').read_bytes(),
                                          'text/html; charset=utf-8')
             if url.path.startswith('/apply/assets/'):
                 name = url.path[len('/apply/assets/'):]
@@ -828,13 +830,13 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             if url.path == '/apply/api/automation':
                 profile = intake.profile(candidate) or {}
                 profile.pop('form', None)
-                return self.send_json({'jobs': automation.list(owner, query.get('id', [None])[0]),
-                                       'ready': workspace.automation_ready(), 'candidate': profile})
+                return self.send_json({'jobs': intake.candidate_jobs(candidate), 'candidate': profile})
             if url.path == '/apply/api/form':
                 return self.send_json(intake.profile(candidate) or {})
             if url.path in ('/apply/api/artifact', '/apply/api/revision'):
+                # Only the finished resumes prepared from this candidate's own application.
                 key = query.get('key', [''])[0]
-                if private_owner(key) != owner:
+                if key not in intake.candidate_revisions(candidate):
                     return self.send_json({'error': 'Resume unavailable.'}, 404)
                 if url.path == '/apply/api/revision':
                     revision = workspace.revision(key)
@@ -862,15 +864,10 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return self.send_json({'error': 'Many applications are arriving from this network. Your form is kept '
                                                 'and sent again automatically.', 'retry': True}, 429)
             if purpose == 'action':
-                candidate, owner = self.candidate_session()
-                action = path.rsplit('/', 1)[1]
-                if not owner or path not in ('/apply/api/automation/answer', '/apply/api/automation/projects',
-                                             '/apply/api/automation/regenerate', '/apply/api/automation/delete'):
-                    return self.reject_post('This private link is not valid.')
-                response = self.automation_action(public, action, owner)
-                if action == 'delete':
-                    intake.scrub_if_empty(owner)
-                return response
+                # Candidates submit details and download their resume; reviewing drafts, regenerating and deleting
+                # are the operator's (Candidates page and dashboard).
+                return self.send_json({'error': 'Your resume is prepared by the ResumeOps team. Use this link to follow '
+                                                'it and download it when it is ready.'}, 403)
             try:
                 size = int(self.headers.get('Content-Length', ''))
             except ValueError:
@@ -971,7 +968,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 ai = None  # the quick prefill stands; the AI reading is skipped while the reader is busy
             return self.send_json({'candidate': candidate, 'ai': ai})
 
-        def intake_operator_post(self):
+        def intake_operator_post(self, request_origin):
             from intake import IntakeError
             try:
                 size = int(self.headers.get('Content-Length', ''))
@@ -990,7 +987,22 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                     automation.set_paused(request['paused'])
                     return self.send_json({'paused': automation.paused()})
                 candidate = request.get('candidate') if isinstance(request, dict) else None
-                key = intake.new_key(candidate if isinstance(candidate, str) else '')
+                candidate = candidate if isinstance(candidate, str) else ''
+                if self.path == '/api/intake/start':
+                    # Start processing: the operator's own document-upload workflow, as the operator's resume.
+                    try:
+                        return self.send_json(intake.start(candidate, self.session_owner(request_origin)), 202)
+                    except AutomationCapacity as exc:
+                        return self.send_json({'error': str(exc)}, 429)
+                    except IntakeError:
+                        raise
+                    except ValueError as exc:  # the upload workflow's own validation (e.g. the target role)
+                        return self.send_json({'error': str(exc)}, 400)
+                if self.path == '/api/intake/delete':
+                    if not isinstance(request, dict) or request.get('confirm') != 'DELETE':
+                        return self.send_json({'error': 'Confirm the deletion first. Nothing was deleted.'}, 400)
+                    return self.send_json(intake.delete_application(candidate, self.audit_client(request_origin)))
+                key = intake.new_key(candidate)
                 return self.send_json({'candidate': candidate, 'link': (web_origin or origin) + '/apply/status#c='
                                        + candidate + '&k=' + key})
             except IntakeError as exc:
@@ -1113,7 +1125,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             request_origin = self.request_origin()
             if (self.path not in ('/api/automation', '/api/automation/answer', '/api/automation/projects',
                                   '/api/automation/regenerate', '/api/automation/delete', '/api/intake/key',
-                                  '/api/intake/queue', '/api/intake/human-check', '/api/roles', '/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry', '/api/ai-draft', '/api/ai-review', '/api/ai-queue') or request_origin is None
+                                  '/api/intake/queue', '/api/intake/human-check', '/api/intake/start', '/api/intake/delete', '/api/roles', '/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry', '/api/ai-draft', '/api/ai-review', '/api/ai-queue') or request_origin is None
                     or self.headers.get('Origin') != request_origin
                     or not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token)):
                 return self.reject_post('Request not authorized.')
@@ -1123,10 +1135,11 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return self.submit_automation(request_origin)
             if self.path in ('/api/automation/answer', '/api/automation/projects', '/api/automation/regenerate', '/api/automation/delete'):
                 return self.automation_action(request_origin, self.path.rsplit('/', 1)[1])
-            if self.path in ('/api/intake/key', '/api/intake/queue', '/api/intake/human-check'):
+            if self.path in ('/api/intake/key', '/api/intake/queue', '/api/intake/human-check', '/api/intake/start',
+                             '/api/intake/delete'):
                 if not self.is_operator(request_origin):
                     return self.reject_post('An operator account is required for this route.')
-                return self.intake_operator_post()
+                return self.intake_operator_post(request_origin)
             if self.path == '/api/roles':
                 if not self.is_operator(request_origin):
                     return self.reject_post('An operator account is required for this route.')

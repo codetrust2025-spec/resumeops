@@ -1,11 +1,13 @@
-/* Operator view of public-form applications (/candidates): every candidate, where their resume is, queue control,
-   downloads and new private links. Reads /api/intake/candidates (operator accounts only). */
+/* Operator view of public-form applications (/candidates): every application with everything the candidate entered,
+   Start processing (the operator's own document-upload workflow on the candidate's details), where each resume is,
+   queue control, downloads, new private links and deletion. Reads /api/intake/candidates (operator accounts only). */
 'use strict';
 const $ = id => document.getElementById(id);
 let data = {candidates: []};
+const opened = new Set();  // applications whose details are shown (kept across refreshes)
 
-const LABELS = {queued: 'Waiting in queue', retrying: 'Retrying', processing: 'Preparing', handed_off: 'Building',
-  needs_input: 'Waiting for the candidate', complete: 'Complete', blocked: 'Stopped'};
+const LABELS = {submitted: 'Not started', queued: 'Waiting in queue', retrying: 'Retrying', processing: 'Preparing',
+  handed_off: 'Building', needs_input: 'Waiting for your review', complete: 'Complete', blocked: 'Stopped'};
 
 function el(tag, text, className) {
   const node = document.createElement(tag);
@@ -20,6 +22,7 @@ function when(seconds) {
 }
 
 function bucket(entry) {
+  if (!entry.started) return 'submitted';
   const status = entry.job?.status || 'queued';
   return status === 'retrying' ? 'queued' : status === 'handed_off' ? 'processing' : status;
 }
@@ -28,10 +31,11 @@ function stats() {
   const counts = {};
   for (const entry of data.candidates) if (!entry.deleted) counts[bucket(entry)] = (counts[bucket(entry)] || 0) + 1;
   const items = [['Applications', data.candidates.filter(entry => !entry.deleted).length],
-    ['Waiting in queue', counts.queued || 0], ['Preparing', counts.processing || 0],
-    ['Waiting for the candidate', counts.needs_input || 0], ['Complete', counts.complete || 0],
-    ['Stopped', counts.blocked || 0], ['GPU slots in use', `${data.gpu?.busy ?? 0} of ${data.gpu?.slots ?? 1}`],
-    ['Deleted by candidates', data.candidates.filter(entry => entry.deleted).length]];
+    ['Not started', counts.submitted || 0], ['Waiting in queue', counts.queued || 0],
+    ['Preparing', counts.processing || 0], ['Waiting for your review', counts.needs_input || 0],
+    ['Complete', counts.complete || 0], ['Stopped', counts.blocked || 0],
+    ['GPU slots in use', `${data.gpu?.busy ?? 0} of ${data.gpu?.slots ?? 1}`],
+    ['Deleted', data.candidates.filter(entry => entry.deleted).length]];
   $('cd-stats').replaceChildren(...items.map(([label, value]) => {
     const box = el('div', null, 'cd-stat');
     box.append(el('strong', String(value)), el('span', label));
@@ -39,7 +43,7 @@ function stats() {
   }));
   const paused = data.queue?.paused;
   $('cd-queue-state').textContent = paused ? 'Processing is paused: applications are saved and wait.' :
-    'Processing runs one AI job at a time on the GPU, account resumes first, then applications oldest first.';
+    'Start processing turns an application into a resume through your own upload workflow. One AI job runs at a time on the GPU, your own resumes first.';
   $('cd-pause').textContent = paused ? 'Resume processing' : 'Pause processing';
   $('cd-pause').dataset.paused = paused ? '1' : '';
 }
@@ -67,7 +71,10 @@ function row(entry) {
   const state = el('td');
   const job = entry.job || {};
   const status = bucket(entry);
-  state.append(el('span', LABELS[job.status] || LABELS[status] || status, `cd-badge cd-${status}`));
+  if (status === 'submitted') {
+    state.append(el('span', LABELS.submitted, 'cd-badge cd-submitted'), el('span', 'Waiting for you to start processing', 'cd-muted'));
+  }
+  if (status !== 'submitted') state.append(el('span', LABELS[job.status] || LABELS[status] || status, `cd-badge cd-${status}`));
   let detail = job.stage || '';
   if (job.queue_ahead !== undefined) detail += ` · ${job.queue_ahead} ahead`;
   state.append(el('span', detail, 'cd-muted'));
@@ -91,13 +98,132 @@ function row(entry) {
     }
   }
   if (!entry.deleted) {
+    // An application saved before processing became the operator's step has the candidate's own resume, which only
+    // Start processing brings into the operator's review.
+    const legacy = Boolean(entry.job?.candidates_own);
+    if (!entry.started || entry.details_changed || legacy) {
+      const label = !entry.started || legacy ? 'Start processing' : 'Start again with new details';
+      const go = el('button', label, 'cd-start');
+      go.type = 'button';
+      go.addEventListener('click', () => start(entry, go));
+      outputs.prepend(go);
+    }
+    if (status === 'needs_input' && !legacy) {
+      const review = el('a', 'Review in My resumes', 'cd-link');
+      review.href = '/#auto-jobs';
+      outputs.append(review);
+    }
+    const more = el('button', opened.has(entry.candidate) ? 'Hide details' : 'Details', 'cd-small');
+    more.type = 'button';
+    more.setAttribute('aria-expanded', String(opened.has(entry.candidate)));
+    more.addEventListener('click', () => {
+      if (opened.has(entry.candidate)) opened.delete(entry.candidate); else opened.add(entry.candidate);
+      render();
+    });
     const key = el('button', 'New private link', 'cd-small');
     key.type = 'button';
     key.addEventListener('click', () => newLink(entry));
-    outputs.append(key);
+    const drop = el('button', 'Delete', 'cd-small cd-danger');
+    drop.type = 'button';
+    drop.addEventListener('click', () => remove(entry));
+    outputs.append(more, key, drop);
   }
   tr.append(who, contact, role, state, outputs);
-  return tr;
+  if (!opened.has(entry.candidate) || !entry.form) return [tr];
+  const extra = el('tr', null, 'cd-details-row');
+  const cell = el('td');
+  cell.colSpan = 5;
+  cell.append(details(entry.form));
+  extra.append(cell);
+  return [tr, extra];
+}
+
+// Everything the candidate entered, as submitted (text only: nothing is interpreted as markup).
+function details(form) {
+  const box = el('div', null, 'cd-details');
+  const lines = value => String(value || '').split('\n').map(line => line.trim()).filter(Boolean);
+  const section = (title, pairs) => {
+    const filled = pairs.filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== '');
+    if (!filled.length) return;
+    const part = el('section');
+    part.append(el('h3', title));
+    const list = el('dl');
+    for (const [label, value] of filled) list.append(el('dt', label), el('dd', String(value)));
+    part.append(list);
+    box.append(part);
+  };
+  const listed = (title, entries, describe) => {
+    if (!entries.length) return;
+    const part = el('section');
+    part.append(el('h3', title));
+    for (const item of entries) {
+      const block = el('div', null, 'cd-entry');
+      block.append(el('strong', describe.title(item)));
+      for (const [label, value] of describe.fields(item)) {
+        if (String(value || '').trim()) block.append(el('span', `${label}: ${value}`));
+      }
+      const points = lines(describe.points ? describe.points(item) : '');
+      if (points.length) {
+        const list = el('ul');
+        for (const point of points) list.append(el('li', point));
+        block.append(list);
+      }
+      part.append(block);
+    }
+    box.append(part);
+  };
+  const bullets = (title, value) => {
+    if (!lines(value).length) return;
+    const part = el('section');
+    part.append(el('h3', title));
+    const list = el('ul');
+    for (const point of lines(value)) list.append(el('li', point));
+    part.append(list);
+    box.append(part);
+  };
+  const rows = name => (Array.isArray(form[name]) ? form[name] : []).filter(item => item && typeof item === 'object');
+  section('Personal details', [['Full name', form.full_name], ['Email', form.email], ['Phone', form.phone],
+    ['City', form.location], ['LinkedIn', form.linkedin], ['GitHub', form.github], ['Portfolio', form.portfolio]]);
+  section('Target role', [['Role', form.role], ['Total experience (years)', form.years_of_experience],
+    ['Fresher', form.fresher ? 'Yes' : '']]);
+  section('Skills', [['Skills', form.skills]]);
+  listed('Education', rows('education'), {
+    title: item => [item.degree, item.specialization].filter(Boolean).join(', ') || 'Education',
+    fields: item => [['Institution', item.university], ['Year of completion', item.graduation_year],
+      ['CGPA / percentage', item.cgpa]]});
+  listed('Employment', form.fresher ? [] : rows('work_experience'), {
+    title: item => [item.position, item.company].filter(Boolean).join(' at ') || 'Job',
+    fields: item => [['Dates', [item.start, item.end].filter(Boolean).join(' – ')], ['Location', item.location]],
+    points: item => item.responsibilities});
+  listed('Projects', rows('projects'), {
+    title: item => item.name || 'Project', fields: item => [['Technologies', item.stack]],
+    points: item => item.description});
+  bullets('Certifications', form.certifications);
+  bullets('Achievements', form.achievements);
+  return box;
+}
+
+async function start(entry, button) {
+  button.disabled = true;
+  const response = await ResumeAuth.call('/api/intake/start', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({candidate: entry.candidate})});
+  const result = await response.json().catch(() => ({}));
+  $('cd-message').textContent = !response.ok ? (result.error || 'Could not start processing.') : result.created
+    ? `Processing started for ${entry.name}. Its AI drafts appear for your review under My resumes.`
+    : `${entry.name}'s resume is already being prepared from these details.`;
+  await refresh();
+}
+
+async function remove(entry) {
+  if (!window.confirm(`Delete the application of ${entry.name} (${entry.candidate}) and every resume prepared from it? This cannot be undone.`)) return;
+  const response = await ResumeAuth.call('/api/intake/delete', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({candidate: entry.candidate, confirm: 'DELETE'})});
+  const result = await response.json().catch(() => ({}));
+  $('cd-message').textContent = !response.ok ? (result.error || 'Could not delete the application.')
+    : result.kept?.length ? 'A resume of this application is being built right now; delete it again when it finishes.'
+      : `Deleted the application of ${entry.name}.`;
+  opened.delete(entry.candidate);
+  await refresh();
 }
 
 function render() {
@@ -107,7 +233,7 @@ function render() {
   // Applications their candidates deleted keep no details; they are only counted above.
   const shown = data.candidates.filter(entry => !entry.deleted && (!wanted || bucket(entry) === wanted) && (!term ||
     [entry.name, entry.email, entry.phone, entry.candidate, entry.role].some(item => (item || '').toLowerCase().includes(term))));
-  $('cd-rows').replaceChildren(...shown.map(row));
+  $('cd-rows').replaceChildren(...shown.flatMap(row));
   $('cd-empty').hidden = data.candidates.some(entry => !entry.deleted);
 }
 
