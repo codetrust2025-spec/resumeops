@@ -310,6 +310,18 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(job['status'], 'queued')
         self.assertEqual(self.d.desk.candidate_revisions(first['candidate']), set())
 
+    def test_resumes_and_applications_link_both_ways_and_the_waiting_count(self):
+        made = [self.d.desk.submit(form(n), key()) for n in range(3)]
+        self.assertEqual(self.d.desk.not_started(), 3)
+        job = self.d.desk.start(made[0]['candidate'], OPERATOR)['job']
+        self.assertEqual(self.d.desk.not_started(), 2)
+        self.assertEqual(self.d.desk.applications(OPERATOR), {job: made[0]['candidate']})
+        self.assertEqual(self.d.desk.applications('f' * 64), {}, "another account's resumes are never linked")
+        entry = next(item for item in self.d.desk.candidates() if item['candidate'] == made[0]['candidate'])
+        self.assertEqual(entry['job']['id'], job)  # and the application names its resume
+        self.d.desk.delete_application(made[0]['candidate'])
+        self.assertEqual(self.d.desk.applications(OPERATOR), {})
+
     def test_the_operator_list_shows_every_application_with_its_details_and_state(self):
         made = [self.d.desk.submit(form(n), key()) for n in range(3)]
         self.d.desk.start(made[1]['candidate'], OPERATOR)
@@ -574,6 +586,13 @@ class HttpTests(unittest.TestCase):
                                  headers=operator)
         self.assertEqual((status, json.loads(body)['kept']), (200, []))
         self.assertEqual(self.call('/apply/api/automation', headers=theirs)[0], 403)
+        # My resumes names the application a resume came from (the operator's own list only); the summary counts
+        # applications not started yet (the Candidates tab's badge).
+        status, body = self.call('/api/automation', web=False, headers=operator)
+        mine_listed = {job['id']: job.get('application') for job in json.loads(body)['jobs']}
+        self.assertEqual(mine_listed, {started['job']: candidate})
+        summary = json.loads(self.call('/api/intake/summary', web=False, headers=operator)[1])
+        self.assertEqual(summary['not_started'], 0)  # the other application was deleted above
         # The operator sees the full details of every application.
         listed = json.loads(self.call('/api/intake/candidates', web=False, headers=operator)[1])
         entry = next(item for item in listed['candidates'] if item['candidate'] == candidate)

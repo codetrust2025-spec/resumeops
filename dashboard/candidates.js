@@ -5,6 +5,8 @@
 const $ = id => document.getElementById(id);
 let data = {candidates: []};
 const opened = new Set();  // applications whose details are shown (kept across refreshes)
+// /candidates#RO-XXXXXXXXXX (from a resume in My resumes) opens that application's details once it is listed.
+let linked = (location.hash.match(/^#(RO-[2-9A-HJKMNP-Z]{10})$/) || [])[1] || null;
 
 const LABELS = {submitted: 'Not started', queued: 'Waiting in queue', retrying: 'Retrying', processing: 'Preparing',
   handed_off: 'Building', needs_input: 'Waiting for your review', complete: 'Complete', blocked: 'Stopped'};
@@ -61,6 +63,7 @@ function download(entry, name, text) {
 
 function row(entry) {
   const tr = el('tr');
+  tr.id = 'cand-' + entry.candidate;
   const who = el('td');
   who.append(el('strong', entry.deleted ? '(deleted by the candidate)' : entry.name), el('span', entry.candidate, 'cd-id'),
     el('span', when(entry.created), 'cd-muted'));
@@ -110,7 +113,7 @@ function row(entry) {
     }
     if (status === 'needs_input' && !legacy) {
       const review = el('a', 'Review in My resumes', 'cd-link');
-      review.href = '/#auto-jobs';
+      review.href = '/#resume-' + job.id;  // that resume's card in My resumes
       outputs.append(review);
     }
     const more = el('button', opened.has(entry.candidate) ? 'Hide details' : 'Details', 'cd-small');
@@ -247,6 +250,22 @@ async function newLink(entry) {
   $('cd-link-dialog').showModal();
 }
 
+// Open and show the application a link named, once (filters are cleared so it is in the list).
+function showLinked() {
+  if (!linked || !data.candidates.some(entry => entry.candidate === linked && !entry.deleted)) return;
+  const id = linked;
+  linked = null;
+  $('cd-search').value = '';
+  $('cd-status').value = '';
+  opened.add(id);
+  render();
+  const target = document.getElementById('cand-' + id);
+  if (!target) return;
+  target.classList.add('cd-focus');
+  target.scrollIntoView({block: 'start'});
+  setTimeout(() => target.classList.remove('cd-focus'), 4000);
+}
+
 async function refresh() {
   const response = await ResumeAuth.call('/api/intake/candidates');
   const message = $('cd-message');
@@ -263,6 +282,7 @@ async function refresh() {
   if (!$('cd-form-url').value) $('cd-form-url').value = data.form_url;
   showHuman(data.human_check);
   render();
+  showLinked();
 }
 
 function showHuman(state) {

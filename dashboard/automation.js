@@ -870,6 +870,14 @@ function jobItem(job) {
     date.append(icon('calendar'), createdAt(job));
     who.append(date);
   }
+  if (job.application) {
+    // Started from a candidate's application: the link opens that application on the Candidates page.
+    const from = element('a', 'Application ' + job.application);
+    from.className = 'auto-application';
+    from.href = '/candidates#' + encodeURIComponent(job.application);
+    from.title = 'Open the details this candidate submitted';
+    who.append(from);
+  }
   const state = element('div');
   state.className = 'auto-state';
   const detail = element('div');
@@ -1094,12 +1102,45 @@ function turnPage(step) {
   byId('auto-history').scrollTop = 0;
 }
 
+// /#resume-<id> (from "Review in My resumes" on the Candidates page) opens that resume's card wherever it is in the
+// list: filters are cleared, its page is shown and the card is scrolled into view and marked for a few seconds.
+let focusing = (location.hash.match(/^#resume-([0-9a-f]{64})$/) || [])[1] || null;
+
+function focusResume(jobs) {
+  if (!focusing || !jobs.some(job => job.id === focusing)) return;
+  const id = focusing;
+  focusing = null;
+  for (const field of ['auto-search', 'auto-filter-role', 'auto-filter-status']) byId(field).value = '';
+  const ordered = [...jobs.filter(job => job.status === 'needs_input'), ...jobs.filter(job => job.status !== 'needs_input')];
+  page = Math.floor(ordered.findIndex(job => job.id === id) / pageSize);
+  renderJobs(jobs);
+  const item = byId('auto-job-list').querySelector(`li[data-id="${id}"]`);
+  if (!item) return;
+  item.classList.add('auto-focus');
+  item.scrollIntoView({block: 'center'});
+  setTimeout(() => item.classList.remove('auto-focus'), 4000);
+  history.replaceState(null, '', location.pathname + '#auto-jobs');
+}
+
 async function refresh() {
   const response = await ResumeAuth.call('/api/automation');
   if (!response.ok) throw new Error('Could not refresh your resumes.');
   const {jobs} = await response.json();
   showCurrent(jobs);
   renderJobs(jobs);
+  focusResume(jobs);
+}
+
+// The Candidates tab (operators only) with the number of applications waiting to be started.
+async function candidatesTab() {
+  const response = await ResumeAuth.call('/api/intake/summary');
+  byId('auto-candidates-link').hidden = !response.ok;
+  if (!response.ok) return;
+  const waiting = (await response.json()).not_started || 0;
+  const badge = byId('auto-candidates-badge');
+  badge.hidden = !waiting;
+  badge.textContent = waiting > 99 ? '99+' : String(waiting);
+  byId('auto-candidates-link').setAttribute('aria-label', waiting ? `Candidates, ${waiting} not started` : 'Candidates');
 }
 
 async function init() {
@@ -1148,9 +1189,10 @@ async function init() {
   },true);
   mode();
   await ResumeAuth.ready();
-  // Operators see the public-form candidates page (the request answers only for operator accounts).
-  ResumeAuth.call('/api/intake/summary').then(response => { byId('auto-candidates-link').hidden = !response.ok; })
-    .catch(() => {});
+  // Operators see the public-form candidates page (the request answers only for operator accounts); the badge counts
+  // applications not started yet and is refreshed every 30 seconds.
+  candidatesTab().catch(() => {});
+  setInterval(() => candidatesTab().catch(() => {}), 30000);
   await loadRoles();
   pending = await ResumeRecovery.read('automation-pending');
   form.addEventListener('reset', () => clearFieldErrors(form));

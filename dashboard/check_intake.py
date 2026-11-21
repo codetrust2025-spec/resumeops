@@ -62,7 +62,7 @@ def main():
         workspace = Workspace(Path(temp), code_root=ROOT)
         server = DashboardServer(('127.0.0.1', 0), handler(workspace, '', 'token'))
         origin = f'http://127.0.0.1:{server.server_port}'
-        server.RequestHandlerClass = handler(workspace, origin, 'token')
+        server.RequestHandlerClass = handler(workspace, origin, 'token', automation_first=True)
         (workspace.root / '.resumeops-queue-paused').write_text('{}', encoding='utf-8')  # saved, not prepared
         threading.Thread(target=server.serve_forever, daemon=True).start()
         database = workspace.root / '.resumeops-automation.sqlite3'
@@ -123,6 +123,23 @@ def main():
                 # is the operator).
                 operator = browser.new_page(viewport={'width': 1366, 'height': 900})
                 operator.on('dialog', lambda dialog: dialog.accept())
+                # Candidates sits beside My resumes, with the number of applications not started yet, on a desktop
+                # and on a phone (a full-width tab bar there).
+                operator.goto(origin + '/')
+                expect(operator.locator('#auto-candidates-link')).to_be_visible(timeout=15000)
+                expect(operator.locator('#auto-candidates-badge')).to_have_text('1')
+                handset = browser.new_context(**playwright.devices['iPhone 13']).new_page()
+                handset.goto(origin + '/')
+                expect(handset.locator('#auto-candidates-link')).to_be_visible(timeout=15000)
+                expect(handset.locator('#auto-candidates-badge')).to_have_text('1')
+                box = handset.locator('#auto-candidates-link').bounding_box()
+                assert box and box['height'] >= 44 and box['x'] + box['width'] <= 390, box  # a whole, tappable tab
+                no_sideways_scroll(handset)
+                handset.goto(origin + '/candidates')
+                expect(handset.locator('#cd-rows')).to_contain_text('Kiran Example', timeout=15000)
+                start_box = handset.get_by_role('button', name='Start processing').bounding_box()
+                assert start_box and start_box['height'] >= 44, start_box
+                no_sideways_scroll(handset)
                 operator.goto(origin + '/candidates')
                 expect(operator.locator('#cd-rows')).to_contain_text(candidate, timeout=15000)
                 expect(operator.locator('#cd-rows')).to_contain_text('Kiran Example')
@@ -147,6 +164,28 @@ def main():
                 # The operator's own document-upload workflow: a Word resume of the form, as the operator's resume.
                 assert (request['extension'], label) == ('docx', 'Kiran Example'), (request.get('extension'), label)
                 assert owner != __import__('intake').candidate_owner(candidate), 'an operator resume, not the candidate'
+
+                # Records link both ways. My resumes names the application; its link opens that candidate's details.
+                operator.goto(origin + '/')
+                expect(operator.locator('#auto-candidates-badge')).to_be_hidden(timeout=15000)  # none waiting now
+                chip = operator.locator(f'li[data-id="{identifier}"] .auto-application')
+                expect(chip).to_have_text(f'Application {candidate}', timeout=15000)
+                chip.click()
+                operator.wait_for_url(f'**/candidates#{candidate}')
+                expect(operator.locator(f'#cand-{candidate}')).to_be_visible(timeout=15000)
+                expect(operator.locator('.cd-details')).to_contain_text('Associate Engineer at Demo Software Pvt Ltd')
+                # Waiting for review: "Review in My resumes" opens exactly that resume.
+                with closing(__import__('sqlite3').connect(database)) as db, db:
+                    db.execute("UPDATE automation SET status='needs_input', stage='Review AI drafts' WHERE id=?",
+                               (identifier,))
+                operator.reload()
+                review = operator.get_by_role('link', name='Review in My resumes')
+                expect(review).to_have_attribute('href', f'/#resume-{identifier}', timeout=15000)
+                review.click()
+                expect(operator.locator(f'li[data-id="{identifier}"].auto-focus')).to_be_visible(timeout=15000)
+                with closing(__import__('sqlite3').connect(database)) as db, db:
+                    db.execute("UPDATE automation SET status='queued', stage='Submission saved' WHERE id=?", (identifier,))
+                operator.goto(origin + '/candidates')
 
                 # The candidate follows it, and downloads the finished resume; nothing else.
                 page.reload()
@@ -182,8 +221,9 @@ def main():
             server.RequestHandlerClass.stop_imports()
             server.server_close()
     print('Intake browser acceptance passed: phone form, Word prefill, local draft, private link, nothing processed '
-          'before Start, full details and Start processing for the operator (upload workflow as the operator), the '
-          "candidate's progress and PDF download, corrections flagged for the operator.")
+          'before Start, Candidates beside My resumes with its badge (desktop and phone), full details and Start '
+          'processing (upload workflow as the operator), resume and application linked both ways, the candidate\'s '
+          'progress and PDF download, corrections flagged for the operator.')
 
 
 if __name__ == '__main__':

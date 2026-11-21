@@ -643,15 +643,20 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 if not owner:
                     return self.send_json({'error': 'Sign in to access your resumes.'}, 403)
                 operation = query.get('id', [None])[0]
-                return self.send_json({'jobs': automation.list(owner, operation),
-                                       'ready': workspace.automation_ready()})
+                jobs = automation.list(owner, operation)
+                # A resume started from a candidate's application names it, so My resumes links back to it.
+                linked = intake.applications(owner)
+                for job in jobs:
+                    if job.get('id') in linked:
+                        job['application'] = linked[job['id']]
+                return self.send_json({'jobs': jobs, 'ready': workspace.automation_ready()})
             if url.path in ('/api/intake/candidates', '/api/intake/summary'):
                 if not self.is_operator(request_origin):
                     return self.send_json({'error': 'An operator account is required for this route.'}, 404)
                 from resume_bot import gpu_gate
                 summary = {'queue': automation.queue_summary(), 'form_url': (web_origin or origin) + '/apply',
                            'gpu': {'slots': gpu_gate.slots(), 'busy': gpu_gate.busy()},
-                           'human_check': intake.human.status()}
+                           'human_check': intake.human.status(), 'not_started': intake.not_started()}
                 if url.path == '/api/intake/summary':
                     return self.send_json(summary)
                 return self.send_json({**summary, 'candidates': intake.candidates(), 'now': time.time()})
