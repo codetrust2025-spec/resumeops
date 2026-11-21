@@ -19,6 +19,11 @@
 .auto-brand .ic{width:30px;height:30px;stroke-width:1.6}
 .auto-navlink{position:relative;display:flex;align-items:center;gap:10px;color:#fff;text-decoration:none;font-weight:600;font-size:1.05rem}
 .auto-navlink .ic{width:22px;height:22px;stroke-width:1.7}
+.auto-navs{display:flex;gap:28px}
+.auto-navlink[hidden]{display:none}
+.auto-navlink-other::after{display:none}
+/* Phones keep the header to the brand and My resumes (the operator opens /candidates directly). */
+@media (max-width:600px){.auto-navlink-other{display:none}}
 .auto-navlink::after{content:"";position:absolute;left:0;right:0;bottom:9px;height:3px;border-radius:2px;background:#fff}
 
 /* Two panels */

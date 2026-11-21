@@ -694,7 +694,14 @@ function showCurrent(jobs) {
       : (job.questions || []).length ? 'Answer the questions in My resumes.'
         : 'Review the suggested projects in My resumes.');
   else if (job.status === 'blocked') progress('Stopped', null, 'See My resumes for the reason.');
-  else progress(job.stage, job.percent, job.status === 'retrying' ? retryText(job) : '');
+  else progress(stageText(job), job.percent, job.status === 'retrying' ? retryText(job) : '');
+}
+
+// A waiting job says how many are ahead of it (shared GPU queue), and when the operator has paused processing.
+function stageText(job) {
+  if (job.queue_ahead === undefined) return job.stage;
+  const ahead = job.queue_ahead > 0 ? job.queue_ahead + ' ahead in the queue' : 'next in the queue';
+  return job.stage + ' · ' + (job.queue_paused ? 'processing paused, ' + ahead : ahead);
 }
 
 // Work lines and skills arrive as AI drafts for the selected role: several lines, editable, and optional.
@@ -897,7 +904,7 @@ function jobItem(job) {
     bar.value = job.percent;
     bar.setAttribute('aria-label', 'Progress ' + job.percent + '%');
     state.append(pill(job.status === 'retrying' ? 'Retrying' : 'In progress'));
-    detail.append(bar, element('span', job.stage + ' · ' + job.percent + '%'));
+    detail.append(bar, element('span', stageText(job) + ' · ' + job.percent + '%'));
     if (job.status === 'retrying') detail.append(element('span', retryText(job)));
   }
   main.append(avatar, who, state);
@@ -1141,6 +1148,9 @@ async function init() {
   },true);
   mode();
   await ResumeAuth.ready();
+  // Operators see the public-form candidates page (the request answers only for operator accounts).
+  ResumeAuth.call('/api/intake/summary').then(response => { byId('auto-candidates-link').hidden = !response.ok; })
+    .catch(() => {});
   await loadRoles();
   pending = await ResumeRecovery.read('automation-pending');
   form.addEventListener('reset', () => clearFieldErrors(form));

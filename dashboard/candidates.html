@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="dashboard-token" content="__TOKEN__">
+<title>Candidates | ResumeOps</title>
+<link rel="stylesheet" href="/candidates.css">
+<script defer src="/auth.js"></script>
+<script defer src="/recovery.js"></script>
+<script defer src="/candidates.js"></script>
+</head>
+<body class="cd-page">
+<header class="cd-bar">
+  <a class="cd-brand" href="/">ResumeOps</a>
+  <nav><a href="/">My resumes</a><a href="/candidates" aria-current="page">Candidates</a></nav>
+</header>
+<main class="cd-main">
+  <section class="cd-card cd-head">
+    <div>
+      <h1>Candidates</h1>
+      <p>Applications from the public form, with their progress through AI drafting, candidate review, ATS, LaTeX,
+        PDF and Overleaf. Each candidate follows their own application through a private link.</p>
+    </div>
+    <div class="cd-share">
+      <label for="cd-form-url">Public form link</label>
+      <div class="cd-inline"><input id="cd-form-url" readonly><button type="button" id="cd-copy-form">Copy</button></div>
+    </div>
+  </section>
+  <section class="cd-card">
+    <div class="cd-stats" id="cd-stats" aria-live="polite"></div>
+    <div class="cd-queue">
+      <span id="cd-queue-state" role="status"></span>
+      <button type="button" id="cd-pause">Pause processing</button>
+    </div>
+  </section>
+  <section class="cd-card">
+    <div class="cd-tools">
+      <input type="search" id="cd-search" placeholder="Search name, email, phone, ID or role" aria-label="Search candidates">
+      <select id="cd-status" aria-label="Filter by status">
+        <option value="">All statuses</option><option value="queued">Waiting in queue</option>
+        <option value="processing">Preparing</option><option value="needs_input">Waiting for the candidate</option>
+        <option value="complete">Complete</option><option value="blocked">Stopped</option>
+      </select>
+    </div>
+    <p id="cd-message" role="alert"></p>
+    <div class="cd-table-wrap">
+      <table id="cd-table">
+        <thead><tr><th>Candidate</th><th>Contact</th><th>Role</th><th>Status</th><th>Outputs</th></tr></thead>
+        <tbody id="cd-rows"></tbody>
+      </table>
+    </div>
+    <p id="cd-empty" hidden>No applications yet. Share the public form link.</p>
+  </section>
+  <dialog id="cd-link-dialog" aria-labelledby="cd-link-title">
+    <h2 id="cd-link-title">New private link</h2>
+    <p>Send this link to the candidate. Their previous link no longer works.</p>
+    <input id="cd-link" readonly aria-label="New private link">
+    <div class="cd-inline"><button type="button" id="cd-link-copy">Copy</button><button type="button" id="cd-link-close">Close</button></div>
+  </dialog>
+</main>
+</body>
+</html>

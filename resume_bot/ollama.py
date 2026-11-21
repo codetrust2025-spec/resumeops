@@ -101,6 +101,13 @@ class Ollama:
         return num_ctx, min(self.max_tokens, max(256, num_ctx - prompt_tokens))
 
     def generate(self, prompt, schema=None, on_progress=None):
+        from .gpu_gate import gpu_slot
+
+        # One machine-wide GPU slot per generation: waiting here runs no socket timeout or stream deadline.
+        with gpu_slot():
+            return self._generate_unlimited(prompt, schema, on_progress)
+
+    def _generate_unlimited(self, prompt, schema=None, on_progress=None):
         try:
             return self._generate_once(prompt, schema, on_progress)
         except OllamaBudgetError:

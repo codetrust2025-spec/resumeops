@@ -1,5 +1,7 @@
 """Local dashboard for the existing Resume Builder watcher."""
 import argparse
+import base64
+import binascii
 import hashlib
 import json
 import mimetypes
@@ -18,9 +20,15 @@ from pathlib import Path
 from threading import Lock
 from durable_imports import DurableImports, ImportCapacity, ImportConflict
 from automation_jobs import AutomationCapacity, AutomationJobs, REQUEST_LIMIT
+from intake import IntakeDesk
 from urllib.parse import parse_qs, urlsplit
 from zipfile import BadZipFile, ZipFile
 
+# The public candidate pages' files (served under /apply/assets/, the only public path besides the pages).
+APPLY_ASSETS = {'apply.js': 'text/javascript', 'apply.css': 'text/css', 'candidate.js': 'text/javascript',
+                'candidate.css': 'text/css', 'automation.js': 'text/javascript', 'automation.css': 'text/css',
+                'builder.css': 'text/css', 'recovery.js': 'text/javascript'}
+PREFILL_BODY = 6 * 1024 * 1024 * 4 // 3 + 4096
 ARTIFACTS = ('resume.pdf', 'overleaf.pdf', 'main.tex', 'overleaf-project.zip',
              'result.json', 'audit.json', 'profile.json')
 LOGS = ('watcher.log', 'alerts.log', 'current-alert.txt', 'windows-suite-final.log',
@@ -434,6 +442,13 @@ RENEWED_PAGE = b'''<!doctype html><html lang="en"><head><meta charset="utf-8">
 <body><main class="width intro"><h1>Signed in</h1><p>ResumeOps is resuming your work.</p></main></body></html>'''
 
 
+class DashboardServer(ThreadingHTTPServer):
+    # A burst of candidates (100+ at once through the tunnel) needs a deep listen backlog: the default of 5
+    # refuses connections before a thread can take them.
+    request_queue_size = 512
+    daemon_threads = True
+
+
 def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             web_origin=None, access_verifier=None, ai_first=False, automation_first=False):
     host = urlsplit(origin).netloc
@@ -475,6 +490,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
 
     durable = DurableImports(workspace.root, process_draft)
     automation = AutomationJobs(workspace)
+    intake = IntakeDesk(workspace, automation)
     operators = {email.strip().casefold() for email in os.getenv('RESUMEOPS_OPERATOR_ACCOUNTS', '').split(',')
                  if email.strip()}
 
@@ -549,10 +565,15 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
 
         def can_read_job(self, key, request_origin):
             owner = private_owner(key)
+            if owner and owner != self.session_owner(request_origin):
+                # The operator reads public-intake candidates' outputs (never another account's own resumes).
+                return self.is_operator(request_origin) and intake.is_candidate_owner(owner)
             return (owner == self.session_owner(request_origin) if owner
                     else self.is_operator(request_origin))
 
         def do_GET(self):
+            if self.path == '/apply' or self.path.startswith(('/apply/', '/apply?')):
+                return self.apply_get()
             request_origin = self.request_origin()
             if request_origin is None or not self.account_matches(request_origin):
                 return self.send_json({'error': 'Dashboard access denied for this address or session.'}, 403)
@@ -619,6 +640,15 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 operation = query.get('id', [None])[0]
                 return self.send_json({'jobs': automation.list(owner, operation),
                                        'ready': workspace.automation_ready()})
+            if url.path in ('/api/intake/candidates', '/api/intake/summary'):
+                if not self.is_operator(request_origin):
+                    return self.send_json({'error': 'An operator account is required for this route.'}, 404)
+                from resume_bot import gpu_gate
+                summary = {'queue': automation.queue_summary(), 'form_url': (web_origin or origin) + '/apply',
+                           'gpu': {'slots': gpu_gate.slots(), 'busy': gpu_gate.busy()}}
+                if url.path == '/api/intake/summary':
+                    return self.send_json(summary)
+                return self.send_json({**summary, 'candidates': intake.candidates(), 'now': time.time()})
             if url.path == '/api/automation/audit':
                 # Deletion records: an account sees its own; the operator sees every account's.
                 owner = self.session_owner(request_origin)
@@ -668,6 +698,9 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                       '/automated': ('automation.html', 'text/html'),
                       '/automation.js': ('automation.js', 'text/javascript'),
                       '/automation.css': ('automation.css', 'text/css'),
+                      '/candidates': ('candidates.html', 'text/html'),
+                      '/candidates.js': ('candidates.js', 'text/javascript'),
+                      '/candidates.css': ('candidates.css', 'text/css'),
                       '/workflow': ('index.html', 'text/html'),
                       '/roles': ('roles.html', 'text/html'),
                       '/roles.js': ('roles.js', 'text/javascript'),
@@ -689,7 +722,9 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 name, mime = assets[url.path]
                 path = Path(__file__).with_name(name)
                 data = path.read_bytes()
-                if url.path in ('/', '/automated', '/operations', '/ai-builder', '/workflow', '/roles'):
+                if url.path == '/candidates' and not self.is_operator(request_origin):
+                    return self.send_json({'error': 'An operator account is required for this page.'}, 403)
+                if url.path in ('/', '/automated', '/operations', '/ai-builder', '/workflow', '/roles', '/candidates'):
                     data = data.replace(b'__TOKEN__', token.encode('ascii'))
                 return self.send_content(data, mime + '; charset=utf-8')
             return self.send_json({'error': 'File unavailable.'}, 404)
@@ -717,11 +752,205 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return self.send_json({'error': 'Upload interrupted. Retry the same submission.'}, 408)
             return self.send_json({'id': identifier}, 202)
 
-        def automation_action(self, request_origin, action):
+        # Public candidate intake (/apply). These are the only pages and endpoints served without a Cloudflare
+        # Access identity: the form, the prefill reader, the submission, and the candidate's own status page and
+        # resumes behind their private key. Nothing else is reachable through them.
+        def public_origin(self):
+            request_host = self.headers.get('Host')
+            if web_origin and request_host == web_host:
+                return web_origin
+            if (request_host == host and not self.headers.get('Tailscale-User-Login')
+                    and not self.headers.get('X-Forwarded-Proto') and not self.headers.get('Cf-Access-Jwt-Assertion')):
+                return origin
+            return None
+
+        def intake_client(self, public):
+            """The network a public request came from (Cloudflare's view on the site), for rate limits."""
+            address = self.headers.get('Cf-Connecting-IP') if public == web_origin else None
+            return str(address or 'local-' + self.client_address[0])[:64]
+
+        def candidate_session(self):
+            """(candidate id, owner) for the private key sent with the request, or (None, None)."""
+            candidate = self.headers.get('X-Candidate-Id', '')
+            owner = intake.authorize(candidate, self.headers.get('X-Candidate-Key', ''))
+            return (candidate, owner) if owner else (None, None)
+
+        def apply_get(self):
+            from intake import candidate_page, prefill_owner
+            public = self.public_origin()
+            if public is None:
+                return self.send_json({'error': 'Not available at this address.'}, 403)
+            url = urlsplit(self.path)
+            query = parse_qs(url.query)
+            if not intake.limiter.allow('read', self.intake_client(public)):
+                return self.send_json({'error': 'Too many requests. Wait a moment and retry.'}, 429)
+            if url.path in ('/apply', '/apply/'):
+                return self.send_content(Path(__file__).with_name('apply.html').read_bytes(), 'text/html; charset=utf-8')
+            if url.path == '/apply/status':
+                return self.send_content(candidate_page(Path(__file__).with_name('automation.html').read_bytes()),
+                                         'text/html; charset=utf-8')
+            if url.path.startswith('/apply/assets/'):
+                name = url.path[len('/apply/assets/'):]
+                if name in APPLY_ASSETS:
+                    return self.send_content(Path(__file__).with_name(name).read_bytes(),
+                                             APPLY_ASSETS[name] + '; charset=utf-8')
+                return self.send_json({'error': 'File unavailable.'}, 404)
+            if url.path == '/apply/api/catalog':
+                from resume_bot.workflow import TEMPLATES, ROLES, load_roles
+                load_roles()
+                return self.send_json({'roles': [{'id': r['id'], 'name': r['name'], 'groups': r['groups']}
+                                                 for r in ROLES.values() if not r.get('hidden')], 'templates': TEMPLATES})
+            if url.path == '/apply/api/prefill':
+                session, identifier = query.get('session', [''])[0], query.get('id', [''])[0]
+                if not re.fullmatch(r'[A-Za-z0-9_-]{20,64}', session) or not re.fullmatch(r'[0-9a-f]{64}', identifier):
+                    return self.send_json({'error': 'Invalid request.'}, 400)
+                item = durable.get(prefill_owner(session), identifier)
+                if not item:
+                    return self.send_json({'error': 'This upload is no longer available.'}, 404)
+                if item['status'] == 'complete':
+                    from resume_bot.prefill import profile_to_form
+                    return self.send_json({'status': 'complete', 'candidate': profile_to_form(item.get('profile') or {})})
+                return self.send_json({'status': item['status'], 'stage': item['stage'],
+                                       'error': item.get('error') if item['status'] == 'error' else None})
+            candidate, owner = self.candidate_session()
+            if not owner:
+                return self.send_json({'error': 'This private link is not valid. Use the link from your application.'}, 403)
+            if url.path == '/apply/api/automation':
+                profile = intake.profile(candidate) or {}
+                profile.pop('form', None)
+                return self.send_json({'jobs': automation.list(owner, query.get('id', [None])[0]),
+                                       'ready': workspace.automation_ready(), 'candidate': profile})
+            if url.path == '/apply/api/form':
+                return self.send_json(intake.profile(candidate) or {})
+            if url.path in ('/apply/api/artifact', '/apply/api/revision'):
+                key = query.get('key', [''])[0]
+                if private_owner(key) != owner:
+                    return self.send_json({'error': 'Resume unavailable.'}, 404)
+                if url.path == '/apply/api/revision':
+                    revision = workspace.revision(key)
+                    return self.send_json(revision) if revision else self.send_json({'error': 'Resume unavailable.'}, 404)
+                name = query.get('name', [''])[0]
+                path = workspace.artifact(key, name) if name in ('resume.pdf', 'main.tex', 'overleaf.pdf') else None
+                if not path:
+                    return self.send_json({'error': 'Resume file unavailable.'}, 404)
+                mime = 'application/pdf' if path.suffix == '.pdf' else 'application/x-tex'
+                return self.send_content(path.read_bytes(), mime, filename=path.name if path.suffix != '.pdf'
+                                         or query.get('download') == ['1'] else None)
+            return self.send_json({'error': 'Not found.'}, 404)
+
+        def apply_post(self):
+            from intake import FORM_LIMIT, IntakeDuplicate, IntakeError, prefill_owner
+            public = self.public_origin()
+            if public is None or self.headers.get('Origin') != public:
+                return self.reject_post('Request not authorized.')
+            if self.headers.get_content_type() != 'application/json':
+                return self.reject_post('Invalid request.')
+            path = urlsplit(self.path).path
+            purpose = {'/apply/api/submit': 'submit', '/apply/api/prefill': 'prefill'}.get(path, 'action')
+            if not intake.limiter.allow(purpose, self.intake_client(public)):
+                return self.send_json({'error': 'Many applications are arriving from this network. Your form is kept '
+                                                'and sent again automatically.', 'retry': True}, 429)
+            if purpose == 'action':
+                candidate, owner = self.candidate_session()
+                action = path.rsplit('/', 1)[1]
+                if not owner or path not in ('/apply/api/automation/answer', '/apply/api/automation/projects',
+                                             '/apply/api/automation/regenerate', '/apply/api/automation/delete'):
+                    return self.reject_post('This private link is not valid.')
+                response = self.automation_action(public, action, owner)
+                if action == 'delete':
+                    intake.scrub_if_empty(owner)
+                return response
+            try:
+                size = int(self.headers.get('Content-Length', ''))
+            except ValueError:
+                size = 0
+            if not 0 < size <= (FORM_LIMIT if purpose == 'submit' else PREFILL_BODY):
+                return self.send_json({'error': 'The upload is too large (PDF or DOCX up to 6 MB).'}, 413)
+            if not intake.heavy.acquire(timeout=15):
+                return self.send_json({'error': 'Busy receiving other applications. Sending again shortly.',
+                                       'retry': True}, 503)
+            try:
+                self.connection.settimeout(45)
+                raw = self.rfile.read(size)
+                if len(raw) != size:
+                    return self.send_json({'error': 'Upload interrupted. Sending again.', 'retry': True}, 400)
+                body = json.loads(raw)
+                if not isinstance(body, dict):
+                    raise ValueError('Invalid request.')
+                if purpose == 'prefill':
+                    return self.prefill(body, prefill_owner)
+                result = intake.submit(body.get('form'), body.get('key'), body.get('candidate'))
+                session = body.get('prefill_session')
+                if isinstance(session, str) and re.fullmatch(r'[A-Za-z0-9_-]{20,64}', session):
+                    try:  # the uploaded document and its extraction are not kept once the form is in
+                        durable.delete_owner(prefill_owner(session))
+                    except sqlite3.Error:
+                        pass
+                return self.send_json(result, 201 if result['created'] else 200)
+            except IntakeDuplicate as exc:
+                return self.send_json({'error': str(exc), 'candidate': exc.candidate}, exc.status)
+            except IntakeError as exc:
+                return self.send_json({'error': str(exc), 'field': exc.field}, exc.status)
+            except AutomationCapacity as exc:
+                return self.send_json({'error': str(exc), 'retry': True}, 503)
+            except sqlite3.OperationalError:
+                return self.send_json({'error': 'Busy saving other applications. Sending again shortly.',
+                                       'retry': True}, 503)
+            except (ValueError, UnicodeError):
+                return self.send_json({'error': 'Invalid request.'}, 400)
+            except OSError:
+                return self.send_json({'error': 'Upload interrupted. Sending again.', 'retry': True}, 408)
+            finally:
+                intake.heavy.release()
+
+        def prefill(self, body, prefill_owner):
+            """Read an uploaded PDF/DOCX now (no GPU) and queue its AI extraction for a fuller prefill."""
+            from resume_bot.prefill import PREFILL_EXTENSIONS, document_text, quick_prefill
+            extension, session = body.get('extension'), body.get('session')
+            if extension not in PREFILL_EXTENSIONS or not isinstance(body.get('document'), str) \
+                    or not isinstance(session, str) or not re.fullmatch(r'[A-Za-z0-9_-]{20,64}', session):
+                return self.send_json({'error': 'Upload a PDF or DOCX file.'}, 400)
+            try:
+                data = base64.b64decode(body['document'], validate=True)
+                candidate = quick_prefill(document_text(extension, data))
+            except (ValueError, binascii.Error) as exc:
+                return self.send_json({'error': str(exc) if isinstance(exc, ValueError) and str(exc) else
+                                       'Could not read this file. Upload a text-based PDF or a DOCX.'}, 400)
+            ai = None
+            identifier = hashlib.sha256(data).hexdigest()
+            try:
+                item = durable.enqueue(prefill_owner(session), identifier, '.' + extension, data)
+                ai = {'id': identifier, 'status': item['status'] if item else 'queued'}
+            except (ImportCapacity, ImportConflict, sqlite3.Error):
+                ai = None  # the quick prefill stands; the AI reading is skipped while the reader is busy
+            return self.send_json({'candidate': candidate, 'ai': ai})
+
+        def intake_operator_post(self):
+            from intake import IntakeError
+            try:
+                size = int(self.headers.get('Content-Length', ''))
+                if not 0 < size <= 4096 or self.headers.get_content_type() != 'application/json':
+                    return self.send_json({'error': 'Invalid request.'}, 413)
+                request = json.loads(self.rfile.read(size))
+                if self.path == '/api/intake/queue':
+                    if not isinstance(request, dict) or not isinstance(request.get('paused'), bool):
+                        return self.send_json({'error': 'Invalid request.'}, 400)
+                    automation.set_paused(request['paused'])
+                    return self.send_json({'paused': automation.paused()})
+                candidate = request.get('candidate') if isinstance(request, dict) else None
+                key = intake.new_key(candidate if isinstance(candidate, str) else '')
+                return self.send_json({'candidate': candidate, 'link': (web_origin or origin) + '/apply/status#c='
+                                       + candidate + '&k=' + key})
+            except IntakeError as exc:
+                return self.send_json({'error': str(exc)}, exc.status)
+            except (ValueError, UnicodeError):
+                return self.send_json({'error': 'Invalid request.'}, 400)
+
+        def automation_action(self, request_origin, action, owner=None):
             """Owner-scoped follow-ups on one resume: answers to missing details, decisions on suggested
             projects, or regeneration for another role. Errors name the field they concern."""
             from resume_bot.automation import AnswerError
-            owner = self.session_owner(request_origin)
+            owner = owner or self.session_owner(request_origin)
             if not owner:
                 return self.reject_post('Sign in first.')
             try:
@@ -827,9 +1056,12 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             return self.send_json({'error': message}, 403)
 
         def do_POST(self):
+            if self.path.startswith('/apply/'):
+                return self.apply_post()
             request_origin = self.request_origin()
             if (self.path not in ('/api/automation', '/api/automation/answer', '/api/automation/projects',
-                                  '/api/automation/regenerate', '/api/automation/delete', '/api/roles', '/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry', '/api/ai-draft', '/api/ai-review', '/api/ai-queue') or request_origin is None
+                                  '/api/automation/regenerate', '/api/automation/delete', '/api/intake/key',
+                                  '/api/intake/queue', '/api/roles', '/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry', '/api/ai-draft', '/api/ai-review', '/api/ai-queue') or request_origin is None
                     or self.headers.get('Origin') != request_origin
                     or not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token)):
                 return self.reject_post('Request not authorized.')
@@ -839,6 +1071,10 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return self.submit_automation(request_origin)
             if self.path in ('/api/automation/answer', '/api/automation/projects', '/api/automation/regenerate', '/api/automation/delete'):
                 return self.automation_action(request_origin, self.path.rsplit('/', 1)[1])
+            if self.path in ('/api/intake/key', '/api/intake/queue'):
+                if not self.is_operator(request_origin):
+                    return self.reject_post('An operator account is required for this route.')
+                return self.intake_operator_post()
             if self.path == '/api/roles':
                 if not self.is_operator(request_origin):
                     return self.reject_post('An operator account is required for this route.')
@@ -1006,6 +1242,8 @@ def main():
                         help='Serve the AI builder at / (the classic builder stays at /workflow); '
                              'the supervisor sets RESUMEOPS_AI_FIRST=1 instead')
     args = parser.parse_args()
+    # One GPU gate for this dashboard and the resume watcher: a folder in the shared workspace.
+    os.environ.setdefault('RESUMEOPS_GPU_GATE', str(Path(args.root).resolve() / '.resumeops-gpu'))
     web_url = args.web_url.rstrip('/') if args.web_url else None
     access_options = (web_url, args.access_team, args.access_audience)
     verifier = None
@@ -1036,7 +1274,7 @@ def main():
         automation_first=os.environ.get('RESUMEOPS_AUTOMATION_FIRST') == '1',
     )
     request_handler.resume_imports()
-    server = ThreadingHTTPServer(('127.0.0.1', args.port), request_handler)
+    server = DashboardServer(('127.0.0.1', args.port), request_handler)
     print(f'Resume Builder dashboard: {origin}', flush=True)
     if args.open:
         import webbrowser

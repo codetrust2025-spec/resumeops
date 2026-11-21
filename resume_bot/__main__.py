@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 from pathlib import Path
 from .pipeline import process, scan
 from .overleaf import login_setup
@@ -51,6 +52,10 @@ def main():
         login_setup(a.browser_profile)
         return
     from .ollama import Ollama
+    # The machine-wide GPU gate is shared with the dashboard through the workspace folder (both processes use it,
+    # whichever account each runs under). The inbox sits in the workspace root.
+    if getattr(a, 'inbox', None):
+        os.environ.setdefault('RESUMEOPS_GPU_GATE', str(Path(a.inbox).resolve().parent / '.resumeops-gpu'))
     ai=Ollama(a.model,a.ollama_url)
     if a.command=='run':
         result=process(a.input,a.output,ai=ai,polish_enabled=not a.no_polish,

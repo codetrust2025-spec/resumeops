@@ -17,7 +17,7 @@ SLOW_UNIT_MODULES = {'test_live_progress', 'test_acceptance'}
 CHECKS = {
     'live': [['check_live.py']],
     'browser': [['check_dashboard.py', '.'], ['check_builder.py'], ['check_cloudflare_access.py'],
-                ['check_session.py'], ['check_ai_builder.py'], ['check_automation.py']],
+                ['check_session.py'], ['check_ai_builder.py'], ['check_automation.py'], ['check_intake.py']],
 }
 PARTS = ('unit-a', 'unit-b', 'live', 'browser')
 

@@ -1,0 +1,59 @@
+/* Public application form: one column, phone first, large touch targets, no horizontal scrolling. */
+:root { --ink: #0f1f3d; --text: #1d2b45; --muted: #5b6880; --line: #dfe6f0; --field: #cdd6e3; --blue: #1f55b5;
+  --blue-dark: #173f8a; --tint: #e9f0fc; --red: #c4303c; --bg: #f2f5fa; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.ap-bar { background: linear-gradient(90deg, #0a2352 0%, #0f306b 55%, #0c2a5f 100%); padding: 0 16px; height: 56px; display: flex; align-items: center; }
+.ap-brand { color: #fff; font-weight: 700; font-size: 1.25rem; text-decoration: none; }
+.ap-main { max-width: 760px; margin: 0 auto; padding: 16px; display: grid; gap: 14px; }
+.ap-intro h1 { margin: 4px 0 6px; font-size: 1.6rem; letter-spacing: -.01em; }
+.ap-intro p { margin: 0; color: var(--muted); }
+.ap-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 16px;
+  box-shadow: 0 1px 2px rgba(15,31,61,.04), 0 8px 24px rgba(15,31,61,.05); }
+#ap-form { display: grid; gap: 14px; }
+.ap-card h2 { margin: 0 0 12px; font-size: 1.1rem; }
+.ap-hint { margin: -6px 0 10px; color: var(--muted); font-size: .92rem; }
+.ap-req { color: #d02f3d; }
+.ap-opt { color: var(--muted); font-weight: 400; font-size: .9rem; }
+.ap-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.ap-field { display: grid; gap: 6px; font-weight: 600; font-size: .95rem; min-width: 0; }
+.ap-field.ap-wide { grid-column: 1 / -1; }
+#ap-skills .ap-field, #ap-more .ap-field { margin-bottom: 10px; }
+input, textarea { width: 100%; font: inherit; font-weight: 400; color: var(--text); background: #fff; border: 1px solid var(--field);
+  border-radius: 10px; padding: 11px 12px; min-height: 46px; }
+textarea { resize: vertical; min-height: 96px; }
+input:focus, textarea:focus { outline: 3px solid rgba(31,85,181,.25); border-color: var(--blue); }
+[aria-invalid="true"] { border-color: var(--red); background: #fffafa; }
+.ap-field-error { color: var(--red); font-weight: 600; min-height: 0; }
+.ap-field-error:empty { display: none; }
+.ap-rows { display: grid; gap: 12px; }
+.ap-row { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin: 0; min-width: 0; }
+.ap-row legend { font-weight: 700; padding: 0 6px; }
+.ap-remove, .ap-add, .ap-row-actions button, .ap-forget { font: inherit; font-weight: 600; border-radius: 10px; min-height: 44px; padding: 0 14px; cursor: pointer; }
+.ap-remove, .ap-forget { margin-top: 10px; background: #fff; color: var(--red); border: 1px solid #f1b9bd; }
+.ap-add { margin-top: 12px; background: var(--tint); color: var(--blue); border: 1px solid #c9d8f3; }
+.ap-check { display: flex; gap: 10px; align-items: flex-start; font-weight: 500; margin: 0 0 12px; }
+.ap-check input { width: 22px; height: 22px; min-height: 0; flex: none; margin-top: 1px; }
+.ap-file { display: grid; gap: 8px; font-weight: 600; }
+.ap-file input { padding: 9px; }
+.ap-primary { display: inline-flex; align-items: center; justify-content: center; width: 100%; min-height: 52px; border: 0;
+  border-radius: 12px; background: var(--blue); color: #fff; font: inherit; font-weight: 700; font-size: 1.05rem;
+  text-decoration: none; cursor: pointer; }
+.ap-primary:hover { background: var(--blue-dark); }
+.ap-primary:disabled { opacity: .6; cursor: progress; }
+.ap-status { color: var(--muted); margin: 10px 0 0; }
+.ap-status:empty, .ap-error:empty { display: none; }
+.ap-error { color: var(--red); font-weight: 600; margin: 10px 0 0; }
+.ap-hp { position: absolute !important; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+.ap-done input { margin: 8px 0 12px; }
+.ap-row-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 10px; }
+.ap-row-actions button { background: #fff; color: var(--blue); border: 1px solid var(--field); }
+#ap-mine-list { margin: 0; padding-left: 18px; display: grid; gap: 8px; }
+#ap-mine-list a { color: var(--blue); font-weight: 600; overflow-wrap: anywhere; }
+#ap-mine-list .ap-forget { margin: 0 0 0 10px; min-height: 36px; font-size: .85rem; }
+@media (max-width: 560px) {
+  .ap-grid { grid-template-columns: minmax(0, 1fr); }
+  .ap-main { padding: 12px; }
+  .ap-intro h1 { font-size: 1.35rem; }
+  .ap-row-actions { grid-template-columns: minmax(0, 1fr); }
+}
