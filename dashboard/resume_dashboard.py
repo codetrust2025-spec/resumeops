@@ -659,7 +659,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                            'human_check': intake.human.status(), 'not_started': intake.not_started()}
                 if url.path == '/api/intake/summary':
                     return self.send_json(summary)
-                return self.send_json({**summary, 'candidates': intake.candidates(), 'now': time.time()})
+                return self.send_json({**summary, 'candidates': intake.candidates(
+                    viewer=self.session_owner(request_origin)), 'now': time.time()})
             if url.path == '/api/automation/audit':
                 # Deletion records: an account sees its own; the operator sees every account's.
                 owner = self.session_owner(request_origin)

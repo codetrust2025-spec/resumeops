@@ -453,9 +453,14 @@ class IntakeDesk:
                                      (operator_owner, identifier)).fetchone()
             job = self.automation.insert(db, operator_owner, request, INTAKE_SOURCE, row['name'], row['client'],
                                          per_owner=False, identifier=identifier)
-            db.execute('INSERT OR IGNORE INTO intake_runs(candidate, job_owner, job_id, started, started_by, digest) '
-                       'VALUES (?,?,?,?,?,?)', (candidate, operator_owner, job, time.time(), operator_owner,
-                                                row['digest']))
+            # A new job always becomes the latest version. Seen live: after Delete all in My resumes, the link of the
+            # deleted job stayed; Start then made a job with the same id, the link kept its old time, and an older
+            # version from another account was shown as the latest.
+            db.execute('INSERT INTO intake_runs(candidate, job_owner, job_id, started, started_by, digest) '
+                       'VALUES (?,?,?,?,?,?) ON CONFLICT(candidate, job_owner, job_id) DO '
+                       + ('UPDATE SET started=excluded.started, started_by=excluded.started_by, digest=excluded.digest'
+                          if created else 'NOTHING'),
+                       (candidate, operator_owner, job, time.time(), operator_owner, row['digest']))
         self.automation.start()
         self.automation.wake.set()
         return {'candidate': candidate, 'job': job, 'owner': operator_owner, 'created': created}
@@ -494,9 +499,14 @@ class IntakeDesk:
             raise IntakeError('Candidate not found.', None, 404)
         return key
 
-    def candidates(self, limit=1000):
+    def candidates(self, limit=1000, viewer=None):
         """Every application, newest first, with everything the candidate entered and the state of the latest resume
-        prepared from it (``started`` is None until the operator starts processing)."""
+        prepared from it (``started`` is None until the operator starts processing).
+
+        ``viewer`` (the operator account looking): its own latest version is shown, since only its own files can be
+        downloaded (accounts stay isolated). A version prepared only in another operator account (the local dashboard
+        on this computer, say) is shown with ``job.elsewhere`` and no files. Seen live: every PDF, LaTeX and Overleaf
+        PDF link of two applications answered 404 because the latest version belonged to the local account."""
         with closing(self.automation.connection()) as db:
             people = db.execute('SELECT candidate, owner, created, updated, name, email, phone, role, form, digest, '
                                 'scrubbed FROM intake ORDER BY created DESC LIMIT ?', (limit,)).fetchall()
@@ -507,10 +517,12 @@ class IntakeDesk:
                 'role, candidate, NULL AS waiting, facts IS NOT NULL AS regenerable FROM automation WHERE source=?',
                 (INTAKE_SOURCE,))}
             ahead = self.automation.queue_positions(db)
-        latest, versions = {}, {}
+        latest, mine, versions = {}, {}, {}
         for run in runs:
             if (run['job_owner'], run['job_id']) in jobs:
                 latest[run['candidate']] = run
+                if viewer and run['job_owner'] == viewer:
+                    mine[run['candidate']] = run
                 versions[run['candidate']] = versions.get(run['candidate'], 0) + 1
         state = self.workspace.automation_state()
         out = []
@@ -518,7 +530,7 @@ class IntakeDesk:
             entry = {key: person[key] for key in ('candidate', 'created', 'updated', 'name', 'email', 'phone', 'role')}
             entry['deleted'] = bool(person['scrubbed'])
             entry['form'] = json.loads(person['form']) if person['form'] else None
-            run = latest.get(person['candidate'])
+            run = mine.get(person['candidate']) or latest.get(person['candidate'])
             entry['started'] = run['started'] if run else None
             if run is not None:
                 row = jobs[(run['job_owner'], run['job_id'])]
@@ -529,6 +541,7 @@ class IntakeDesk:
                     role=job.get('role') or entry['role'],
                     details_changed=bool(person['digest']) and run['digest'] != person['digest'])
                 entry['job']['candidates_own'] = run['job_owner'] == person['owner']  # saved before operator start
+                entry['job']['elsewhere'] = bool(viewer) and run['job_owner'] not in (viewer, person['owner'])
                 if (run['job_owner'], row['id']) in ahead and row['status'] in ('queued', 'retrying'):
                     entry['job']['queue_ahead'] = ahead[(run['job_owner'], row['id'])]
             out.append(entry)
