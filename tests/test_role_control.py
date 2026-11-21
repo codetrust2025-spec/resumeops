@@ -135,6 +135,31 @@ class SelectedRoleControlsTheResumeTests(unittest.TestCase):
         self.assertNotIn('React', summary.split('moving into', 1)[1], 'no React in the role-focused part')
         self.assertEqual(facts['skills'][0], 'React.js', 'the stored facts stay complete')
 
+    def test_an_application_keeps_all_of_the_candidates_own_facts(self):
+        # keep_own: a candidate's application, typed for this one role. Seen live: a Full Stack Developer applicant's
+        # only project (React.js with Java and Spring Boot) was left off as "not about" the role, and HTML, CSS, Java
+        # and Spring Boot with it from their skills, because the role's catalog is the JavaScript stack.
+        facts = validate_profile({
+            'full_name': 'Kavya Example (fictional)', 'phone': '+91 90000 00034', 'email': '',
+            'skills': ['HTML', 'CSS', 'JavaScript', 'React.js', 'Java', 'Spring Boot', 'MySQL', 'Git'],
+            'experience': [{'company': 'Example Web Studio', 'position': 'Software Developer', 'start': 'Jan 2022',
+                            'end': 'Present', 'location': '',
+                            'bullets': ['Built Spring Boot REST APIs in Java for the order service.',
+                                        'Built React.js pages with HTML and CSS for the order screens.']}],
+            'education': [{'institution': 'Example Institute of Technology', 'degree': 'B.Tech', 'end': '2021'}],
+            'projects': ['Order Tracker - Tech stack: React.js, Java, Spring Boot, HTML, CSS | Built order tracking '
+                         'screens in React.js on a Spring Boot API.']})
+        target = role('Full Stack Developer')
+        origin = [line for job in facts['experience'] for line in job['bullets']]
+        by_role, _ = present_for_role(facts, target, 'Full Stack Developer', origin)
+        self.assertNotIn('projects', by_role, "the role's catalog alone calls it another field's project")
+        shown, left = present_for_role(facts, target, 'Full Stack Developer', origin, keep_own=True)
+        self.assertEqual(shown['projects'], facts['projects'])
+        self.assertEqual(shown['skills'], facts['skills'])
+        self.assertEqual(shown['experience'][0]['bullets'], origin)
+        self.assertEqual(left, [])
+        self.assertEqual(facts['skills'][0], 'HTML', 'the stored facts are unchanged')
+
     def test_every_catalog_role_shows_only_its_own_stack(self):
         mixed = validate_profile({
             'full_name': 'Mixed Example (fictional)', 'phone': '+91 90000 00033', 'email': '',

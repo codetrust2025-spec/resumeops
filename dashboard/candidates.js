@@ -127,7 +127,7 @@ function row(entry) {
       const again = el('button', 'Process again', 'cd-small');
       again.type = 'button';
       again.addEventListener('click', () => {
-        if (window.confirm(`Prepare a new resume for ${entry.name} from the same details? The current one stays.`)) start(entry, again);
+        if (window.confirm(`Prepare a new resume for ${entry.name} from the same details? The current one stays.`)) start(entry, again, true);
       });
       outputs.append(again);
     }
@@ -226,10 +226,11 @@ function details(form) {
   return box;
 }
 
-async function start(entry, button) {
+// again: Process again on a finished resume, a new version from the same details (the earlier ones stay).
+async function start(entry, button, again = false) {
   button.disabled = true;
   const response = await ResumeAuth.call('/api/intake/start', {method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({candidate: entry.candidate})});
+    body: JSON.stringify(again ? {candidate: entry.candidate, again: true} : {candidate: entry.candidate})});
   const result = await response.json().catch(() => ({}));
   $('cd-message').textContent = !response.ok ? (result.error || 'Could not start processing.') : result.created
     ? `Processing started for ${entry.name}. Its AI drafts appear for your review under My resumes.`
