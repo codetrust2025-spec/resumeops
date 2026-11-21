@@ -41,7 +41,6 @@
 .auto-req{color:#d02f3d;margin-left:3px}
 .auto-basics-optional .auto-req{display:none}
 .auto-sum-hint{display:none}
-.auto-extra>.auto-note{display:block;margin:2px 0 10px;white-space:normal}
 .auto-card .auto-note{color:var(--a-muted);font-weight:500;font-size:.86rem}
 .auto-page input:not([type=radio],[type=checkbox],[type=file]),.auto-page select,.auto-page textarea{min-height:40px;min-width:0;width:100%;
   margin:0;padding:8px 12px;border:1px solid var(--a-field);border-radius:8px;background:#fff;color:var(--a-ink);font-size:.95rem;font-weight:400}

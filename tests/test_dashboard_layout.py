@@ -151,7 +151,7 @@ class DashboardLayoutTests(unittest.TestCase):
     def test_desktop_uses_the_full_screen_without_page_scrolling_in_both_modes(self):
         for width, height in ((1366, 768), (1440, 900), (1920, 1080)):
             page = self.open(viewport={'width': width, 'height': height})
-            for mode in ('AI-first', 'Upload documents'):
+            for mode in ('Enter Manually', 'Upload Files'):
                 with self.subTest(resolution=f'{width}x{height}', mode=mode):
                     page.get_by_label(mode).check()
                     m = self.measure(page)
@@ -162,14 +162,14 @@ class DashboardLayoutTests(unittest.TestCase):
                     self.assertGreaterEqual(m['body'], 14, 'readable text, no scaling tricks')
                     self.assertGreaterEqual(m['label'], 13)
                     self.assertGreaterEqual(m['submit'], 40)
-                    if mode.startswith('AI-first'):
+                    if mode.startswith('Enter Manually'):
                         self.assertLessEqual(m['createScroll'], 0, 'the whole form fits, Create verified resume included')
                     rows = page.locator('#auto-job-list > li').count()
                     self.assertTrue(3 <= rows <= 12, 'one bounded page of history, sized to the panel')
                     self.assertEqual(page.locator('#auto-page').inner_text(), f'Showing 1 – {rows} of 15 resumes')
                     self.assertTrue(page.locator('#auto-pager').is_visible(), 'page numbers when there is more than one page')
             with self.subTest(resolution=f'{width}x{height}', state='expanded details'):
-                page.get_by_label('AI-first').check()
+                page.get_by_label('Enter Manually').check()
                 page.get_by_text('More details', exact=True).click()
                 self.assertLessEqual(self.measure(page)['pageY'], 0, 'expanded details scroll inside the form panel')
             page.close()
@@ -182,11 +182,11 @@ class DashboardLayoutTests(unittest.TestCase):
                 self.assertLessEqual(m['pageX'], 0)
                 self.assertGreaterEqual(m['historyTop'], m['createBottom'] - 1, 'My resumes follows the form')
                 self.assertGreaterEqual(m['submit'], 44, 'touch-friendly')
-                page.get_by_label('AI-first').check()
+                page.get_by_label('Enter Manually').check()
                 name, phone = page.get_by_label('Full name').bounding_box(), page.get_by_label('Phone', exact=True).bounding_box()
                 self.assertGreaterEqual(phone['y'], name['y'] + name['height'], 'Full name and Phone stack on a phone')
                 self.assertGreaterEqual(phone['width'], 250, 'room for the whole "Enter phone number" placeholder')
-                page.get_by_label('Upload documents').check()
+                page.get_by_label('Upload Files').check()
                 self.assertLessEqual(self.measure(page)['pageX'], 0)
                 # Every control of a complete card stays inside the card: nothing overlaps or spills sideways.
                 row = page.locator('#auto-job-list > li[data-status="complete"]').first
@@ -272,26 +272,26 @@ class DashboardLayoutTests(unittest.TestCase):
 
     def test_switching_modes_keeps_what_was_entered(self):
         page = self.open(viewport={'width': 1366, 'height': 768})
-        self.assertTrue(page.get_by_label('Upload documents').is_checked(), 'upload is the default')
+        self.assertTrue(page.get_by_label('Upload Files').is_checked(), 'upload is the default')
         self.assertLess(page.locator('#auto-upload').bounding_box()['y'], page.locator('#auto-role').bounding_box()['y'],
                         'documents come before the target role')
         page.get_by_label('Target role').fill('React.js Developer')
-        page.get_by_label('AI-first').check()
+        page.get_by_label('Enter Manually').check()
         self.assertTrue(page.get_by_placeholder('Enter full name').is_visible())
         self.assertTrue(page.get_by_placeholder('Enter phone number').is_visible())
         page.get_by_label('Full name').fill('Kiran Example (fictional)')
         page.get_by_label('Phone', exact=True).fill('+91 90000 00000')
         page.locator('#auto-background').fill('Worked at Example Works as Frontend Developer from 2023.')
-        page.get_by_label('Upload documents').check()
+        page.get_by_label('Upload Files').check()
         with tempfile.TemporaryDirectory() as folder:
             resume = Path(folder) / 'resume.txt'
             resume.write_text('Kiran Example (fictional)\n+91 90000 00000\n', encoding='utf-8')
             page.locator('#auto-file').set_input_files(str(resume))
-        page.get_by_label('AI-first').check()
+        page.get_by_label('Enter Manually').check()
         self.assertEqual(page.get_by_label('Full name').input_value(), 'Kiran Example (fictional)')
         self.assertEqual(page.get_by_label('Phone', exact=True).input_value(), '+91 90000 00000')
         self.assertIn('Example Works', page.locator('#auto-background').input_value())
-        page.get_by_label('Upload documents').check()
+        page.get_by_label('Upload Files').check()
         self.assertEqual(page.evaluate("document.querySelector('#auto-file').files.length"), 1, 'the chosen file stays')
         self.assertEqual(page.get_by_label('Target role').input_value(), 'React.js Developer')
         page.close()
@@ -308,13 +308,13 @@ class DashboardLayoutTests(unittest.TestCase):
 
         page.route('**/api/automation', submit)
         page.get_by_label('Target role').fill('Python Backend Developer')
-        page.get_by_label('Upload documents').check()
+        page.get_by_label('Upload Files').check()
         page.locator('#auto-file').set_input_files([
             {'name': 'education.txt', 'mimeType': 'text/plain', 'buffer': b'Example College diploma'},
             {'name': 'certificate.png', 'mimeType': 'image/png', 'buffer': b'fixture image bytes'}])
         page.locator('#auto-consent').check()
         with page.expect_request(lambda request: request.method == 'POST' and request.url.endswith('/api/automation')) as sent:
-            page.get_by_role('button', name='Create verified resume', exact=True).click()
+            page.get_by_role('button', name='Create Resume', exact=True).click()
         payload = sent.value.post_data_json
         self.assertEqual([item['extension'] for item in payload['documents']], ['txt', 'png'])
         self.assertNotIn('candidate', payload)

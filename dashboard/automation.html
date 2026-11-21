@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="dashboard-token" content="__TOKEN__">
-<title>Create a verified resume | ResumeOps</title>
+<title>Create Resume | ResumeOps</title>
 <link rel="stylesheet" href="/builder.css">
 <link rel="stylesheet" href="/automation.css">
 <script defer src="/auth.js"></script>
@@ -56,22 +56,18 @@
     <div class="auto-head">
       <span class="auto-tile" aria-hidden="true"><svg class="ic"><use href="#i-doc-check"/></svg></span>
       <div>
-        <h1 id="auto-create-title">Create a verified resume</h1>
+        <h1 id="auto-create-title">Create Resume</h1>
       </div>
     </div>
     <form id="ai-form" class="auto-card">
       <fieldset class="auto-choice">
         <legend class="auto-sr">Candidate evidence</legend>
-        <label><input type="radio" name="method" value="upload" checked><svg class="ic" aria-hidden="true"><use href="#i-doc"/></svg>Upload documents</label>
-        <label><input type="radio" name="method" value="manual"><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg>AI-first</label>
+        <label><input type="radio" name="method" value="upload" checked><svg class="ic" aria-hidden="true"><use href="#i-doc"/></svg>Upload Files</label>
+        <label><input type="radio" name="method" value="manual"><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg>Enter Manually</label>
       </fieldset>
       <label id="auto-upload" class="auto-field"><span class="auto-lbl">Documents<span class="auto-req" aria-hidden="true">*</span> <span class="auto-note">PDF, DOCX, TXT, JPG, PNG · max 10 files, 12 MB</span></span>
         <input type="file" id="auto-file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png" multiple required>
       </label>
-      <details id="auto-extra" class="auto-extra"><summary><svg class="ic auto-chev" aria-hidden="true"><use href="#i-chevron-right"/></svg><svg class="ic" aria-hidden="true"><use href="#i-user"/></svg><span class="auto-sum">Add details (optional)</span></summary>
-        <p class="auto-note">Typed facts supplement documents; name, phone and email take priority.</p>
-        <div id="auto-extra-slot"></div>
-      </details>
       <label class="auto-field"><span class="auto-lbl">Target role<span class="auto-req" aria-hidden="true">*</span></span>
         <span class="auto-input auto-input-search">
           <svg class="ic auto-lead" aria-hidden="true"><use href="#i-search"/></svg>
@@ -99,7 +95,7 @@
       </fieldset>
       <label class="auto-consent"><input id="auto-consent" type="checkbox" required>
         These facts are accurate. Unverified claims won't be published.</label>
-      <button id="auto-submit" type="submit" class="primary"><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg>Create verified resume</button>
+      <button id="auto-submit" type="submit" class="primary"><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg>Create Resume</button>
     </form>
   </section>
   <section id="auto-jobs" class="auto-panel auto-history-panel" aria-labelledby="auto-jobs-title">

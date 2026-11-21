@@ -140,26 +140,19 @@ function addSection([key, title, fields]) {
   byId('auto-lists').append(details);
 }
 
-// The candidate-details fields: the whole form in AI-first mode, and an optional "Add details" section under
-// the upload field (name and phone optional there, since the documents usually state them).
-const manualHome = document.createComment('auto-manual');
-byId('auto-manual').before(manualHome);
-
 function mode() {
   const manual = form.elements.method.value === 'manual';
   const fields = byId('auto-manual');
-  if (manual) manualHome.after(fields); else byId('auto-extra-slot').append(fields);
   fields.hidden = false;
   fields.disabled = false;
   fields.classList.toggle('auto-basics-optional', !manual);
   for (const field of byId('auto-basics').querySelectorAll('input')) field.required = manual;
-  byId('auto-extra').hidden = manual;
   byId('auto-upload').hidden = manual;
   fileControl.disabled = manual;
   return manual;
 }
 
-// True when anything was typed in the details fields (a blank "Add entry" row counts as nothing).
+// Documents may be supplemented by typed facts; blank entry rows add no facts.
 function typedAnything(info) {
   return Object.entries(info).some(([key, value]) => Array.isArray(value)
     ? value.some(row => Object.values(row).some(item => String(item).trim()))
@@ -370,10 +363,11 @@ function followMenus() {
 
 function placeMenu(button, panel) {
   if (!POPOVER) return;  // the fallback menu is positioned by CSS under its button
-  let height = panel.offsetHeight;
+  let height = panel.offsetHeight, width = panel.offsetWidth;
   if (!height) {  // not shown yet: measure it invisibly
     panel.classList.add('auto-measure');
     height = panel.offsetHeight;
+    width = panel.offsetWidth;
     panel.classList.remove('auto-measure');
   }
   const box = button.getBoundingClientRect();
@@ -381,7 +375,9 @@ function placeMenu(button, panel) {
   const below = view.clientHeight - box.bottom;
   const upward = below < height + 14 && box.top > below;
   panel.style.top = Math.max(8, upward ? box.top - 6 - height : box.bottom + 6) + 'px';
-  panel.style.right = Math.max(8, view.clientWidth - box.right) + 'px';
+  // Use viewport coordinates directly: fixed popovers can include the scrollbar gutter in their right inset.
+  panel.style.left = Math.max(8, Math.min(box.right - width, view.clientWidth - width - 8)) + 'px';
+  panel.style.right = 'auto';
 }
 
 function moreMenu(job, items) {

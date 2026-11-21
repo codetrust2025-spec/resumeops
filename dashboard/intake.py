@@ -76,7 +76,7 @@ def candidate_page(html):
     every file served from /apply/assets. The dashboard token is never placed in a public page."""
     replacements = (
         (b'content="__TOKEN__"', b'content=""'),
-        (b'<title>Create a verified resume | ResumeOps</title>', b'<title>Your application | ResumeOps</title>'),
+        (b'<title>Create Resume | ResumeOps</title>', b'<title>Your application | ResumeOps</title>'),
         (b'href="/builder.css"', b'href="/apply/assets/builder.css"'),
         (b'href="/automation.css">', b'href="/apply/assets/automation.css">\n'
                                      b'<link rel="stylesheet" href="/apply/assets/candidate.css">'),
