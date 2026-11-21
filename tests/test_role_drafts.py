@@ -154,8 +154,9 @@ class DraftRoleContentTests(unittest.TestCase):
         with patch('resume_bot.generate.generate', model):
             write_summary(mixed, 'Frontend Developer', 3, FRONTEND['keywords'], object())
             propose_projects(mixed, FRONTEND, 'Frontend Developer', 3, object())
-        summary_facts = json.loads(model.prompts[0].split('FACTS:\n', 1)[1].split('\nThe previous draft')[0])
-        self.assertEqual(summary_facts['confirmed_skills'], ['React.js', 'TypeScript'])
+        summary_facts = json.loads(model.prompts[0].split('DATA:\n', 1)[1])
+        self.assertEqual(summary_facts['role_focus'], 'dependable user interfaces')
+        self.assertNotIn('confirmed_skills', summary_facts)
         # No proposal came back, so the model was asked once more; the retry note follows the facts.
         project_facts = json.loads(model.prompts[-1].split('FACTS:\n', 1)[1].split('\nThe previous')[0])
         self.assertEqual(project_facts['candidate_skills'], ['React.js', 'TypeScript'])

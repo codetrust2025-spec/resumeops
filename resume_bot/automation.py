@@ -549,15 +549,18 @@ def tailor_role(facts, title, years, intelligence, ai, ranking_progress=None, su
     return profile, how
 
 
-def _verified_v3(profile, target, evidence):
-    """The watcher's independent check of a V3 automated resume against the attested evidence."""
-    from .generate import summary_problems
+def _verified_role_resume(profile, target, evidence, version):
+    """Independently check the role resume against its attested evidence and objective policy."""
+    from .generate import objective_problems, summary_problems
     from .workflow import role_name
 
     from .generate import content_problems
 
     title, years = role_name(target), target.get('experience_years')
-    if profile.get('headline') != title or summary_problems(profile.get('summary', ''), evidence, title, years):
+    summary = profile.get('summary', '')
+    problems = (objective_problems(summary, evidence, title) if version == 4 else
+                summary_problems(summary, evidence, title, years))
+    if profile.get('headline') != title or problems:
         return False
     if content_problems(profile, title):  # e.g. a job title listed as a skill: never verified
         return False
@@ -590,8 +593,8 @@ def verified_automation(profile, target, approval):
         evidence = validate_profile(proof['facts'])
     except (KeyError, ValueError):
         return False
-    if proof.get('v') == 3:
-        return _verified_v3(profile, target, evidence)
+    if proof.get('v') in (3, 4):
+        return _verified_role_resume(profile, target, evidence, proof['v'])
     # A separate watcher process checks that the submitted profile is exactly the
     # evidence, allowing only ranking and deterministic career-objective framing.
     expected = framing(profile, role_name(target), target['keywords'])
