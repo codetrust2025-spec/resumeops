@@ -41,7 +41,7 @@
     }
     for (let attempt = 0; ; attempt++) {
       try {
-        const response = await fetch(target, {credentials: 'omit', cache: 'no-store',
+        const response = await fetch(target, {credentials: 'same-origin', cache: 'no-store',
           signal: AbortSignal.timeout(timeoutMs), ...init, headers: headers(init.headers)});
         if ((response.status === 503 || response.status === 429) && attempt < 6) {
           await pause(1000 * (attempt + 1) + Math.random() * 1000);

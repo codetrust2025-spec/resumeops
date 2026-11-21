@@ -11,9 +11,13 @@ import re
 import tempfile
 from pathlib import Path
 
-from .ingest import EMAIL, PHONE, URL, _lines, _looks_like_name, form_fields, read_resume_text, repair
+from .ingest import (EMAIL, PHONE, SECTIONS, URL, _form_label, _lines, _looks_like_name, form_fields,
+                     read_resume_text, repair)
 
 PREFILL_EXTENSIONS = ('pdf', 'docx')
+HEADING_WORDS = re.compile(r'\b(?:employment|dates?|education|experience|history|details|information|form|profile|'
+                           r'summary|skills|objective|company|employer|qualifications?|projects?|contact|personal|'
+                           r'candidate|resume|curriculum|vitae|declaration|references)\b', re.IGNORECASE)
 PREFILL_LIMIT = 6 * 1024 * 1024
 
 
@@ -51,7 +55,14 @@ def quick_prefill(text):
     phone = PHONE.search(labelled.get('phone', '')) or PHONE.search(text)
     name = labelled.get('full_name', '')
     if not name:
-        name = next((line for line in lines[:6] if _looks_like_name(line)), '')
+        # The name heads the document: only lines above its first heading or labelled row are considered, and a
+        # heading itself ("Employment dates", "Personal Details") is never a name.
+        head = []
+        for line in lines[:6]:
+            if SECTIONS.match(line.rstrip(':')) or _form_label(line.rstrip(':')) or HEADING_WORDS.search(line):
+                break
+            head.append(line)
+        name = next((line for line in head if _looks_like_name(line)), '')
     links = [match.group(0).rstrip('.') for match in URL.finditer(text)]
     linkedin = next((link for link in links if 'linkedin.com' in link.lower()), '')
     github = next((link for link in links if 'github.com' in link.lower()), '')
