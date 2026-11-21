@@ -1213,11 +1213,11 @@ class AutomationJobs:
                 db.execute('UPDATE automation SET role=COALESCE(role,?) WHERE owner=? AND id=?', (intelligence['label'], *key))
             # The role resume: only what fits the selected role, from the candidate's facts (nothing added).
             presented, left_out = present_for_role(facts, target, label, origin['bullets'])
-            tailored = checkpoints.get('objective_tailored')
+            tailored = checkpoints.get('broad_objective_tailored')
             if tailored is None:
                 profile, how = tailor_role(presented, label, years, intelligence, model,
                                            ranking_progress, summary_progress)
-                tailored = checkpoint('objective_tailored', [profile, how])
+                tailored = checkpoint('broad_objective_tailored', [profile, how])
             profile, how = tailored
             progress(55, 'Role-based summary, skills and evidence order prepared')
             if not role_projects(facts, target) and not checkpoints.get('projects_reviewed'):
@@ -1269,7 +1269,7 @@ class AutomationJobs:
             approval = {'operation': job['id'], 'approved_by': job['owner'], 'claims': claims,
                         'project_names': [split_project(p)[0] for p in packet['profile'].get('projects', [])],
                         'market_sources': intelligence['sources'],
-                        'automation': {'v': 4, 'consent': request['consent'], 'submission_sha256': job['id'],
+                        'automation': {'v': 5, 'consent': request['consent'], 'submission_sha256': job['id'],
                                        'source_kind': source_kind,
                                        'source_sha256': hashlib.sha256(
                                            (source if isinstance(source, str) else
