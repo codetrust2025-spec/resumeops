@@ -22,15 +22,6 @@
 .auto-navs{display:flex;gap:28px}
 .auto-navlink[hidden]{display:none}
 .auto-navlink-other::after{display:none}
-/* Phones: the brand, then My resumes and Candidates as a full-width tab bar (both always reachable). */
-@media (max-width:600px){
-  .auto-bar{flex-wrap:wrap;height:auto;padding-top:8px}
-  .auto-brand{height:44px}
-  .auto-navs{width:100%;gap:0}
-  .auto-navlink{flex:1;justify-content:center;min-height:46px;font-size:1rem}
-  .auto-navlink .ic{width:20px;height:20px}
-  .auto-navlink-other::after{display:none}
-}
 .auto-navlink::after{content:"";position:absolute;left:0;right:0;bottom:9px;height:3px;border-radius:2px;background:#fff}
 
 /* Two panels */
@@ -420,4 +411,22 @@ li[data-status=blocked] .auto-state strong{background:var(--a-red-bg);color:var(
   .auto-stat-icon{display:none}
   .auto-stat{padding-left:12px}
   .auto-stat-value,.auto-stat div > span{white-space:nowrap}
+}
+/* Candidates integration: the tab's count of applications not started, a resume's link to its application, and the
+   resume opened from the Candidates page. */
+.auto-badge{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;
+  border-radius:11px;background:#f5b335;color:#10213f;font-size:.8rem;font-weight:800;line-height:1}
+.auto-badge[hidden]{display:none}
+.auto-application{justify-self:start;max-width:100%;color:var(--a-blue,#1f55b5);font-size:.86rem;font-weight:600;
+  text-decoration:underline;text-underline-offset:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#auto-job-list li.auto-focus{outline:3px solid #f5b335;outline-offset:2px;border-radius:14px;transition:outline-color .4s}
+/* Phones: the brand, then My resumes and Candidates as a full-width tab bar, so both are always reachable. Last in the
+   file so it follows the phone header sizes above. */
+@media (max-width:600px){
+  .auto-bar{flex-wrap:wrap;height:auto;padding:6px 12px 0;row-gap:0}
+  .auto-brand{height:44px}
+  .auto-navs{width:100%;gap:0;border-top:1px solid rgba(255,255,255,.14)}
+  .auto-navlink{flex:1;justify-content:center;min-height:46px;font-size:1rem;gap:8px}
+  .auto-navlink .ic{width:20px;height:20px}
+  .auto-navlink::after{bottom:0}
 }

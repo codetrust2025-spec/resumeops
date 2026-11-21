@@ -438,6 +438,19 @@ class IntakeDesk:
             return db.execute('SELECT job_owner, job_id, started, digest FROM intake_runs WHERE candidate=? '
                               'ORDER BY started DESC', (candidate,)).fetchall()
 
+    def applications(self, job_owner):
+        """{resume id: candidate ID} for an account's resumes that were started from applications."""
+        with closing(self.automation.connection()) as db:
+            return {row['job_id']: row['candidate'] for row in db.execute(
+                'SELECT r.job_id, r.candidate FROM intake_runs r JOIN intake i ON i.candidate = r.candidate '
+                'WHERE r.job_owner=? AND i.scrubbed IS NULL', (job_owner,))}
+
+    def not_started(self):
+        """How many applications wait for the operator to start processing (the Candidates tab's badge)."""
+        with closing(self.automation.connection()) as db:
+            return db.execute('SELECT count(*) FROM intake i WHERE scrubbed IS NULL AND NOT EXISTS '
+                              '(SELECT 1 FROM intake_runs r WHERE r.candidate = i.candidate)').fetchone()[0]
+
     def candidate_jobs(self, candidate):
         """The resumes prepared from this application, newest first, as the candidate may see them."""
         out = []

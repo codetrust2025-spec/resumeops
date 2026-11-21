@@ -69,3 +69,26 @@ dialog input { margin: 8px 0 12px; }
 .cd-details dd { margin: 0; overflow-wrap: anywhere; }
 .cd-entry { display: grid; gap: 2px; margin-bottom: 8px; }
 .cd-entry ul, .cd-details section > ul { margin: 4px 0 0; padding-left: 18px; }
+/* An application opened from a resume in My resumes. */
+tr.cd-focus > td { background: #fff7e0; }
+/* Phones: each application is a card, actions are full-size touch targets, figures stay compact. */
+@media (max-width: 760px) {
+  .cd-main { padding: 10px; gap: 10px; }
+  .cd-card { padding: 14px; border-radius: 12px; }
+  .cd-head h1 { font-size: 1.3rem; }
+  .cd-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .cd-stat { padding: 8px; }
+  .cd-stat strong { font-size: 1.1rem; }
+  .cd-stat span { font-size: .75rem; line-height: 1.2; }
+  #cd-rows > tr:not(.cd-details-row) { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-top: 10px; }
+  #cd-rows > tr.cd-details-row { border: 0; padding: 0; margin-top: -6px; }
+  #cd-rows > tr.cd-details-row > td { border: 1px solid var(--line); border-top: 0; border-radius: 0 0 12px 12px; padding: 12px; }
+  .cd-outputs { margin-top: 6px; }
+  .cd-outputs button, .cd-outputs a { min-height: 44px; flex: 1 1 calc(50% - 6px); justify-content: center; display: inline-flex; align-items: center; }
+  .cd-outputs .cd-start { flex-basis: 100%; }
+  .cd-details { grid-template-columns: minmax(0, 1fr); }
+  .cd-details dl { grid-template-columns: minmax(0, 1fr); }
+  .cd-details dt { margin-top: 4px; }
+  .cd-bar { padding: 0 12px; }
+  .cd-bar nav { gap: 12px; }
+}
