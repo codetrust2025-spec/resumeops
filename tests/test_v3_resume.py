@@ -391,7 +391,7 @@ class PageTests(unittest.TestCase):
                     item.wait_for()
                     self.assertIn('Arun Sample', item.locator('.auto-name').inner_text())
                     self.assertIn('Java Backend Developer', item.locator('.auto-role').inner_text())
-                    self.assertIn('AI draft, not yet confirmed', item.inner_text())
+                    self.assertIn('unconfirmed AI draft', item.inner_text())
                     cards = item.locator('.auto-proposal')
                     # Like the drafted work lines, each suggestion starts included; its background stays folded.
                     for index in range(2):

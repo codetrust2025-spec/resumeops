@@ -433,7 +433,7 @@ class HistoryStatusTests(unittest.TestCase):
                         self.assertNotIn('%', blocked.inner_text())
                         self.assertNotIn('Extracting', blocked.inner_text())
                         self.assertIn('Retrying automatically at', retrying.inner_text())
-                        self.assertIn('No action needed', retrying.inner_text())
+                        self.assertNotIn('Needs attention', retrying.inner_text())
             finally:
                 browser.close()
                 playwright.stop()

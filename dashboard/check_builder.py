@@ -292,7 +292,7 @@ def check(screenshots):
                 expect(page.locator('#ai-result')).to_contain_text('Ollama rewrote 0 of')
                 expect(page.locator('#ai-result')).to_contain_text('No line needed rewording.')
                 # 12 years was selected but the only role has no end date, so no years are stated.
-                expect(page.locator('#ai-result')).to_contain_text('No dated roles, so no years of experience are stated')
+                expect(page.locator('#ai-result')).to_contain_text('Experience years omitted: no dated roles')
                 picture('new-ats.png')
                 page.get_by_role('button',name='Create another resume').click()
                 expect(page.get_by_role('heading',name='Start',exact=True)).to_be_visible()

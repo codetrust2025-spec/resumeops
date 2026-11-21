@@ -242,14 +242,14 @@ async function humanSetup() {
       document.head.append(script);
     });
   } catch {
-    humanStatus('The check could not load. Check your connection, then reload the page. Your form is kept.');
+    humanStatus('Check unavailable. Check your connection and reload; your form is saved.');
     return;
   }
   human.widget = window.turnstile.render('#ap-human-box', {
     sitekey: human.siteKey, action: 'apply',
     callback: token => redeem(token),
     'expired-callback': () => { if (!validPass()) humanStatus('The check expired. It runs again by itself.'); },
-    'error-callback': () => { humanStatus('The check could not run. Reload the page to try again. Your form is kept.'); },
+    'error-callback': () => { humanStatus('Check failed. Reload; your form is saved.'); },
   });
 }
 
@@ -269,7 +269,7 @@ async function redeem(token) {
     } catch { /* network: try again */ }
     await pause(1500 * attempt);
   }
-  humanStatus('The check could not be confirmed. Reload the page to try again. Your form is kept.');
+  humanStatus('Check unconfirmed. Reload; your form is saved.');
 }
 
 function resetHuman() {
@@ -407,8 +407,8 @@ async function prefill(file) {
   }
   fill(result.candidate, true);
   saveDraft();
-  if (!result.ai) { status.textContent = 'Filled what the file states. Check every field and complete the rest.'; return; }
-  status.textContent = 'Filled what the file states. AI is reading it for more details; you can keep typing.';
+  if (!result.ai) { status.textContent = 'Details imported. Review and complete the fields.'; return; }
+  status.textContent = 'Details imported. AI is reading; you can keep editing.';
   const started = Date.now();
   while (Date.now() - started < 15 * 60 * 1000) {
     await pause(3000);
@@ -422,13 +422,13 @@ async function prefill(file) {
     if (data.status === 'complete') {
       fill(data.candidate, true);
       saveDraft();
-      status.textContent = 'AI reading finished: empty fields were filled. Check every field before you submit.';
+      status.textContent = 'Import complete. Review before submitting.';
       return;
     }
     if (data.status === 'error') break;
-    status.textContent = 'Filled what the file states. AI is reading it for more details (' + (data.stage || 'queued') + '); you can keep typing.';
+    status.textContent = 'AI reading (' + (data.stage || 'queued') + '). You can keep editing.';
   }
-  status.textContent = 'Filled what the file states. Check every field and complete the rest.';
+  status.textContent = 'Details imported. Review and complete the fields.';
 }
 
 async function loadRoles() {

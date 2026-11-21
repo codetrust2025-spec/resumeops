@@ -56,8 +56,8 @@ function stats() {
     return box;
   }));
   const paused = data.queue?.paused;
-  $('cd-queue-state').textContent = paused ? 'Processing is paused: applications are saved and wait.' :
-    'Start processing turns an application into a resume through your own upload workflow. One AI job runs at a time on the GPU, your own resumes first.';
+  $('cd-queue-state').textContent = paused ? 'Paused. Applications are saved.' :
+    'One AI job at a time. Your resumes have priority.';
   $('cd-pause').textContent = paused ? 'Resume processing' : 'Pause processing';
   $('cd-pause').dataset.paused = paused ? '1' : '';
 }
@@ -244,7 +244,7 @@ async function remove(entry) {
     body: JSON.stringify({candidate: entry.candidate, confirm: 'DELETE'})});
   const result = await response.json().catch(() => ({}));
   $('cd-message').textContent = !response.ok ? (result.error || 'Could not delete the application.')
-    : result.kept?.length ? 'A resume of this application is being built right now; delete it again when it finishes.'
+    : result.kept?.length ? 'Resume in progress. Delete after it finishes.'
       : `Deleted the application of ${entry.name}.`;
   opened.delete(entry.candidate);
   await refresh();
@@ -313,8 +313,8 @@ async function refresh() {
 function showHuman(state) {
   if (!state) return;
   $('cd-human-state').textContent = !state.configured
-    ? 'Off: anyone can submit without a check (rate limits still apply).'
-    : state.test_keys ? 'On with Cloudflare TEST keys: every check passes. Replace them with your real keys.'
+    ? 'Off. Anyone can submit; rate limits apply.'
+    : state.test_keys ? 'Test keys accept every request. Replace with production keys.'
       : `On: new applications and uploads need the check (site key ${state.site_key}).`;
   $('cd-human-off').hidden = !state.configured;
 }
@@ -336,7 +336,7 @@ async function init() {
   $('cd-link-close').addEventListener('click', () => $('cd-link-dialog').close());
   $('cd-pause').addEventListener('click', async () => {
     const paused = !$('cd-pause').dataset.paused;
-    if (paused && !window.confirm('Pause processing? Applications are still saved; preparation waits until you resume.')) return;
+    if (paused && !window.confirm('Pause processing? Applications stay saved until you resume.')) return;
     await ResumeAuth.call('/api/intake/queue', {method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({paused})});
     await refresh();

@@ -47,7 +47,7 @@
       banner.className = 'auth-banner';
       banner.setAttribute('role','alert');
       const text = document.createElement('p');
-      text.textContent = 'Sign in again as the same user. ResumeOps keeps your work and resumes after sign-in.';
+      text.textContent = 'Sign in as the same user to resume your saved work.';
       const button = document.createElement('button');
       button.type = 'button';
       button.id = 'auth-renew';

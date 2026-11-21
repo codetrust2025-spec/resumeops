@@ -136,8 +136,7 @@ function deriveYears() {
 function showTemplate() {
   const compact = fields.template.value === 'compact';
   el('template-name').textContent = templates[fields.template.value] || 'Standard';
-  el('template-note').textContent = compact ? 'Tighter spacing for a longer work history.' :
-    'A readable single-column layout with room for experience.';
+  el('template-note').textContent = compact ? 'Compact spacing.' : 'Single-column layout.';
 }
 fields.template.addEventListener('change', showTemplate);
 
@@ -258,7 +257,7 @@ function addEntry(kind, focus = true) {
     if (key === 'company' && !holder.children.length) input.value = fields.current_company.value;
     if (key === 'bullets') input.placeholder = 'One contribution per line';
     if (key === 'start' || key === 'end') input.placeholder = 'e.g. Jan 2020' + (key === 'end' ? ' or Present' : '');
-    if (key === 'end' && kind === 'experience') input.title = 'Use a date or Present so this role counts toward years of experience';
+    if (key === 'end' && kind === 'experience') input.title = 'Enter a date or Present to count this role.';
     wrapper.append(input);
     grid.append(wrapper);
   }
@@ -503,8 +502,8 @@ el('next').addEventListener('click', async () => {
     const mode = form.querySelector('[name=source]:checked').value;
     if (mode === 'import' && !imported) {
       showNotice(el('resume-upload').files.length ?
-        'Tap Import and prefill to read the selected file, or choose Enter manually.' :
-        'Choose a resume file and tap Import and prefill, or choose Enter manually.');
+        'Select Import and prefill, or Enter manually.' :
+        'Choose a file and select Import and prefill, or Enter manually.');
       return;
     }
     showStep(STEP.ROLE);
@@ -630,13 +629,12 @@ function showTailoring(tailoring, experience) {
   }
   if (!tailoring) {
     el('ai-note').textContent = 'Not tailored';
-    pane.replaceChildren(rows('p', 'This revision was generated before AI tailoring was available, or AI tailoring was disabled.'));
+    pane.replaceChildren(rows('p', 'AI tailoring details unavailable.'));
     return;
   }
   el('ai-note').textContent = tailoring.changed + ' line' + (tailoring.changed === 1 ? '' : 's') + ' improved';
   const intro = rows('p', 'Ollama rewrote ' + tailoring.changed + ' of ' + (tailoring.accepted + tailoring.rejected) +
-    ' lines for the target role. Every accepted line was checked to contain only the candidate\'s own facts; ' +
-    tailoring.rejected + ' suggestion' + (tailoring.rejected === 1 ? ' was' : 's were') + ' rejected and kept as written.');
+    ' lines. Facts checked. ' + tailoring.rejected + ' rejected; original wording kept.');
   const list = document.createElement('ol');
   list.className = 'changes';
   for (const change of tailoring.changes || []) {
@@ -652,7 +650,7 @@ function showTailoring(tailoring, experience) {
   }
   if (experience) {
     parts.push(rows('h3', 'Experience level'), rows('p', experience.used === null ?
-      'No dated roles, so no years of experience are stated on the resume.' :
+      'Experience years omitted: no dated roles.' :
       'Stated as ' + experience.used + ' years' + (experience.claimed !== null && experience.claimed !== experience.used ?
         ' (selected ' + experience.claimed + ', limited to the dated roles)' : '') + '.'));
   }
@@ -765,7 +763,7 @@ el('another').addEventListener('click', () => {
 });
 el('job-next').addEventListener('click', () => {
   clearForm();
-  feedback('New candidate started. The previous job keeps running and its result will appear when verified.');
+  feedback('New candidate started. The previous job continues in History.');
   showStep(STEP.INPUT);
 });
 el('job-mini-open').addEventListener('click', () => {
@@ -1080,7 +1078,7 @@ async function restoreDraft(navigate = true) {
   }
   furthestStep = Math.max(furthestStep, Math.min(draft.step || STEP.ROLE, STEP.REVIEW));
   showStep(navigate ? Math.min(Math.max(draft.step || STEP.ROLE, STEP.ROLE), STEP.EXPERIENCE) : STEP.PROCESSING, false);
-  feedback('Unsaved candidate details were restored on this tab. Review them before generating.');
+  feedback('Draft restored. Review before generating.');
   return true;
 }
 

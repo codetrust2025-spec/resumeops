@@ -10,11 +10,11 @@
 <script defer src="/auth.js"></script>
 <script defer src="/roles.js"></script>
 </head>
-<body>
-<header class="auto-nav"><div class="width"><strong>ResumeOps</strong><a href="/">Create a resume</a></div></header>
-<main class="width auto-main">
+<body class="roles-page">
+<header class="masthead"><div class="width header-inner"><strong class="brand">ResumeOps</strong><nav><a href="/">Create a resume</a></nav></div></header>
+<main class="width roles-main">
   <h1>Role catalog</h1>
-  <p>Operators manage roles here without changing code. The bundled catalog is always loaded; this managed file adds roles, replaces a role with the same id, or hides one with <code>"hidden": true</code>.</p>
+  <p>Add or override roles by ID. Hide bundled roles with <code>"hidden": true</code>.</p>
   <section class="auto-card">
     <h2>Roles in use</h2>
     <p id="roles-status" role="status"></p>

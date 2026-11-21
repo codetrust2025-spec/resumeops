@@ -59,8 +59,8 @@
 <form id="candidate" novalidate>
 
 <section data-step="0" class="step">
-<header class="step-head"><span class="badge">1</span><div><h2 id="h-start" tabindex="-1">Start</h2><p>Begin a new resume or open one you generated before.</p></div></header>
-<div class="start-hero"><svg class="icon big" aria-hidden="true"><use href="#i-doc"/></svg><h3>ResumeOps</h3><p>Build a targeted, ATS-ready resume in a few steps.</p>
+<header class="step-head"><span class="badge">1</span><div><h2 id="h-start" tabindex="-1">Start</h2></div></header>
+<div class="start-hero"><svg class="icon big" aria-hidden="true"><use href="#i-doc"/></svg><h3>ResumeOps</h3>
 <div class="stack"><button type="button" id="start-create" class="primary wide"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>Create Resume</button>
 <a class="secondary wide" href="/ai-builder">AI-first resume builder</a>
 <button type="button" id="start-history" class="secondary wide"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg>View History</button></div></div>
@@ -68,7 +68,7 @@
 </section>
 
 <section data-step="1" class="step" hidden>
-<header class="step-head"><span class="badge">2</span><div><h2 id="h-input" tabindex="-1">Import or enter manually</h2><p>Start with an existing resume or enter the details from scratch.</p></div></header>
+<header class="step-head"><span class="badge">2</span><div><h2 id="h-input" tabindex="-1">Import or enter manually</h2></div></header>
 <fieldset class="choices" aria-label="How do you want to start?">
 <label class="choice" id="choice-import"><input type="radio" name="source" value="import" checked><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg><span><b>Import existing resume</b><small>Upload PDF, Word, TXT or Markdown to prefill your details.</small></span></label>
 <div class="import-panel" id="import-panel">
@@ -79,12 +79,12 @@
 <progress id="resume-import-progress" max="100" value="0" aria-label="Resume import progress" hidden></progress>
 <p id="resume-import-status" role="status" aria-live="polite"></p>
 </div>
-<label class="choice" id="choice-manual"><input type="radio" name="source" value="manual"><svg class="icon" aria-hidden="true"><use href="#i-pen"/></svg><span><b>Enter manually</b><small>Add the details step by step without a file.</small></span></label>
+<label class="choice" id="choice-manual"><input type="radio" name="source" value="manual"><svg class="icon" aria-hidden="true"><use href="#i-pen"/></svg><span><b>Enter manually</b></span></label>
 </fieldset>
 </section>
 
 <section data-step="2" class="step" hidden>
-<header class="step-head"><span class="badge">3</span><div><h2 id="h-role" tabindex="-1">Choose a target role</h2><p>Pick the role, template and experience level to tailor the resume.</p></div></header>
+<header class="step-head"><span class="badge">3</span><div><h2 id="h-role" tabindex="-1">Choose a target role</h2></div></header>
 <label>Target role<select name="role" required></select></label>
 <div class="fields">
 <label>Resume template<select name="template" required></select></label>
@@ -99,7 +99,7 @@
 </section>
 
 <section data-step="3" class="step" hidden>
-<header class="step-head"><span class="badge">4</span><div><h2 id="h-personal" tabindex="-1">Personal details</h2><p>Review the basic contact information.</p></div></header>
+<header class="step-head"><span class="badge">4</span><div><h2 id="h-personal" tabindex="-1">Personal details</h2></div></header>
 <div class="fields">
 <label>Full name<input name="full_name" autocomplete="name" required maxlength="120"></label>
 <label>Email<input name="email" type="email" autocomplete="email" required maxlength="254"></label>
@@ -116,7 +116,7 @@
 </section>
 
 <section data-step="4" class="step" hidden>
-<header class="step-head"><span class="badge">5</span><div><h2 id="h-exp" tabindex="-1">Experience and education</h2><p>Add verified work history, skills, projects and education.</p></div></header>
+<header class="step-head"><span class="badge">5</span><div><h2 id="h-exp" tabindex="-1">Experience and education</h2></div></header>
 <div role="tablist" class="seg" aria-label="Experience sections">
 <button type="button" role="tab" id="tab-experience" aria-controls="pane-experience" aria-selected="true"><svg class="icon" aria-hidden="true"><use href="#i-brief"/></svg>Experience <span id="count-experience">(0)</span></button>
 <button type="button" role="tab" id="tab-education" aria-controls="pane-education" aria-selected="false" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#i-cap"/></svg>Education <span id="count-education">(0)</span></button>
@@ -136,7 +136,7 @@
 </section>
 
 <section data-step="5" class="step" hidden>
-<header class="step-head"><span class="badge">6</span><div><h2 id="h-review" tabindex="-1">Review and confirm facts</h2><p>Compare the imported text with the extracted details and fix anything missing.</p></div></header>
+<header class="step-head"><span class="badge">6</span><div><h2 id="h-review" tabindex="-1">Review and confirm facts</h2><p>Verify the extracted details.</p></div></header>
 <div id="missing-fields" class="missing" hidden></div>
 <div class="compare">
 <div class="compare-col" id="original-col"><h3>Original resume text</h3><textarea id="import-source" readonly rows="9" aria-label="Original resume text"></textarea></div>
@@ -146,13 +146,13 @@
 </section>
 
 <section data-step="6" class="step" hidden>
-<header class="step-head"><span class="badge">7</span><div><h2 id="h-generate" tabindex="-1">Generate resume</h2><p>Create a tailored resume for the selected role.</p></div></header>
+<header class="step-head"><span class="badge">7</span><div><h2 id="h-generate" tabindex="-1">Generate resume</h2></div></header>
 <div class="generate-card"><svg class="icon big" aria-hidden="true"><use href="#i-doc"/></svg><dl id="generate-summary" class="summary-grid"></dl>
 <button type="submit" id="generate" class="primary wide"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Generate resume</button></div>
 </section>
 
 <section data-step="7" class="step live" id="generation" aria-live="polite" aria-atomic="false" hidden>
-<header class="step-head"><span class="badge">8</span><div><h2 id="job-title" tabindex="-1">Processing Resume — 0%</h2><p id="job-candidate">Your resume is being prepared. Progress comes from the watcher in real time.</p></div><span id="job-state" class="live-state"></span></header>
+<header class="step-head"><span class="badge">8</span><div><h2 id="job-title" tabindex="-1">Processing Resume — 0%</h2><p id="job-candidate">Preparing your resume.</p></div><span id="job-state" class="live-state"></span></header>
 <ol id="job-pipeline" class="pipeline" aria-label="Processing pipeline"></ol>
 <div class="progress-card"><div class="progress-top"><span class="spinner" aria-hidden="true"></span><div><strong id="job-percent">0%</strong><small id="job-count">0 of 8 complete</small></div></div>
 <progress id="job-progress" max="100" value="0" aria-label="Resume generation progress"></progress></div>
@@ -166,15 +166,15 @@
 
 <section data-step="8" class="step results" id="results" hidden>
 <header class="step-head"><span class="badge">9</span><div><h2 id="h-results" tabindex="-1">Resume results</h2><p id="result-name"></p></div></header>
-<p id="result-success" class="success" role="status" hidden>Resume completed successfully. The builder is cleared and ready for the next candidate.</p>
+<p id="result-success" class="success" role="status" hidden>Resume ready. You can start another candidate.</p>
 <div class="result-grid">
-<button type="button" class="tile" data-tab="tab-preview"><svg class="icon" aria-hidden="true"><use href="#i-doc"/></svg><span><b>Resume Preview</b><small>View the final resume</small></span></button>
-<button type="button" class="tile" data-tab="tab-ats"><span class="ring" id="ats-ring"><b id="ats-ring-value">–</b></span><span><b>ATS Score</b><small>ATS readiness score</small></span></button>
-<a class="tile" id="tile-pdf"><svg class="icon pdf" aria-hidden="true"><use href="#i-pdf"/></svg><span><b>PDF Download</b><small>Verified local PDF</small></span></a>
-<button type="button" class="tile" data-tab="tab-latex"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg><span><b>LaTeX Code</b><small>View or copy the .tex</small></span></button>
+<button type="button" class="tile" data-tab="tab-preview"><svg class="icon" aria-hidden="true"><use href="#i-doc"/></svg><span><b>Resume Preview</b></span></button>
+<button type="button" class="tile" data-tab="tab-ats"><span class="ring" id="ats-ring"><b id="ats-ring-value">–</b></span><span><b>ATS Score</b></span></button>
+<a class="tile" id="tile-pdf"><svg class="icon pdf" aria-hidden="true"><use href="#i-pdf"/></svg><span><b>PDF Download</b></span></a>
+<button type="button" class="tile" data-tab="tab-latex"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg><span><b>LaTeX Code</b></span></button>
 <a class="tile" id="tile-overleaf" target="_blank" rel="noopener noreferrer"><svg class="icon green" aria-hidden="true"><use href="#i-link"/></svg><span><b>Overleaf Link</b><small id="overleaf-note">Open in Overleaf</small></span></a>
 <button type="button" class="tile" data-tab="tab-ai"><svg class="icon" aria-hidden="true"><use href="#i-pen"/></svg><span><b>AI Improvements</b><small id="ai-note">Role-tailored lines</small></span></button>
-<button type="button" class="tile" id="tile-history"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg><span><b>History</b><small>View past resumes</small></span></button>
+<button type="button" class="tile" id="tile-history"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg><span><b>History</b></span></button>
 </div>
 <div role="tablist" aria-label="Resume result views" class="tabs"><button type="button" role="tab" id="tab-preview" aria-controls="result-preview" aria-selected="true">Resume Preview</button><button type="button" role="tab" id="tab-latex" aria-controls="result-latex" aria-selected="false" tabindex="-1">LaTeX Code</button><button type="button" role="tab" id="tab-ats" aria-controls="result-ats" aria-selected="false" tabindex="-1">ATS Analysis</button><button type="button" role="tab" id="tab-ai" aria-controls="result-ai" aria-selected="false" tabindex="-1">AI Improvements</button></div>
 <div role="tabpanel" id="result-preview" aria-labelledby="tab-preview"><div class="actions" id="pdf-actions"></div><iframe id="pdf-preview" title="PDF preview" hidden></iframe><details class="more" id="preview-text-box"><summary>Plain-text version</summary><div id="preview-text"></div></details></div>
@@ -191,9 +191,9 @@
 <aside class="side">
 <section class="card template-panel"><h2>Selected template</h2>
 <div class="sheet" aria-hidden="true"><i></i><i></i><b></b><i></i><i></i><b></b><i></i><i></i><i></i></div>
-<h3 id="template-name">Standard</h3><p id="template-note">A readable single-column layout with room for experience.</p>
+<h3 id="template-name">Standard</h3><p id="template-note">Single-column layout.</p>
 </section>
-<section class="card tips"><h2>How it works</h2><ol><li>Import or enter verified facts.</li><li>Pick the target role and template.</li><li>Review, confirm and generate.</li><li>Watch real progress, then download.</li></ol><p>Nothing is invented: generation only rewrites facts you confirmed.</p></section>
+
 </aside>
 </div>
 

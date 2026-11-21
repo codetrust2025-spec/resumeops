@@ -195,7 +195,7 @@ def main():
         results['displayed_percents'] = sorted(set(percents))
         results['stages_seen'] = stages
         expect(page.locator('#result-success')).to_be_visible()
-        expect(page.locator('#result-success')).to_contain_text('Resume completed successfully')
+        expect(page.locator('#result-success')).to_contain_text('Resume ready.')
         expect(page.locator('#pdf-actions')).to_contain_text('Download PDF')
         expect(page.locator('#pdf-actions')).to_contain_text('Open Overleaf project')
         expect(page.locator('#download-latex')).to_have_attribute('href', re.compile('main.tex'))

@@ -519,7 +519,7 @@ function chosenCertifications(form) {
     if (!item.titleField) return item.value;
     const title = item.titleField.value.trim().replace(/^Udemy:\s*/i, '');
     if (!title) {
-      const error = new Error('Enter the course title exactly as on your certificate, or untick the course.');
+      const error = new Error('Enter the printed course title or untick the course.');
       error.control = item.titleField;
       throw error;
     }
@@ -537,7 +537,7 @@ function proposalCards(job) {
     const card = element('fieldset');
     card.className = 'auto-proposal';
     card.dataset.index = index;
-    card.append(element('legend', 'Suggested project ' + (index + 1) + ' (AI draft, not yet confirmed)'));
+    card.append(element('legend', 'Suggested project ' + (index + 1) + ' (unconfirmed AI draft)'));
     const name = element('input'); name.name = 'name'; name.value = proposal.name; name.maxLength = 70;
     const nameLabel = element('label', 'Project name'); nameLabel.append(name);
     const facts = element('dl');
@@ -581,7 +581,7 @@ function proposalsForm(job) {
   const box = element('form');
   box.className = 'auto-answer auto-proposals';
   box.noValidate = true;
-  box.append(element('p', job.error || 'Suggested projects are ready for your review.'), ...proposalCards(job));
+  box.append(element('p', job.error || 'Review suggested projects.'), ...proposalCards(job));
   const certs = certificationChoices(job);
   if (certs) box.append(certs);
   const submit = element('button', 'Save project choices');
@@ -671,7 +671,7 @@ const FIELD_WORDS = {company: 'employer', position: 'job title', start: 'start d
 
 function retryText(job) {
   const at = job.next_retry ? new Date(job.next_retry * 1000).toLocaleTimeString() : 'shortly';
-  return (job.error ? job.error + ' ' : '') + 'Retrying automatically at ' + at + '. No action needed.';
+  return (job.error ? job.error + ' ' : '') + 'Retrying automatically at ' + at + '.';
 }
 
 // Raw validation text from submissions made before editable questions existed.
@@ -711,7 +711,7 @@ function answerForm(job) {
   const box = element('form');
   box.className = 'auto-answer';
   box.noValidate = true;
-  box.append(element('p', job.error || 'Your documents do not state some required details.'));
+  box.append(element('p', job.error || 'Confirm the missing details.'));
   for (const question of job.questions || []) {
     const label = element('label', question.label);
     if (question.drafted) label.classList.add('auto-drafted');
