@@ -498,7 +498,7 @@ class AutomationJobs:
         fields = 'id, status, stage, percent, attempts, next_retry, error, created, updated, job, notice, role, candidate'
         with closing(self.connection()) as db:
             rows = db.execute(f"SELECT {fields}, CASE status WHEN 'needs_input' THEN checkpoints END AS waiting, "
-                              'facts IS NOT NULL AS regenerable '
+                              "facts IS NOT NULL AS regenerable, CASE WHEN json_valid(payload) THEN json_extract(payload, '$.edited_from') END AS edited_from "
                               'FROM automation WHERE owner=? AND (? IS NULL OR id=?) ORDER BY created DESC LIMIT 50',
                               (owner, identity, identity)).fetchall()
         state = self.workspace.automation_state()
@@ -511,6 +511,8 @@ class AutomationJobs:
                 job['queue_paused'] = self.paused()
             job['notice'] = json.loads(job.get('notice') or '[]')
             job['regenerable'] = bool(job.get('regenerable')) and job['status'] == 'complete'
+            if not job.get('edited_from'):
+                job.pop('edited_from', None)  # only an AI Edit version names the resume it came from
             waiting = json.loads(job.pop('waiting') or '{}')  # only the questions and proposals leave the server
             if job['status'] == 'needs_input':
                 job['questions'] = [{key: question.get(key) for key in ('id', 'field', 'label', 'explanation', 'value',
@@ -870,6 +872,26 @@ class AutomationJobs:
         if not result['edits'] and not result['keywords']:
             raise EditError('No change to propose: the resume already matches.')
         return result
+
+    def compare(self, owner, identifier):
+        """An AI Edit version beside the resume it came from: changed fields, role and ATS score of both."""
+        from resume_bot.ai_edit import EditError, compare
+        with closing(self.connection()) as db:
+            row = db.execute('SELECT id, role, facts, payload, notice, updated FROM automation WHERE owner=? AND id=?',
+                             (owner, identifier)).fetchone()
+            if not row or not row['facts']:
+                raise EditError('Only a finished resume can be compared.')
+            source = json.loads(row['payload'] or '{}').get('edited_from')
+            parent = db.execute('SELECT id, role, facts, updated FROM automation WHERE owner=? AND id=?',
+                                (owner, source)).fetchone() if source else None
+        if not parent or not parent['facts']:
+            raise EditError('The original version is no longer available (it was deleted).')
+        ats = {job['id']: (job.get('ats') or {}).get('ats_readiness') for job in self.list(owner)
+               if job['id'] in (row['id'], parent['id'])}
+        side = lambda item: {'id': item['id'], 'role': item['role'], 'updated': item['updated'], 'ats': ats.get(item['id'])}
+        notes = [note for note in json.loads(row['notice'] or '[]') if note.startswith(('Edited by you', 'Tailored'))]
+        return {'original': side(parent), 'edited': side(row), 'notes': notes,
+                'changes': compare(json.loads(parent['facts']), json.loads(row['facts']))}
 
     def edit_apply(self, owner, identifier, edits, keywords=None, strengths=None):
         """A new version of a finished resume with the approved changes (the original stays). Every change is checked

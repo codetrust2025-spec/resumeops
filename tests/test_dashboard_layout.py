@@ -454,6 +454,28 @@ class DashboardLayoutTests(unittest.TestCase):
         self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth - innerWidth'), 0)
         page.close()
 
+    def test_an_edited_version_is_compared_with_its_original_on_a_phone(self):
+        from playwright.sync_api import expect
+        jobs = fake_jobs(4)
+        done = next(job for job in jobs if job['status'] == 'complete')
+        done['edited_from'] = 'f' * 64
+        page = self.open(jobs, **self.playwright.devices['iPhone 13'])
+        page.route('**/api/automation/compare', lambda route: route.fulfill(status=200, content_type='application/json', body=json.dumps({
+            'original': {'id': 'f' * 64, 'role': 'Java Developer', 'updated': 1, 'ats': 88},
+            'edited': {'id': done['id'], 'role': 'Java Backend Developer', 'updated': 2, 'ats': 94},
+            'notes': ['Edited by you: End (Example University): 2024 -> 2026.'],
+            'changes': [{'field': 'End (Example University)', 'original': '2024', 'edited': '2026'}]})))
+        row = page.locator(f'#auto-job-list > li[data-id="{done["id"]}"]')
+        row.locator('.auto-kebab').click()
+        row.get_by_role('button', name=re.compile('^Compare with original')).click()
+        dialog = page.locator('#auto-compare-dialog')
+        expect(dialog).to_contain_text('End (Example University)')
+        expect(dialog).to_contain_text('ATS 88')
+        expect(dialog).to_contain_text('ATS 94')
+        expect(dialog).to_contain_text('Java Backend Developer')
+        self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth - innerWidth'), 0)
+        page.close()
+
     def test_ai_drafts_and_projects_are_reviewed_in_one_card(self):
         from playwright.sync_api import expect
         jobs = fake_jobs(4)

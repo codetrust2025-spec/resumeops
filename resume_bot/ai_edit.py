@@ -299,6 +299,41 @@ def tailor(facts, jd_text, role):
     return {'role': new_role, 'keywords': have, 'gaps': gaps, 'edits': edits, 'strengths': strengths}
 
 
+def compare(original, edited):
+    """The differences between an original resume's facts and an edited version's, for the side-by-side view:
+    changed values by field, and for lists (skills, certifications, projects, a job's work lines) the items added
+    and removed, or that only their order changed."""
+    changes = []
+    for key in SCALARS:
+        if (original.get(key) or '') != (edited.get(key) or ''):
+            changes.append({'field': LABELS[key], 'original': original.get(key) or '', 'edited': edited.get(key) or ''})
+    for section, fields in ENTRY_FIELDS.items():
+        old, new = original.get(section, []), edited.get(section, [])
+        for i in range(max(len(old), len(new))):
+            a, b = (old[i] if i < len(old) else {}), (new[i] if i < len(new) else {})
+            where = b.get('company') or b.get('institution') or a.get('company') or a.get('institution') or f'entry {i + 1}'
+            for field in fields:
+                if (a.get(field) or '') != (b.get(field) or ''):
+                    changes.append({'field': f'{LABELS[field]} ({where})', 'original': a.get(field) or '',
+                                    'edited': b.get(field) or ''})
+            if section == 'experience':
+                changes += _list_changes(f'Work lines ({where})', a.get('bullets', []), b.get('bullets', []))
+    for key, label in (('skills', 'Technical Skills'), ('certifications', 'Certifications'), ('projects', 'Projects')):
+        changes += _list_changes(label, original.get(key, []), edited.get(key, []))
+    return changes
+
+
+def _list_changes(label, old, new):
+    removed = [item for item in old if item not in new]
+    added = [item for item in new if item not in old]
+    if removed or added:
+        return [{'field': label, 'original': '; '.join(removed) or '(none removed)',
+                 'edited': '; '.join(added) or '(none added)'}]
+    if old != new:
+        return [{'field': label, 'original': 'Original order', 'edited': 'Reordered'}]
+    return []
+
+
 def _resolve(facts, path):
     parts = path.split('.')
     node = facts
