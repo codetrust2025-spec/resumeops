@@ -152,7 +152,11 @@ class SelectedRoleControlsTheResumeTests(unittest.TestCase):
         target = role('Full Stack Developer')
         origin = [line for job in facts['experience'] for line in job['bullets']]
         by_role, _ = present_for_role(facts, target, 'Full Stack Developer', origin)
-        self.assertNotIn('projects', by_role, "the role's catalog alone calls it another field's project")
+        # The Full Stack Developer catalog now spans the web basics and Java/Spring Boot as well (requested), so even
+        # a resume built by role alone keeps this project and these skills.
+        self.assertEqual(by_role['projects'], facts['projects'])
+        for skill in ('HTML', 'CSS', 'Java', 'Spring Boot'):
+            self.assertIn(skill, by_role['skills'])
         shown, left = present_for_role(facts, target, 'Full Stack Developer', origin, keep_own=True)
         self.assertEqual(shown['projects'], facts['projects'])
         self.assertEqual(shown['skills'], facts['skills'])

@@ -533,11 +533,58 @@ def repair(out, source, name_hint=''):
         if not any(title in known or known in title for known in existing if known):
             out['projects'].append(item)
             existing.add(title)
+    _recover_bullets(out, source)
     # Current company: the employer of a role that the source says is ongoing.
     if not out['current_company']:
         out['current_company'] = next((entry['company'] for entry in out['experience']
                                        if entry.get('company') and PRESENT.search(entry.get('end') or '')), '')
     return out
+
+
+BULLET_LINE = re.compile(r'^\s*(?:[-•*▪●◦–]|\d{1,2}[.)])\s+(\S.*)$')
+
+
+def _words(text):
+    return set(re.findall(r'[a-z0-9.+#]+', _norm(text)))
+
+
+def _recover_bullets(out, source):
+    """Work lines the model left out, restored verbatim. Under each job's heading in the source, every bullet-marked
+    line up to the next job or section is the candidate's own line for that job; one the extraction does not hold
+    (not even reworded) is added. Seen live: "- Built responsive pages in React and HTML for client websites,with
+    reusable form components." was dropped, and the job was then drafted from its title and dates."""
+    raw = source.splitlines()
+    jobs = out.get('experience') or []
+    heads = []
+    for index, job in enumerate(jobs):
+        employer, title = _norm(job.get('company') or ''), _norm(job.get('position') or '')
+        if not employer:
+            continue
+        at = next((i for i, line in enumerate(raw) if employer in _norm(line) and (not title or title in _norm(line))),
+                  None)
+        if at is None:
+            at = next((i for i, line in enumerate(raw) if employer in _norm(line)), None)
+        if at is not None:
+            heads.append((at, index))
+    starts = sorted(at for at, _ in heads)
+    for at, index in heads:
+        stop = next((s for s in starts if s > at), len(raw))
+        found = []
+        for line in raw[at + 1:stop]:
+            match = BULLET_LINE.match(line)
+            if match:
+                found.append(' '.join(match.group(1).split()))
+            elif line.strip() and found:
+                break  # the job's list has ended (a section heading or other text follows)
+        job = jobs[index]
+        have = list(job.get('bullets') or [])
+        for line in found:
+            words = _words(line)
+            present = any(_norm(line) == _norm(b) or (words and len(words & _words(b)) / len(words | _words(b)) >= 0.6)
+                          for b in have)
+            if not present and not _restates_role(line, job):
+                have.append(line)
+        job['bullets'] = have
 
 
 EXPERIENCE_FIELDS = ('company', 'position', 'start', 'end', 'location')

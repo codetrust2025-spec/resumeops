@@ -21,7 +21,8 @@
    "Angular 2+"
   ],
   "Node.js": [
-   "NodeJS"
+   "NodeJS",
+   "node js"
   ],
   "Express.js": [
    "ExpressJS"
@@ -1374,17 +1375,21 @@
    "id": "fullstack-developer",
    "name": "Full Stack Developer",
    "family": "fullstack-js",
-   "hidden": true,
    "titleVariations": [
     "Full Stack Developer",
     "Senior Full Stack Developer",
-    "Full Stack Engineer"
+    "Full Stack Engineer",
+    "Full Stack Web Developer"
    ],
    "groups": {
     "Frameworks": [
      "React.js",
+     "Angular",
+     "Next.js",
      "Node.js",
-     "Express.js"
+     "Express.js",
+     "Spring Boot",
+     "Django"
     ],
     "Databases": [
      "MongoDB",
@@ -1404,15 +1409,25 @@
      "CI/CD"
     ],
     "Languages": [
+     "JavaScript",
      "TypeScript",
-     "JavaScript"
+     "HTML",
+     "CSS",
+     "Java",
+     "Python"
+    ],
+    "Testing": [
+     "Jest"
     ],
     "Tools": [
-     "Git"
+     "Git",
+     "Postman"
     ]
    },
    "projectThemes": [
-    "Task tracker with React, Node.js and PostgreSQL"
+    "Task tracker with React, Node.js and PostgreSQL",
+    "Online store with React front end and REST APIs",
+    "Appointment booking app with Angular and Spring Boot"
    ]
   },
   {

@@ -330,7 +330,7 @@ function openEdit(job) {
   editing.preview = null;
   for (const id of ['auto-edit-message', 'auto-edit-jd', 'auto-edit-jd-file']) byId(id).value = '';
   byId('auto-edit-for').textContent = job ? 'Editing ' + (job.candidate || 'this resume') + ' · ' + (job.role || '')
-    : 'Name the candidate in your request, or open AI Edit from a resume.';
+    : 'Name the candidate in your request; without a name you choose the resume after Preview.';
   byId('auto-edit-choose').hidden = true;
   byId('auto-edit-changes').hidden = true;
   byId('auto-edit-apply').hidden = true;
@@ -341,8 +341,8 @@ function openEdit(job) {
 async function editDocument() {
   const file = byId('auto-edit-jd-file').files[0];
   if (!file) return null;
-  const extension = file.name.match(/\.(pdf|docx|txt)$/i)?.[1]?.toLowerCase();
-  if (!extension || file.size > 4 * 1024 * 1024) throw new Error('Upload the job description as PDF, DOCX or TXT, up to 4 MB.');
+  const extension = file.name.match(/\.(pdf|docx|txt|jpg|jpeg|png)$/i)?.[1]?.toLowerCase();
+  if (!extension || file.size > 4 * 1024 * 1024) throw new Error('Upload the job description as PDF, DOCX, TXT, JPG or PNG, up to 4 MB.');
   const bytes = new Uint8Array(await file.arrayBuffer());
   let binary = '';
   for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));

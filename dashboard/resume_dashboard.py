@@ -1075,8 +1075,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                     document = request.get('jd_document')
                     if isinstance(document, dict) and document.get('document'):
                         extension = str(document.get('extension', '')).lower()
-                        if extension not in ('pdf', 'docx', 'txt'):
-                            return self.send_json({'error': 'Upload the job description as PDF, DOCX or TXT.'}, 415)
+                        if extension not in ('pdf', 'docx', 'txt', 'jpg', 'jpeg', 'png'):
+                            return self.send_json({'error': 'Upload the job description as PDF, DOCX, TXT, JPG or PNG.'}, 415)
                         text = workspace.read_automation_source(extension, base64.b64decode(document['document']))
                         jd = (jd + '\n' + (text if isinstance(text, str) else json.dumps(text))).strip()
                     return self.send_json(automation.edit_preview(owner, request.get('message', ''), identifier, jd))
