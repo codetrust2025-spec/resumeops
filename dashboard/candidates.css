@@ -42,7 +42,7 @@ button { display: inline-flex; align-items: center; justify-content: center; gap
 .cd-whatsapp:hover, .cd-whatsapp:focus-visible { background: #166437; }
 .cd-whatsapp[hidden] { display: none; }
 .cd-share-row > button, .cd-share-row > .cd-whatsapp { min-height: 40px; }
-.cd-stats { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+.cd-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 260px)); gap: 12px; margin-top: 16px; }
 .cd-stat { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 8px; padding: 10px 12px;
   border-radius: 10px; background: var(--tint); }
 .cd-stat .cd-ic { color: var(--blue); width: 20px; height: 20px; }
@@ -115,7 +115,6 @@ tr.cd-focus > td { background: #fff7e0; }
 
 /* Narrower computers and tablets: the header and the Turnstile row wrap. */
 @media (max-width: 1100px) {
-  .cd-stats { grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); }
   .cd-head { grid-template-columns: minmax(0, 1fr); }
   .cd-human-card { grid-template-columns: minmax(0, 1fr); }
   .cd-human { grid-template-columns: repeat(2, minmax(0, 1fr)); }
