@@ -12,7 +12,10 @@ CLAIMS = ['Automated deployment pipelines with Docker and Jenkins, achieving zer
           "Integrated Cypress for front-end testing, improving the user interface's reliability.",
           'Configured caching with Redis, resulting in faster page loads for the catalogue.',
           'Refactored queries in PostgreSQL to reduce response time for the order reports.',
-          'Tuned the Jenkins pipeline stages, which significantly shortened release cycles.']
+          'Tuned the Jenkins pipeline stages, which significantly shortened release cycles.',
+          # Seen live in a proposed project for a candidate with React, Node.js and Git:
+          'Deployed application to production server using Git hooks and CI/CD pipeline.',
+          'Optimized task assignment logic with dynamic priority queues in the Node.js service.']
 TASKS = ['Built Redux reducers and selectors for the cart state in React.',
          'Wrote higher-order components in React for shared form validation on the checkout page.',
          'Designed MongoDB collections for patient records and appointment reminders.',
@@ -39,6 +42,17 @@ class NoClaimedResultsTests(unittest.TestCase):
         for line in TASKS:
             with self.subTest(line=line):
                 self.assertIsNone(DRAFT_ACHIEVEMENT.search(line))
+
+    def test_a_capitalised_express_is_the_express_tool(self):
+        from resume_bot.generate import tools_outside
+        tools = named_tools()
+        line = 'Configured Express routes for task CRUD operations in the Node.js backend.'
+        self.assertEqual(tools_outside(line, ['React', 'Node.js', 'Git'], tools), ['Express.js'],
+                         'not stated by the candidate: rejected')
+        self.assertEqual(tools_outside(line, ['React', 'Node.js', 'Express'], tools), [], 'stated as "Express"')
+        self.assertEqual(tools_outside(line, ['Node.js', 'Express.js'], tools), [], 'stated as "Express.js"')
+        self.assertEqual(tools_outside('Wrote tests that express each rule in Node.js.', ['Node.js'], tools), [],
+                         'the everyday word is not the tool')
 
     def test_drafted_lines_with_claims_never_reach_the_review_card(self):
         profile = validate_profile({
