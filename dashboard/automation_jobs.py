@@ -861,7 +861,8 @@ class AutomationJobs:
                   'gaps': []}
         if jd.strip():
             tailored = tailor(facts, jd, role)
-            result.update(keywords=tailored['keywords'], gaps=tailored['gaps'], edits=tailored['edits'])
+            result.update(keywords=tailored['keywords'], gaps=tailored['gaps'], edits=tailored['edits'],
+                          strengths=tailored['strengths'])
         if message and not (jd.strip() and not re.search(r'\b(?:change|update|correct|fix|set|replace|add|remove|'
                                                           r'delete)\b', message, re.I)):
             result['edits'] += corrections(facts, message, Ollama(model=self.workspace.model))
@@ -869,7 +870,7 @@ class AutomationJobs:
             raise EditError('No change to propose: the resume already matches.')
         return result
 
-    def edit_apply(self, owner, identifier, edits, keywords=None):
+    def edit_apply(self, owner, identifier, edits, keywords=None, strengths=None):
         """A new version of a finished resume with the approved changes (the original stays). Every change is checked
         against the current facts; the new version is built by the normal pipeline (PDF, LaTeX, ATS, Overleaf)."""
         from resume_bot.ai_edit import EditError, apply_edits
@@ -896,8 +897,9 @@ class AutomationJobs:
             now = time.time()
             new_id = hashlib.sha256(json.dumps({'from': identifier, 'edits': edits, 'keywords': keywords, 'at': now},
                                                sort_keys=True, default=str).encode()).hexdigest()
+            strengths = [' '.join(str(s).split())[:40] for s in (strengths or []) if str(s).strip()][:4]
             payload = json.dumps({'consent': CONSENT_VERSION, 'role': role, 'regenerated_from': identifier,
-                                  'edited_from': identifier, 'jd_keywords': keywords})
+                                  'edited_from': identifier, 'jd_keywords': keywords, 'jd_strengths': strengths})
             db.execute('INSERT INTO automation(owner,id,payload,checkpoints,created,updated,role,candidate,percent,stage,'
                        "origin,source,client,notice) VALUES (?,?,?,?,?,?,?,?,30,'AI Edit approved: building the new version',"
                        '?,?,?,?)',
@@ -1202,6 +1204,10 @@ class AutomationJobs:
                 # terms (skills and evidence order, ATS keywords). Content still comes from the facts only.
                 jd_terms = [t for t in request['jd_keywords'] if isinstance(t, str)]
                 intelligence = {**intelligence, 'terms': list(dict.fromkeys([*jd_terms, *intelligence['terms']]))}
+            if request.get('jd_strengths'):
+                # The Career Objective's two priorities, as the job description asks for them (within the role's
+                # approved priorities: the objective stays role-wide and names no tools, projects or business areas).
+                intelligence = {**intelligence, 'jd_strengths': [s for s in request['jd_strengths'] if isinstance(s, str)]}
             target = {'role': intelligence['role'], 'keywords': intelligence['terms']}
             label = intelligence['label']
             # A designation is never a skill, and extraction notes are never resume text (any source, including a

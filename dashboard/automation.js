@@ -371,6 +371,7 @@ function showEditPreview(result) {
   });
   if (result.keywords.length) box.append(element('p', 'Job keywords your verified facts show (they lead the resume and its ATS keywords): ' + result.keywords.join(', ')));
   if (result.gaps.length) box.append(element('p', 'Skill gaps (not in the verified facts, so not added): ' + result.gaps.join(', ')));
+  if ((result.strengths || []).length >= 2) box.append(element('p', 'Career Objective priorities from the job description: ' + result.strengths.slice(0, 2).join(' and ')));
   box.hidden = false;
   byId('auto-edit-apply').hidden = false;
 }
@@ -415,7 +416,7 @@ async function applyEdit() {
   try {
     const response = await ResumeAuth.call('/api/automation/edit-apply', {method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({id: result.id, edits: ticked, keywords: result.keywords})});
+      body: JSON.stringify({id: result.id, edits: ticked, keywords: result.keywords, strengths: result.strengths || []})});
     const answer = await response.json();
     if (!response.ok) throw new Error(answer.error || 'Could not apply the changes.');
     byId('auto-edit-dialog').close();

@@ -984,11 +984,17 @@ def broad_objective_problems(text, profile, role_title):
     return problems
 
 
-def write_summary(profile, role_title, years, keywords, ai, on_progress=None):
-    """Use Ollama to select two role-wide priorities, then render checked prose."""
+def write_summary(profile, role_title, years, keywords, ai, on_progress=None, emphasis=None):
+    """Use Ollama to select two role-wide priorities, then render checked prose. ``emphasis``: the priorities a job
+    description asks for (AI Edit, tailored to a JD), in its order; when two of them are the role's, they are used."""
     from itertools import permutations
 
     allowed = _objective_strengths(role_title)
+    wanted = [item for item in dict.fromkeys(emphasis or []) if item in allowed]
+    if len(wanted) >= 2:
+        for text in _broad_objectives(profile, role_title, wanted[:2]):
+            if not objective_problems(text, profile, role_title):
+                return text, 'job description'
     schema = {'type': 'object', 'additionalProperties': False, 'required': ['strengths'],
               'properties': {'strengths': {'type': 'array', 'minItems': 2, 'maxItems': 2,
                                            'items': {'type': 'string', 'enum': list(allowed)}}}}
@@ -1196,10 +1202,11 @@ def _top_up_projects(proposals, profile, role_title, ai, avoid=(), on_progress=N
         for raw in item['bullets']:
             if len(proposal['bullets']) >= PROJECT_BULLETS:
                 break
-            _accept_project_bullet(raw, proposal['stack'], proposal['bullets'], skills, tools, [], [*avoid, *others])
+            _accept_project_bullet(raw, proposal['stack'], proposal['bullets'], skills, tools, [], [*avoid, *others],
+                                   proposal['name'])
 
 
-def _accept_project_bullet(raw, stack, bullets, skills, tools, clash, avoid):
+def _accept_project_bullet(raw, stack, bullets, skills, tools, clash, avoid, name=''):
     """Add one model bullet to a proposal when it passes every check (True), extending the reviewed stack with a
     confirmed skill it uses; otherwise leave the proposal as it is (False)."""
     if not isinstance(raw, str):
@@ -1213,7 +1220,8 @@ def _accept_project_bullet(raw, stack, bullets, skills, tools, clash, avoid):
         return False
     # A bullet may name only tools in this project's stack or the candidate's confirmed skills
     # ("onboarding flow with Formik" is invented when the candidate never listed Formik).
-    if tools_outside(bullet, stack + skills, tools) or (clash and matched_terms(clash, bullet)):
+    if tools_outside(bullet, stack + skills, tools) or (clash and matched_terms(clash, bullet)) \
+            or unverified_names(bullet, [*stack, *skills, name]):
         return False
     # Projects describe different work from the experience section, and from each other. Against the
     # experience only a restated line counts (a shared opening such as "Configured Pub/Sub topics" is not).
@@ -1281,7 +1289,7 @@ def _checked_proposals(data, profile, role, avoid=(), grounded=False):
         stack = [s for s in stack if s not in clash]
         bullets = []
         for raw in item.get('bullets', []):
-            _accept_project_bullet(raw, stack, bullets, skills, tools, clash, avoid)
+            _accept_project_bullet(raw, stack, bullets, skills, tools, clash, avoid, name)
         # Up to five, the detailed ones first choice; the model's order is kept.
         best = sorted(bullets, key=lambda b: bool(draft_weakness(b)))[:PROJECT_BULLETS]
         bullets = [b for b in bullets if b in best]
@@ -1399,6 +1407,8 @@ def draft_role_content(profile, target, role_title, years, missing, need_skills,
     names = [place for place in [*(job.get('company') or '' for job in jobs),
                                  *(entry.get('institution') or '' for entry in profile['education'])] if len(place) > 2]
     tools, work, skills, feedback = named_tools(), {}, [], ''
+    stated = [*profile.get('skills', []), *(line for job in jobs for line in job.get('bullets', [])),
+              *profile.get('projects', []), *profile.get('certifications', [])]
     seen = {line.casefold() for job in jobs for line in job.get('bullets', [])}
     by_index = {role['index']: role for role in roles}
     have = {s.casefold() for s in profile.get('skills', [])}
@@ -1502,7 +1512,7 @@ def draft_role_content(profile, target, role_title, years, missing, need_skills,
                     line = plain_words(clean_bullet(plain(raw))).rstrip(' ;,')
                     if line and line[-1] not in '.!?':
                         line += '.'  # a complete sentence, never a fragment
-                    reason = draft_problem(line, allowed[role['kind']], tools, names, role['tense'])
+                    reason = draft_problem(line, allowed[role['kind']], tools, names, role['tense'], stated)
                     if not reason and BROKEN_WORDING.search(line):
                         reason = 'complete, grammatical sentences'
                     if not reason and role['kind'] == 'role' and (core or not grounded) and not matched_terms(core, line):
@@ -1596,7 +1606,35 @@ PAST_IRREGULAR = {'built', 'wrote', 'led', 'ran', 'made', 'set', 'kept', 'took',
                   'sped', 'fought', 'put', 'cut', 'met', 'sent', 'spent', 'found', 'read', 'understood', 'won'}
 
 
-def draft_problem(line, allowed, tools, names, tense):
+# Capitalised words an AI draft may use without the candidate stating them: generic acronyms and terms.
+GENERIC_NAMES = {'api', 'apis', 'rest', 'restful', 'ui', 'ux', 'crud', 'json', 'xml', 'http', 'https', 'url', 'urls',
+                 'ci', 'cd', 'ci/cd', 'mvc', 'sdk', 'cli', 'id', 'ids', 'pdf', 'csv', 'qa', 'uat', 'e2e', 'sql', 'html',
+                 'css', 'oop', 'dto', 'dtos', 'dag', 'dags', 'orm', 'ide', 'it', 'hr', 'otp', 'faq', 'kpi', 'kpis', 'i', 'a', 'an', 'the'}
+
+
+def unverified_names(text, known):
+    """Capitalised names in an AI-written line that the candidate's facts do not state ("Integrated Nodemailer for
+    reminders" for a candidate who never listed Nodemailer). The catalog knows many tools, but not every product: a
+    name is accepted only when the facts state it (``known``: their skills, stack, employers) or it is a generic
+    term. The first word of a sentence is its verb, not a name. Seen live in a proposed project."""
+    have = {word.casefold() for item in known for word in re.findall(r'[A-Za-z0-9][A-Za-z0-9.+#/-]*', str(item))}
+    have |= {str(item).casefold() for item in known}
+    found = []
+    for match in re.finditer(r'(?<![\w./+#-])([A-Z][A-Za-z0-9]*(?:[.+#/-][A-Za-z0-9+#]+)*\+*#?)', text):
+        before = text[:match.start()].rstrip()
+        if not before or before.endswith(('.', ':', '!', '?')):
+            continue  # a sentence's first word
+        word = match.group(1).rstrip('.')
+        if word.casefold() in have or word.casefold() in GENERIC_NAMES:
+            continue
+        previous = before.split()[-1].casefold() if before.split() else ''
+        if previous in have and (previous + ' ' + word.casefold()) not in GENERIC_NAMES:
+            continue  # the rest of a stated tool's name ("Docker Compose", "Cloud Composer")
+        found.append(word)
+    return found
+
+
+def draft_problem(line, allowed, tools, names, tense, stated=()):
     """Why a drafted work line cannot be offered (None if it can)."""
     if not 8 <= len(line.split()) <= 32:
         return 'bullets must be complete sentences of 12-28 words'
@@ -1608,7 +1646,8 @@ def draft_problem(line, allowed, tools, names, tense):
         return 'no achievements or claimed results: say what the work was and what it was for'
     if STANDALONE_NUMBER.search(line):
         return 'no numbers'
-    if tools_outside(line, allowed, tools):
+    # stated: everything the candidate's facts say (all their skills, lines and projects), for names beyond tools.
+    if tools_outside(line, allowed, tools) or unverified_names(line, [*allowed, *names, *stated]):
         return 'only the technologies listed in the facts'
     if any(re.search(r'(?<!\w)' + re.escape(name) + r'(?!\w)', line, re.IGNORECASE) for name in names):
         return 'no employer or institution names'

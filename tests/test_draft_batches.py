@@ -19,8 +19,8 @@ LINES = ['Built Spring Boot REST endpoints for a booking form and validated requ
          'Designed PostgreSQL indexes for warehouse stock queries after reviewing slow statements in execution plans.',
          'Secured supplier administration APIs with Spring Security roles and token validation filters.',
          'Exposed booking search through Spring MVC controllers returning paged JSON responses to browser pages.',
-         'Migrated ledger reports from handwritten JDBC queries to Spring Data JPA repositories with derived methods.',
-         'Traced ticketing request failures with SLF4J logging in Spring Boot and fixed the faulty mapper classes.']
+         'Migrated ledger reports from handwritten queries to Spring Data JPA repositories with derived query methods.',
+         'Traced ticketing request failures with Spring Boot request logging and fixed the faulty mapper classes.']
 
 
 def target():

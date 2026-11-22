@@ -549,7 +549,8 @@ def tailor_role(facts, title, years, intelligence, ai, ranking_progress=None, su
 
     profile = tailor_facts(facts, title, years, intelligence, ai, ranking_progress)
     profile['headline'] = title
-    summary, how = write_summary(profile, title, years, intelligence['terms'], ai, summary_progress)
+    summary, how = write_summary(profile, title, years, intelligence['terms'], ai, summary_progress,
+                                 emphasis=intelligence.get('jd_strengths'))
     profile['summary'] = summary
     profile['skills'] = relevant_skills(profile, intelligence['terms'])
     if profile['skills']:

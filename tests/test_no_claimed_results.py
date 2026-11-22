@@ -54,6 +54,34 @@ class NoClaimedResultsTests(unittest.TestCase):
         self.assertEqual(tools_outside('Wrote tests that express each rule in Node.js.', ['Node.js'], tools), [],
                          'the everyday word is not the tool')
 
+    def test_a_technology_the_facts_do_not_state_is_rejected(self):
+        from resume_bot.generate import _accept_project_bullet, unverified_names
+        # Seen live: a proposed project for a React and Node.js candidate "Integrated Nodemailer for ... reminders".
+        line = 'Sent appointment reminders through Nodemailer from the Node.js service on a daily schedule.'
+        self.assertEqual(unverified_names(line, ['React', 'Node.js']), ['Nodemailer'])
+        self.assertIn('only the technologies', draft_problem(line, ['React', 'Node.js'], named_tools(), [], 'past'))
+        bullets = []
+        self.assertFalse(_accept_project_bullet(line, ['React', 'Node.js'], bullets, [], named_tools(), [], []))
+        self.assertEqual(unverified_names('Configured Docker Compose files and REST APIs for the order service.',
+                                          ['Docker']), [], 'the rest of a stated tool, and generic terms')
+        self.assertTrue(_accept_project_bullet('Built the TaskBoard screens with React for planning the weekly work.',
+                                               ['React'], bullets, [], named_tools(), [], [], 'TaskBoard'),
+                        "a project's bullets may name the project")
+
+    def test_a_job_description_sets_the_career_objective_priorities(self):
+        from resume_bot.generate import broad_objective_problems, write_summary
+        from resume_bot.profile import validate_profile
+        facts = validate_profile({'full_name': 'Example Applicant', 'phone': '+1 202 555 0147', 'email': 'a@example.test',
+                                  'skills': ['Selenium', 'Java'],
+                                  'experience': [{'position': 'QA Automation Engineer', 'company': 'Example Works',
+                                                  'start': '2022', 'end': '2025', 'bullets': ['Wrote Selenium tests.']}],
+                                  'education': [{'degree': 'BSc', 'institution': 'Example University', 'end': '2020'}]})
+        text, how = write_summary(facts, 'QA Automation Engineer', 3, [], object(),
+                                  emphasis=['clear communication', 'attention to detail'])
+        self.assertEqual(how, 'job description')
+        self.assertIn('clear communication and attention to detail', text)
+        self.assertEqual(broad_objective_problems(text, facts, 'QA Automation Engineer'), [], 'the approved template')
+
     def test_drafted_lines_with_claims_never_reach_the_review_card(self):
         profile = validate_profile({
             'full_name': 'Example Applicant', 'phone': '+1 202 555 0147', 'email': 'candidate@example.test',
