@@ -314,8 +314,115 @@ function primaryActions(job) {
   preview.href = '/api/artifact?' + new URLSearchParams({key: job.revision, name: 'resume.pdf'});
   preview.target = '_blank';
   preview.rel = 'noopener';
-  box.append(downloadLink(job, 'Download PDF', 'Download PDF', 'resume.pdf', 'download', 'auto-btn auto-primary'), preview);
+  const aiEdit = iconControl('button', 'sparkles', 'AI Edit', 'auto-btn');
+  aiEdit.setAttribute('aria-label', 'AI Edit ' + meta(job));
+  aiEdit.addEventListener('click', () => openEdit(job));
+  box.append(downloadLink(job, 'Download PDF', 'Download PDF', 'resume.pdf', 'download', 'auto-btn auto-primary'), preview, aiEdit);
   return box;
+}
+
+// AI Edit: corrections through chat and tailoring to a job description. The server proposes the changes; only the
+// ticked ones are applied, as a new version built by the normal pipeline (the original stays).
+const editing = {id: null, preview: null};
+
+function openEdit(job) {
+  editing.id = job ? job.id : null;
+  editing.preview = null;
+  for (const id of ['auto-edit-message', 'auto-edit-jd', 'auto-edit-jd-file']) byId(id).value = '';
+  byId('auto-edit-for').textContent = job ? 'Editing ' + (job.candidate || 'this resume') + ' · ' + (job.role || '')
+    : 'Name the candidate in your request, or open AI Edit from a resume.';
+  byId('auto-edit-choose').hidden = true;
+  byId('auto-edit-changes').hidden = true;
+  byId('auto-edit-apply').hidden = true;
+  byId('auto-edit-error').textContent = '';
+  byId('auto-edit-dialog').showModal();
+}
+
+async function editDocument() {
+  const file = byId('auto-edit-jd-file').files[0];
+  if (!file) return null;
+  const extension = file.name.match(/\.(pdf|docx|txt)$/i)?.[1]?.toLowerCase();
+  if (!extension || file.size > 4 * 1024 * 1024) throw new Error('Upload the job description as PDF, DOCX or TXT, up to 4 MB.');
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+  return {extension, document: btoa(binary)};
+}
+
+function changeText(change) {
+  if (change.kind === 'order') return 'Reordered';
+  if (!change.old) return 'Add: ' + change.new;
+  if (!change.new) return 'Remove: ' + change.old;
+  return change.old + ' → ' + change.new;
+}
+
+function showEditPreview(result) {
+  editing.preview = result;
+  editing.id = result.id;
+  byId('auto-edit-for').textContent = 'Editing ' + result.candidate + ' · ' + result.role;
+  const box = byId('auto-edit-changes');
+  box.replaceChildren(element('strong', 'Proposed changes (untick any you do not want)'));
+  result.edits.forEach((change, index) => {
+    const option = element('label');
+    const tick = element('input');
+    tick.type = 'checkbox'; tick.checked = true; tick.dataset.index = String(index);
+    option.append(tick, element('span', change.label + ': ' + changeText(change)));
+    box.append(option);
+  });
+  if (result.keywords.length) box.append(element('p', 'Job keywords your verified facts show (they lead the resume and its ATS keywords): ' + result.keywords.join(', ')));
+  if (result.gaps.length) box.append(element('p', 'Skill gaps (not in the verified facts, so not added): ' + result.gaps.join(', ')));
+  box.hidden = false;
+  byId('auto-edit-apply').hidden = false;
+}
+
+async function previewEdit(event) {
+  event?.preventDefault();
+  const error = byId('auto-edit-error');
+  error.textContent = '';
+  try {
+    const body = {message: byId('auto-edit-message').value, jd: byId('auto-edit-jd').value};
+    const document_ = await editDocument();
+    if (document_) body.jd_document = document_;
+    if (editing.id) body.id = editing.id;
+    const response = await ResumeAuth.call('/api/automation/edit-preview', {method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not prepare the changes.');
+    if (result.choose) {
+      const box = byId('auto-edit-choose');
+      box.replaceChildren(element('strong', 'Which resume?'));
+      for (const item of result.choose) {
+        const pick = element('button', item.candidate + ' · ' + item.role);
+        pick.type = 'button';
+        pick.addEventListener('click', () => { editing.id = item.id; box.hidden = true; previewEdit(); });
+        box.append(pick);
+      }
+      box.hidden = false;
+      return;
+    }
+    showEditPreview(result);
+  } catch (problem) { error.textContent = problem.message; }
+}
+
+async function applyEdit() {
+  const error = byId('auto-edit-error');
+  const result = editing.preview;
+  if (!result) return;
+  const ticked = [...byId('auto-edit-changes').querySelectorAll('input[type=checkbox]:checked')]
+    .map(tick => result.edits[Number(tick.dataset.index)]);
+  const apply = byId('auto-edit-apply');
+  apply.disabled = true;
+  try {
+    const response = await ResumeAuth.call('/api/automation/edit-apply', {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id: result.id, edits: ticked, keywords: result.keywords})});
+    const answer = await response.json();
+    if (!response.ok) throw new Error(answer.error || 'Could not apply the changes.');
+    byId('auto-edit-dialog').close();
+    byId('auto-delete-status').textContent = 'AI Edit approved: building the new version of ' + result.candidate + '. The original is kept.';
+    await refresh();
+  } catch (problem) { error.textContent = problem.message; }
+  finally { apply.disabled = false; }
 }
 
 // Three-dot menu: LaTeX, Overleaf PDF, Open Overleaf, Regenerate and Delete. It opens under its button,
@@ -1115,6 +1222,7 @@ function renderJobs(jobs) {
   while (list.children.length > items.length) list.lastElementChild.remove();
   byId('auto-empty').hidden = jobs.length > 0;
   byId('auto-delete-all').hidden = jobs.length === 0;
+  byId('auto-ai-edit').hidden = !jobs.some(job => job.status === 'complete');
   renderStats(jobs);
   // Which cards this page holds, e.g. "Showing 1 – 6 of 15 resumes".
   const first = page * pageSize + 1;
@@ -1175,6 +1283,10 @@ async function candidatesTab() {
 
 async function init() {
   byId('auto-delete-all').addEventListener('click', openDeleteAll);
+  byId('auto-ai-edit').addEventListener('click', () => openEdit(null));
+  byId('auto-edit-form').addEventListener('submit', previewEdit);
+  byId('auto-edit-apply').addEventListener('click', applyEdit);
+  byId('auto-edit-cancel').addEventListener('click', () => byId('auto-edit-dialog').close());
   byId('auto-delete-phrase').addEventListener('input', event => {
     byId('auto-delete-confirm').disabled = event.target.value !== 'DELETE ALL';
   });

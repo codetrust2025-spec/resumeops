@@ -106,8 +106,32 @@
       <div>
         <h2 id="auto-jobs-title">My Resumes</h2>
       </div>
-      <button id="auto-delete-all" type="button" hidden><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg>Delete All</button>
+      <div class="auto-head-actions">
+        <button id="auto-ai-edit" type="button" hidden><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg>AI Edit</button>
+        <button id="auto-delete-all" type="button" hidden><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg>Delete All</button>
+      </div>
     </div>
+    <dialog id="auto-edit-dialog" class="auto-dialog auto-edit-dialog" aria-labelledby="auto-edit-title">
+      <form id="auto-edit-form">
+        <h3 id="auto-edit-title">AI Edit</h3>
+        <p id="auto-edit-for"></p>
+        <label>Correction
+          <textarea id="auto-edit-message" rows="2" maxlength="2000"
+            placeholder="e.g. Change Bhavana's graduation year from 2024 to 2026"></textarea></label>
+        <label>Tailor to a job description (optional)
+          <textarea id="auto-edit-jd" rows="4" maxlength="20000" placeholder="Paste the job description"></textarea></label>
+        <label>Or upload the job description (PDF, DOCX, TXT)
+          <input type="file" id="auto-edit-jd-file" accept=".pdf,.docx,.txt"></label>
+        <div id="auto-edit-choose" class="auto-edit-choose" hidden></div>
+        <div id="auto-edit-changes" class="auto-edit-changes" hidden></div>
+        <p id="auto-edit-error" class="auto-dialog-error" role="alert"></p>
+        <div class="auto-dialog-actions">
+          <button id="auto-edit-cancel" type="button">Cancel</button>
+          <button id="auto-edit-preview" type="submit" class="primary">Preview changes</button>
+          <button id="auto-edit-apply" type="button" class="primary" hidden>Apply and regenerate</button>
+        </div>
+      </form>
+    </dialog>
     <span id="auto-delete-status" role="status"></span>
     <dialog id="auto-delete-dialog" class="auto-dialog" aria-labelledby="auto-delete-title" aria-describedby="auto-delete-text">
       <form id="auto-delete-form">
