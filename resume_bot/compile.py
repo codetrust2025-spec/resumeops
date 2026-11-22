@@ -47,6 +47,16 @@ def verify_pdf(pdf, profile, max_pages=2):
     return {'pages':pages,'searchable':True,'required_facts_present':True,'pdf_bytes':pdf.stat().st_size}
 
 
+def page_lines(pdf, page):
+    """The non-empty text lines on one page of a PDF (how much a resume spills onto its last page)."""
+    try:
+        text = subprocess.run(['pdftotext', '-f', str(page), '-l', str(page), str(pdf), '-'], capture_output=True,
+                              encoding='utf-8', timeout=15, check=True).stdout
+    except (OSError, subprocess.SubprocessError, UnicodeError) as exc:
+        raise BuildError('Cannot read the PDF page text') from exc
+    return sum(1 for line in text.splitlines() if line.strip())
+
+
 def verify_remote_pdf(remote, local, profile, max_pages):
     checks = verify_pdf(remote, profile, max_pages)
     local_checks = verify_pdf(local, profile, max_pages)

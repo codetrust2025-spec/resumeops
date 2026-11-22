@@ -123,7 +123,7 @@ def _split_project(project):
     return name, stack, parts
 
 
-def _build(profile, template='standard', years=None, *, complete_sections=False, career_objective=False):
+def _build(profile, template='standard', years=None, *, complete_sections=False, career_objective=False, fit=None):
     doc = _Doc()
     doc.raw(r'{\centering {\LARGE\bfseries ' + paragraph(profile['full_name']) + r'}\par' + '\n', profile['full_name'])
     if profile.get('headline'):
@@ -217,7 +217,10 @@ def _build(profile, template='standard', years=None, *, complete_sections=False,
     # Use the page well without adding content: short resumes get a larger type and roomier spacing,
     # long ones the compact spacing. Derived from the content only, so re-rendering is identical.
     lines = sum(max(1, len(fragment) // 95) for fragment in doc.text)
-    if template == 'standard' and lines <= 55:
+    if fit and template == 'standard' and lines <= 120:
+        # The one-page fit (chosen by the builder): the 10pt standard type with tighter vertical spacing.
+        content = fitted(content, fit)
+    elif template == 'standard' and lines <= 55:
         content = (content.replace('[10pt,a4paper]', '[11pt,a4paper]')
                    .replace(r'\setlength{\parskip}{2pt}', r'\setlength{\parskip}{3pt}')
                    .replace(r'{8pt}{4pt}', r'{11pt}{5pt}').replace('itemsep=1pt', 'itemsep=2pt'))
@@ -229,9 +232,34 @@ def _build(profile, template='standard', years=None, *, complete_sections=False,
     return content, doc.text
 
 
-def render(profile, template="standard", years=None, *, complete_sections=False, career_objective=False):
-    """Render the resume using the layout recorded when the generation job was submitted."""
-    return _build(profile, template, years, complete_sections=complete_sections, career_objective=career_objective)[0]
+# One-page fit: when a standard resume leaves only a few lines on page 2, the builder tries the same resume with the
+# 10pt standard type and tighter VERTICAL spacing (top and bottom margins, paragraph, section and list spacing, line
+# spread) and keeps it only when it fits one page. Every word stays; for a 10pt resume the font, size and line width
+# are unchanged, so each line breaks exactly where it did (a short resume printed in the larger 11pt type returns to
+# the normal 10pt). Seen live: a QA Automation Engineer resume printed only its last project lines and Education on
+# page 2.
+FIT_LEVELS = {
+    'snug': ((r'top=1.25cm,bottom=1.3cm', r'top=1cm,bottom=1cm'), (r'\setlength{\parskip}{2pt}', r'\setlength{\parskip}{1pt}'),
+             (r'{8pt}{4pt}', r'{6pt}{2pt}'), ('itemsep=1pt', 'itemsep=0pt')),
+    'tight': ((r'top=1.25cm,bottom=1.3cm', r'top=0.9cm,bottom=0.9cm'), (r'\setlength{\parskip}{2pt}', r'\setlength{\parskip}{1pt}'),
+              (r'{8pt}{4pt}', r'{5pt}{2pt}'), ('itemsep=1pt', 'itemsep=0pt'), ('topsep=1pt', 'topsep=0pt'),
+              ('\\begin{document}\n', '\\linespread{0.96}\n\\begin{document}\n')),
+}
+
+
+def fitted(content, fit):
+    for old, new in FIT_LEVELS[fit]:
+        if content.count(old) != 1:
+            raise ValueError(f'One-page fit {fit}: the layout setting {old!r} is not in the standard preamble')
+        content = content.replace(old, new)
+    return content
+
+
+def render(profile, template="standard", years=None, *, complete_sections=False, career_objective=False, fit=None):
+    """Render the resume using the layout recorded when the generation job was submitted. ``fit`` (a FIT_LEVELS
+    name): the one-page fit of a standard 10pt resume, chosen by the builder; ignored by the other layouts."""
+    return _build(profile, template, years, complete_sections=complete_sections, career_objective=career_objective,
+                  fit=fit)[0]
 
 
 def expected_text(profile, years=None, *, complete_sections=False):

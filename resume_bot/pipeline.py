@@ -10,10 +10,10 @@ import zipfile
 from pathlib import Path
 from .ollama import Ollama, OllamaError
 from .ingest import ExtractionError, extract_profile, read_resume_text
-from .latex import render
+from .latex import FIT_LEVELS, render
 from .polish import polish, safe_edit, verify_tailored
 from .claim_audit import claim_violations, matches_pdf_text, records_for
-from .compile import BuildError, compile_latex, verify_pdf, verify_remote_pdf
+from .compile import BuildError, compile_latex, page_lines, verify_pdf, verify_remote_pdf
 from .overleaf import OVERLEAF_STEP_COUNT, OverleafAuthError, OverleafError, import_zip
 from .progress import LegacyTracker, Tracker
 from .storage import workspace_lock, write_json
@@ -33,6 +33,8 @@ def _slug(text):
 
 ARTIFACTS = ('result.json', 'resume.pdf', 'main.tex', 'profile.json',
              'overleaf-project.zip', 'audit.json')
+# A resume whose page 2 holds at most this many text lines is tried with the one-page fits (latex.FIT_LEVELS).
+SPILL_LINES = 15
 
 
 def _read_json(path):
@@ -282,6 +284,26 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
         built=compile_latex(working)
         t.units_done(1, 2, 'Local PDF compiled; checking pages and text')
         audit['pdf_checks']=verify_pdf(built,profile,max_pages=max_pages)
+        # Only a few lines on page 2: the same resume with tighter vertical spacing, kept only when it fits one page
+        # (every word, font and line break unchanged; see latex.FIT_LEVELS).
+        if audit['pdf_checks']['pages'] == 2 and page_lines(built, 2) <= SPILL_LINES:
+            for level in FIT_LEVELS:
+                fitted = render(profile, template, years, fit=level, **layout)
+                if fitted == latex:
+                    break  # not a standard 10pt layout: nothing to fit
+                trial = working / ('fit-' + level)
+                trial.mkdir()
+                (trial / 'main.tex').write_text(fitted, encoding='utf8')
+                try:
+                    candidate_pdf = compile_latex(trial)
+                    checks = verify_pdf(candidate_pdf, profile, max_pages=1)
+                except BuildError:
+                    continue
+                latex, built, audit['pdf_checks'], audit['layout_fit'] = fitted, candidate_pdf, checks, level
+                (working/'main.tex').write_text(latex,encoding='utf8')
+                with zipfile.ZipFile(working/'overleaf-project.zip','w',zipfile.ZIP_DEFLATED) as archive:
+                    archive.write(working/'main.tex','main.tex')
+                break
         if approval:
             if not matches_pdf_text(read_resume_text(built), original, years, complete_sections=complete_sections):
                 raise BuildError('Generated PDF text differs from the candidate-approved resume.')
@@ -299,6 +321,8 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
                 'notes':['Source facts are not independently employer-verified; only traceable to candidate input.']}
         if ats is not None:
             report['ats'] = ats
+        if audit.get('layout_fit'):
+            report['layout_fit'] = audit['layout_fit']
         if experience is not None:
             report['experience'] = experience
         if audit.get('polish'):
@@ -355,13 +379,16 @@ def _finish(report, folder, overleaf, t):
 
 
 def _verify_upload_source(folder, profile, template, years=None, **layout):
-    expected = render(profile, template, years, **layout).encode('utf-8').replace(b'\r\n', b'\n')
+    # The saved LaTeX is the verified profile rendered in its layout: the standard one (every resume built before the
+    # one-page fit, unchanged) or one of the fixed one-page fits the builder may have chosen.
+    expected = {render(profile, template, years, fit=fit, **layout).encode('utf-8').replace(b'\r\n', b'\n')
+                for fit in (None, *FIT_LEVELS)}
     with zipfile.ZipFile(folder / 'overleaf-project.zip') as archive:
         if archive.namelist() != ['main.tex']:
             raise ValueError('Cached Overleaf ZIP contains unexpected files')
-        for actual in ((folder / 'main.tex').read_bytes(), archive.read('main.tex')):
-            if actual.replace(b'\r\n', b'\n') != expected:
-                raise ValueError('Cached LaTeX differs from verified profile')
+        saved = [actual.replace(b'\r\n', b'\n') for actual in ((folder / 'main.tex').read_bytes(), archive.read('main.tex'))]
+        if saved[0] != saved[1] or saved[0] not in expected:
+            raise ValueError('Cached LaTeX differs from verified profile')
 
 
 def _code_fingerprint():
