@@ -346,6 +346,46 @@ function openEdit(job) {
   byId('auto-edit-dialog').showModal();
 }
 
+// Original vs edited: what an AI Edit version changed, beside the resume it came from (both stay available).
+async function openCompare(job) {
+  const dialog = byId('auto-compare-dialog');
+  const body = byId('auto-compare-body');
+  body.replaceChildren();
+  byId('auto-compare-summary').textContent = 'Loading…';
+  byId('auto-compare-error').textContent = '';
+  dialog.showModal();
+  try {
+    const response = await ResumeAuth.call('/api/automation/compare', {method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id: job.id})});
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not compare the versions.');
+    const when = seconds => new Date(seconds * 1000).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'});
+    const ats = value => (value === null || value === undefined) ? '–' : String(value);
+    byId('auto-compare-summary').textContent = 'Original: ' + result.original.role + ', ' + when(result.original.updated)
+      + ', ATS ' + ats(result.original.ats) + ' → Edited: ' + result.edited.role + ', ' + when(result.edited.updated)
+      + ', ATS ' + ats(result.edited.ats) + '.';
+    const table = element('table');
+    const head = element('tr');
+    head.append(element('th', 'Field'), element('th', 'Original'), element('th', 'Edited'));
+    table.append(head);
+    if (result.original.role !== result.edited.role) {
+      const row = element('tr');
+      row.append(element('td', 'Target role'), element('td', result.original.role), element('td', result.edited.role));
+      table.append(row);
+    }
+    for (const change of result.changes) {
+      const row = element('tr');
+      row.append(element('td', change.field), element('td', change.original), element('td', change.edited));
+      table.append(row);
+    }
+    body.append(table.children.length > 1 ? table : element('p', 'The facts are the same; the version was rebuilt (for example tailored keywords).'));
+    for (const note of result.notes) body.append(element('p', note));
+  } catch (problem) {
+    byId('auto-compare-summary').textContent = '';
+    byId('auto-compare-error').textContent = problem.message;
+  }
+}
+
 async function editDocument() {
   const file = byId('auto-edit-jd-file').files[0];
   if (!file) return null;
@@ -555,6 +595,12 @@ function menuItems(job, regenerate, remove) {
       items.push(link);
     }
     if (regenerate) items.push(regenerate);
+    if (job.edited_from) {
+      const compare = iconControl('button', 'layers', 'Compare with original', '');
+      compare.setAttribute('aria-label', 'Compare with original ' + meta(job));
+      compare.addEventListener('click', () => { closeMenus(); openCompare(job); });
+      items.push(compare);
+    }
   }
   if (remove) items.push(...(items.length ? [element('hr')] : []), remove);
   return items;

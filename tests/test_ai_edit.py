@@ -168,6 +168,24 @@ class AiEditServerTests(unittest.TestCase):
         self.assertEqual(json.loads(self.row(new)['payload'])['role'], 'DevOps Engineer')
         self.assertEqual(self.row('e' * 64)['role'], 'Java Developer', 'the original stays')
 
+    def test_an_edited_version_is_compared_with_its_original(self):
+        preview = self.jobs.edit_preview(OWNER, "Change Bhavana's graduation year from 2024 to 2026. ")
+        new = self.jobs.edit_apply(OWNER, preview['id'], preview['edits'])
+        with closing(self.jobs.connection()) as db, db:  # the new version finished building
+            db.execute('UPDATE automation SET facts=? WHERE id=?', (json.loads(self.row(new)['checkpoints'])['facts'] and
+                       json.dumps(json.loads(self.row(new)['checkpoints'])['facts']), new))
+        listed = {job['id']: job for job in self.jobs.list(OWNER)}
+        self.assertEqual(listed[new]['edited_from'], 'e' * 64)
+        self.assertNotIn('edited_from', listed['e' * 64], 'the original is not an edit')
+        result = self.jobs.compare(OWNER, new)
+        self.assertEqual(result['original']['id'], 'e' * 64)
+        self.assertEqual(result['changes'], [{'field': 'End (Example University)', 'original': '2024', 'edited': '2026'}])
+        self.assertTrue(any('2024 -> 2026' in note for note in result['notes']))
+        with self.assertRaises(EditError):
+            self.jobs.compare('b' * 64, new)
+        with self.assertRaises(EditError):
+            self.jobs.compare(OWNER, 'e' * 64)  # the original has nothing to compare with
+
     def test_another_owner_cannot_edit(self):
         with self.assertRaises(EditError):
             self.jobs.edit_preview('b' * 64, 'Change the graduation year from 2024 to 2026', 'e' * 64)

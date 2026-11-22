@@ -484,3 +484,12 @@ li[data-status=blocked] .auto-state strong{background:var(--a-red-bg);color:var(
   .auto-edit-dialog .auto-dialog-actions button,.auto-edit-choose button{width:100%;min-height:44px}
   .auto-edit-changes{max-height:none}
 }
+
+/* Original vs edited */
+.auto-compare{display:grid;gap:8px;max-height:55vh;overflow:auto}
+.auto-compare table{width:100%;border-collapse:collapse;font-size:.86rem}
+.auto-compare th,.auto-compare td{text-align:left;vertical-align:top;padding:6px 8px;border-top:1px solid var(--a-line);overflow-wrap:anywhere}
+.auto-compare th{border-top:0;color:var(--a-muted)}
+.auto-compare td:nth-child(2){color:#9a2b2b}.auto-compare td:nth-child(3){color:#1c6b3c}
+.auto-compare p{margin:0;font-size:.84rem;color:var(--a-muted)}
+@media (max-width:760px){.auto-compare{max-height:none}.auto-compare th,.auto-compare td{padding:6px 4px}}

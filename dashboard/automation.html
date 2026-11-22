@@ -111,6 +111,15 @@
         <button id="auto-delete-all" type="button" hidden><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg>Delete All</button>
       </div>
     </div>
+    <dialog id="auto-compare-dialog" class="auto-dialog auto-edit-dialog" aria-labelledby="auto-compare-title">
+      <form method="dialog">
+        <h3 id="auto-compare-title">Original vs edited</h3>
+        <p id="auto-compare-summary"></p>
+        <div id="auto-compare-body" class="auto-compare"></div>
+        <p id="auto-compare-error" class="auto-dialog-error" role="alert"></p>
+        <div class="auto-dialog-actions"><button type="submit" class="primary">Close</button></div>
+      </form>
+    </dialog>
     <dialog id="auto-edit-dialog" class="auto-dialog auto-edit-dialog" aria-labelledby="auto-edit-title">
       <form id="auto-edit-form">
         <h3 id="auto-edit-title">AI Edit</h3>

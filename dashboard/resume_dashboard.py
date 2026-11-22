@@ -1082,6 +1082,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                     return self.send_json(automation.edit_preview(owner, request.get('message', ''), identifier, jd))
                 if not identifier:
                     return self.send_json({'error': 'Invalid resume identifier.'}, 400)
+                if action == 'compare':
+                    return self.send_json(automation.compare(owner, identifier))
                 if not workspace.automation_ready():
                     return self.send_json({'error': 'The resume watcher version is not ready. Retry shortly.'}, 503)
                 new_id = automation.edit_apply(owner, identifier, request.get('edits') or [], request.get('keywords'),
@@ -1174,7 +1176,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             request_origin = self.request_origin()
             if (self.path not in ('/api/automation', '/api/automation/answer', '/api/automation/projects',
                                   '/api/automation/regenerate', '/api/automation/delete', '/api/automation/edit-preview',
-                                  '/api/automation/edit-apply', '/api/intake/key',
+                                  '/api/automation/edit-apply', '/api/automation/compare', '/api/intake/key',
                                   '/api/intake/queue', '/api/intake/human-check', '/api/intake/start', '/api/intake/delete', '/api/roles', '/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry', '/api/ai-draft', '/api/ai-review', '/api/ai-queue') or request_origin is None
                     or self.headers.get('Origin') != request_origin
                     or not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token)):
@@ -1185,7 +1187,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return self.submit_automation(request_origin)
             if self.path in ('/api/automation/answer', '/api/automation/projects', '/api/automation/regenerate', '/api/automation/delete'):
                 return self.automation_action(request_origin, self.path.rsplit('/', 1)[1])
-            if self.path in ('/api/automation/edit-preview', '/api/automation/edit-apply'):
+            if self.path in ('/api/automation/edit-preview', '/api/automation/edit-apply', '/api/automation/compare'):
                 return self.automation_edit(request_origin, self.path.rsplit('/', 1)[1])
             if self.path in ('/api/intake/key', '/api/intake/queue', '/api/intake/human-check', '/api/intake/start',
                              '/api/intake/delete'):
