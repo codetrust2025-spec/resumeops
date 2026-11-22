@@ -323,9 +323,17 @@ function primaryActions(job) {
 
 // AI Edit: corrections through chat and tailoring to a job description. The server proposes the changes; only the
 // ticked ones are applied, as a new version built by the normal pipeline (the original stays).
-const editing = {id: null, preview: null};
+const editing = {id: null, preview: null, fixed: false};
 
+function versionText(item) {
+  const when = item.updated ? new Date(item.updated * 1000).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'}) : '';
+  return (when ? ' · version of ' + when : '') + (item.versions > 1 ? ' (' + item.versions + ' versions)' : '');
+}
+
+// Per-resume AI Edit (job given): that exact resume, never a candidate choice. Global AI Edit (no job): the server
+// finds the candidate and resume from the request and asks only when it is ambiguous.
 function openEdit(job) {
+  editing.fixed = Boolean(job);
   editing.id = job ? job.id : null;
   editing.preview = null;
   for (const id of ['auto-edit-message', 'auto-edit-jd', 'auto-edit-jd-file']) byId(id).value = '';
@@ -359,7 +367,7 @@ function changeText(change) {
 function showEditPreview(result) {
   editing.preview = result;
   editing.id = result.id;
-  byId('auto-edit-for').textContent = 'Editing ' + result.candidate + ' · ' + result.role;
+  byId('auto-edit-for').textContent = 'Editing ' + result.candidate + ' · ' + result.role + versionText(result);
   const box = byId('auto-edit-changes');
   box.replaceChildren(element('strong', 'Proposed changes (untick any you do not want)'));
   result.edits.forEach((change, index) => {
@@ -393,7 +401,7 @@ async function previewEdit(event) {
       const box = byId('auto-edit-choose');
       box.replaceChildren(element('strong', 'Which resume?'));
       for (const item of result.choose) {
-        const pick = element('button', item.candidate + ' · ' + item.role);
+        const pick = element('button', item.candidate + ' · ' + item.role + versionText(item));
         pick.type = 'button';
         pick.addEventListener('click', () => { editing.id = item.id; box.hidden = true; previewEdit(); });
         box.append(pick);

@@ -473,3 +473,14 @@ li[data-status=blocked] .auto-state strong{background:var(--a-red-bg);color:var(
 .auto-edit-choose[hidden],.auto-edit-changes[hidden]{display:none}
 .auto-edit-dialog .auto-edit-changes label{display:flex;align-items:flex-start;gap:8px;font-weight:500;font-size:.88rem}
 .auto-edit-changes p{font-size:.85rem;color:var(--a-muted);margin:0}
+
+.auto-edit-choose button{justify-content:flex-start;text-align:left;white-space:normal;min-height:40px}
+/* AI Edit on phones: a full-height sheet, full-width touch targets, the main action first. */
+@media (max-width:760px){
+  .auto-edit-dialog{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;margin:0;border-radius:0;padding:14px 14px 18px}
+  .auto-edit-dialog form{gap:10px}
+  .auto-edit-dialog textarea{font-size:16px}
+  .auto-edit-dialog .auto-dialog-actions{display:flex;flex-direction:column-reverse;gap:8px}
+  .auto-edit-dialog .auto-dialog-actions button,.auto-edit-choose button{width:100%;min-height:44px}
+  .auto-edit-changes{max-height:none}
+}

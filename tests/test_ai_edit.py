@@ -136,6 +136,38 @@ class AiEditServerTests(unittest.TestCase):
         result = self.jobs.edit_preview(OWNER, 'Change the graduation year from 2024 to 2026')
         self.assertEqual(sorted(item['candidate'] for item in result['choose']), ['Bhavana Example', 'Kiran Sample'])
 
+    def add_resume(self, ident, candidate, role, updated):
+        with closing(self.jobs.connection()) as db, db:
+            db.execute("INSERT INTO automation(owner,id,status,created,updated,role,candidate,facts) "
+                       "VALUES (?,?,'handed_off',?,?,?,?,?)",
+                       (OWNER, ident, updated, updated, role, candidate,
+                        json.dumps({**bhavana(), 'full_name': candidate})))
+
+    def test_per_resume_ai_edit_targets_that_exact_resume(self):
+        self.add_resume('f' * 64, 'Kiran Sample', 'QA Engineer', 5)
+        result = self.jobs.edit_preview(OWNER, "Change Kiran's graduation year from 2024 to 2026", 'e' * 64)
+        self.assertNotIn('choose', result)
+        self.assertEqual((result['id'], result['candidate']), ('e' * 64, 'Bhavana Example'),
+                         'the resume AI Edit was opened from, whatever name the request mentions')
+
+    def test_global_ai_edit_finds_the_candidate_and_the_resume_by_role(self):
+        self.add_resume('1' * 64, 'Bhavana Example', 'DevOps Engineer', 5)
+        self.add_resume('2' * 64, 'Bhavana Example', 'DevOps Engineer', 9)  # a newer version of that resume
+        both = self.jobs.edit_preview(OWNER, "Change Bhavana's graduation year from 2024 to 2026")
+        self.assertEqual(sorted(item['role'] for item in both['choose']), ['DevOps Engineer', 'Java Developer'],
+                         'two resumes of the candidate: asked which one')
+        devops = self.jobs.edit_preview(OWNER, "Change Bhavana's DevOps Engineer resume: graduation year from 2024 to 2026")
+        self.assertEqual(devops['id'], '2' * 64, 'the newest version of the named role')
+        self.assertEqual(devops['versions'], 2)
+
+    def test_regenerating_for_another_role_is_previewed_and_applied_as_a_new_version(self):
+        preview = self.jobs.edit_preview(OWNER, 'Regenerate Bhavana as a DevOps Engineer')
+        self.assertEqual(preview['edits'], [{'path': 'role', 'label': 'Target role (regenerated for it)',
+                                             'old': 'Java Developer', 'new': 'DevOps Engineer'}])
+        new = self.jobs.edit_apply(OWNER, preview['id'], preview['edits'])
+        self.assertEqual(json.loads(self.row(new)['payload'])['role'], 'DevOps Engineer')
+        self.assertEqual(self.row('e' * 64)['role'], 'Java Developer', 'the original stays')
+
     def test_another_owner_cannot_edit(self):
         with self.assertRaises(EditError):
             self.jobs.edit_preview('b' * 64, 'Change the graduation year from 2024 to 2026', 'e' * 64)

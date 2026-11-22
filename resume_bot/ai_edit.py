@@ -82,6 +82,71 @@ def find_candidates(jobs, message):
     return [job for score, job in scored.values() if score == best]
 
 
+def _role_titles():
+    """(title, catalog role name) for every offered role and its title variations, longest title first."""
+    from .workflow import ROLES, load_roles
+    load_roles()
+    return sorted({(title, entry['name']) for entry in ROLES.values() if entry.get('name') and not entry.get('hidden')
+                   for title in [entry['name'], *(entry.get('titleVariations') or [])]},
+                  key=lambda pair: len(pair[0]), reverse=True)
+
+
+def _named_role(text, extra=()):
+    """The role a text names: a catalog role (by name or title variation) or one of ``extra`` (the resumes' roles)."""
+    for title, name in [*((r, r) for r in sorted(set(extra), key=len, reverse=True) if r), *_role_titles()]:
+        if re.search(r'(?<!\w)' + re.escape(title) + r'(?!\w)', text, re.I):
+            return name
+    return None
+
+
+def select_resume(sources, message):
+    """Global AI Edit: the resume a request means. ``sources`` are the account's finished resumes, newest first.
+    Each candidate-and-role pair counts once (its newest version). The candidate is found by name and the resume by
+    the role the request names; with exactly one match it is selected, otherwise the matches are offered to choose
+    from (every pair when no candidate is named). Returns ('resume', item) or ('choose', [items])."""
+    pairs, seen = [], set()
+    for item in sources:
+        key = (item['candidate'].casefold(), item['role'].casefold())
+        if key not in seen:
+            seen.add(key)
+            pairs.append({**item, 'versions': sum(1 for other in sources
+                                                  if (other['candidate'].casefold(), other['role'].casefold()) == key)})
+    text = message.casefold()
+    scored = []
+    for item in pairs:
+        parts = re.findall(r"[^\W\d_]{3,}", item['candidate'].casefold())
+        score = sum(bool(re.search(r'(?<![^\W\d_])' + re.escape(p) + r"(?:'s)?(?![^\W\d_])", text)) for p in parts)
+        scored.append((score, item))
+    best = max((score for score, _ in scored), default=0)
+    named = [item for score, item in scored if score == best] if best else pairs
+    role = _named_role(message, [item['role'] for item in named])
+    if role:
+        exact = [item for item in named if item['role'].casefold() == role.casefold()]
+        # A role the request asks to change TO is not the resume's role ("regenerate Bhavana as DevOps Engineer").
+        if exact and not ROLE_CHANGE.search(message):
+            named = exact
+    if len(named) == 1:
+        return 'resume', named[0]
+    return 'choose', named
+
+
+ROLE_CHANGE = re.compile(r'\b(?:regenerate|retarget|re-target|change (?:the |her |his |their )?(?:target )?role|'
+                         r'switch (?:the )?role|convert)\b.*?\b(?:to|as|for|into)\s+(?:an?\s+)?(.+?)(?:\s+resume)?[.!]?$',
+                         re.IGNORECASE)
+
+
+def role_change(message, role):
+    """A request to rebuild the resume for another role ("Regenerate as DevOps Engineer"): the role edit, or None."""
+    match = ROLE_CHANGE.search(' '.join(message.split()))
+    if not match:
+        return None
+    wanted = _clean(match.group(1))
+    new = _named_role(wanted) or wanted
+    if not new or new.casefold() == (role or '').casefold():
+        return None
+    return {'path': 'role', 'label': 'Target role (regenerated for it)', 'old': role, 'new': new}
+
+
 def _hinted(message):
     text = message.casefold()
     kinds = set()
