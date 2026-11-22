@@ -5,7 +5,7 @@
 const $ = id => document.getElementById(id);
 let data = {candidates: []};
 const opened = new Set();  // applications whose details are shown (kept across refreshes)
-// /candidates#RO-XXXXXXXXXX (from a resume in My resumes) opens that application's details once it is listed.
+// /candidates#RO-XXXXXXXXXX (from a resume in My Resumes) opens that application's details once it is listed.
 let linked = (location.hash.match(/^#(RO-[2-9A-HJKMNP-Z]{10})$/) || [])[1] || null;
 
 // Share via WhatsApp: a professional invitation with the public form link, prefilled. wa.me opens the WhatsApp app on
@@ -135,8 +135,8 @@ function row(entry) {
       outputs.append(again);
     }
     if (status === 'needs_input' && !legacy && !job.elsewhere) {
-      const review = el('a', 'Review in My resumes', 'cd-link');
-      review.href = '/#resume-' + job.id;  // that resume's card in My resumes
+      const review = el('a', 'Review in My Resumes', 'cd-link');
+      review.href = '/#resume-' + job.id;  // that resume's card in My Resumes
       outputs.append(review);
     }
     const more = el('button', opened.has(entry.candidate) ? 'Hide details' : 'Details', 'cd-small');
@@ -236,8 +236,8 @@ async function start(entry, button, again = false) {
     body: JSON.stringify(again ? {candidate: entry.candidate, again: true} : {candidate: entry.candidate})});
   const result = await response.json().catch(() => ({}));
   $('cd-message').textContent = !response.ok ? (result.error || 'Could not start processing.') : result.created
-    ? `Processing started for ${entry.name}. Its AI drafts appear for your review under My resumes.`
-    : `${entry.name}'s resume was already prepared from these exact details; open it in My resumes.`;
+    ? `Processing started for ${entry.name}. Its AI drafts appear for your review under My Resumes.`
+    : `${entry.name}'s resume was already prepared from these exact details; open it in My Resumes.`;
   await refresh();
 }
 

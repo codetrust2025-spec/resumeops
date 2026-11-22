@@ -124,7 +124,7 @@ def main():
                 # is the operator).
                 operator = browser.new_page(viewport={'width': 1366, 'height': 900})
                 operator.on('dialog', lambda dialog: dialog.accept())
-                # Candidates sits beside My resumes, with the number of applications not started yet, on a desktop
+                # Candidates sits beside My Resumes, with the number of applications not started yet, on a desktop
                 # and on a phone (a full-width tab bar there).
                 operator.goto(origin + '/')
                 expect(operator.locator('#auto-candidates-link')).to_be_visible(timeout=15000)
@@ -185,7 +185,7 @@ def main():
                 assert [e['end'] for e in profile['education']] == ['2015'], profile['education']
                 assert owner != __import__('intake').candidate_owner(candidate), 'an operator resume, not the candidate'
 
-                # Records link both ways. My resumes names the application; its link opens that candidate's details.
+                # Records link both ways. My Resumes names the application; its link opens that candidate's details.
                 operator.goto(origin + '/')
                 expect(operator.locator('#auto-candidates-badge')).to_be_hidden(timeout=15000)  # none waiting now
                 chip = operator.locator(f'li[data-id="{identifier}"] .auto-application')
@@ -194,12 +194,12 @@ def main():
                 operator.wait_for_url(f'**/candidates#{candidate}')
                 expect(operator.locator(f'#cand-{candidate}')).to_be_visible(timeout=15000)
                 expect(operator.locator('.cd-details')).to_contain_text('Associate Engineer at Demo Software Pvt Ltd')
-                # Waiting for review: "Review in My resumes" opens exactly that resume.
+                # Waiting for review: "Review in My Resumes" opens exactly that resume.
                 with closing(__import__('sqlite3').connect(database)) as db, db:
                     db.execute("UPDATE automation SET status='needs_input', stage='Review AI drafts' WHERE id=?",
                                (identifier,))
                 operator.reload()
-                review = operator.get_by_role('link', name='Review in My resumes')
+                review = operator.get_by_role('link', name='Review in My Resumes')
                 expect(review).to_have_attribute('href', f'/#resume-{identifier}', timeout=15000)
                 review.click()
                 expect(operator.locator(f'li[data-id="{identifier}"].auto-focus')).to_be_visible(timeout=15000)
@@ -253,7 +253,7 @@ def main():
             server.RequestHandlerClass.stop_imports()
             server.server_close()
     print('Intake browser acceptance passed: phone form, Word prefill, local draft, private link, nothing processed '
-          'before Start, Candidates beside My resumes with its badge (desktop and phone), Share via WhatsApp with the form link, full details, Start processing '
+          'before Start, Candidates beside My Resumes with its badge (desktop and phone), Share via WhatsApp with the form link, full details, Start processing '
           'and Process again (a new linked version of the typed details), resume and application linked both ways, the candidate '
           'progress and PDF download, corrections flagged for the operator.')
 
