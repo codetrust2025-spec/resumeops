@@ -13,6 +13,7 @@
 </head>
 <body class="auto-page">
 <svg class="auto-sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1-.5 7.97"/><path d="M12 12v8"/><path d="m8.5 15.5 3.5-3.5 3.5 3.5"/></symbol>
   <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></symbol>
   <symbol id="i-doc-check" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h6"/><path d="M14 2v6h6"/><path d="M20 8v5"/><path d="M8 13h5"/><path d="M8 9h2"/><path d="M8 17h3"/><path d="m15 19 2 2 4-4"/></symbol>
   <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></symbol>
@@ -66,7 +67,9 @@
         <label><input type="radio" name="method" value="manual"><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg>Enter Manually</label>
       </fieldset>
       <label id="auto-upload" class="auto-field"><span class="auto-lbl">Choose Files<span class="auto-req" aria-hidden="true">*</span> <span class="auto-note">PDF, DOCX, TXT, JPG, PNG · max 10 files, 12 MB</span></span>
+        <span class="auto-drop"><svg class="ic" aria-hidden="true"><use href="#i-upload"/></svg>
         <input type="file" id="auto-file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png" multiple required>
+        <span id="auto-file-name" class="auto-drop-name" aria-hidden="true">No file chosen</span></span>
       </label>
       <label class="auto-field"><span class="auto-lbl">Target Role<span class="auto-req" aria-hidden="true">*</span></span>
         <span class="auto-input auto-input-search">
