@@ -516,11 +516,10 @@ class DashboardLayoutTests(unittest.TestCase):
 
     def test_progress_shows_the_real_stage_and_percent(self):
         page = self.open(viewport={'width': 1920, 'height': 1080})
-        status = page.locator('#auto-status')
-        status.wait_for()
-        self.assertEqual(page.locator('#auto-stage').inner_text(), 'Compiling LaTeX with pdfLaTeX')
-        self.assertEqual(page.locator('#auto-percent').inner_text(), '72%')
         running = page.locator('#auto-job-list > li[data-status="processing"]')
+        running.wait_for()
+        # The live stage and percent are in the resume's card only; no banner above the list repeats them.
+        self.assertTrue(page.locator('#auto-status').is_hidden())
         self.assertIn('Compiling LaTeX with pdfLaTeX · 72%', running.inner_text())
         self.assertEqual(running.locator('progress').evaluate('el => el.value'), 72)
         page.close()

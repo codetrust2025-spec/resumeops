@@ -191,10 +191,12 @@ async function body() {
   return {...data, documents};
 }
 
-function progress(stage, value, error = '') {
+// The banner above the list appears only for a problem on this page (a refused submission, a lost connection, a
+// download that failed): a resume's live progress and its messages are shown in that resume's card only.
+function progress(stage, value, error = '', banner = Boolean(error)) {
   // A null value means the job has stopped: no percentage that could suggest it is still running.
   if (value !== null) observedPercent = value;
-  byId('auto-status').hidden = false;
+  byId('auto-status').hidden = !banner;
   byId('auto-stage').textContent = stage;
   byId('auto-progress').value = value ?? 0;
   byId('auto-percent').textContent = value === null ? '' : value + '%';
@@ -703,12 +705,13 @@ function showCurrent(jobs) {
   if (!tracked) tracked = jobs.find(job => ACTIVE.has(job.status))?.id || null;
   const job = jobs.find(item => item.id === tracked);
   if (!job || pending) { if (!pending && !requestRunning) byId('auto-status').hidden = true; return; }
+  // Tracked for the page's state only (no banner): the resume's card shows the same stage, progress and message.
   if (job.status === 'needs_input') progress('Needs your input', null,
     (job.questions || []).some(question => question.drafted) ? 'Review the drafts in My Resumes.'
       : (job.questions || []).length ? 'Answer the questions in My Resumes.'
-        : 'Review the suggested projects in My Resumes.');
-  else if (job.status === 'blocked') progress('Stopped', null, 'See My Resumes for the reason.');
-  else progress(stageText(job), job.percent, job.status === 'retrying' ? retryText(job) : '');
+        : 'Review the suggested projects in My Resumes.', false);
+  else if (job.status === 'blocked') progress('Stopped', null, 'See My Resumes for the reason.', false);
+  else progress(stageText(job), job.percent, job.status === 'retrying' ? retryText(job) : '', false);
 }
 
 // A waiting job says how many are ahead of it (shared GPU queue), and when the operator has paused processing.

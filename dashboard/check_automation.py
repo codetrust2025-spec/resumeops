@@ -269,7 +269,7 @@ def check():
                     course.uncheck()
                     expect(title).to_be_hidden()
                     card.get_by_role('button', name=re.compile('Continue')).click()
-                    expect(page.get_by_text('Waiting for the resume builder', exact=True)).to_be_visible()
+                    expect(page.locator('#auto-job-list')).to_contain_text('Waiting for the resume builder')  # in the card
                     auth = {'interrupted': False, 'renewed': False}
 
                     def expire_once(route):
@@ -282,7 +282,7 @@ def check():
 
                     page.route('**/api/automation', expire_once)
                     page.reload()
-                    expect(page.get_by_text('Waiting for the resume builder', exact=True)).to_be_visible()
+                    expect(page.locator('#auto-job-list')).to_contain_text('Waiting for the resume builder')  # in the card
                     assert auth['interrupted'] and auth['renewed']
                     page.unroute('**/api/automation', expire_once)
                     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
@@ -290,7 +290,7 @@ def check():
                     scan(workspace.inbox, workspace.output, once=True, automate=True, overleaf=True,
                          browser_profile=workspace.root / 'fixture-profile')
                     expect(page.get_by_role('link', name='Download PDF', exact=True)).to_be_visible()
-                    expect(page.locator('#auto-percent')).to_have_text('100%')
+                    expect(page.locator('#auto-status')).to_be_hidden()  # progress shows in the card only
                     with page.expect_download() as downloaded:
                         page.get_by_role('link', name='Download PDF', exact=True).click()
                     assert downloaded.value.path().read_bytes().startswith(b'%PDF')

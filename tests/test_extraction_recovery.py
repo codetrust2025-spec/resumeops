@@ -427,9 +427,9 @@ class HistoryStatusTests(unittest.TestCase):
                         self.assertEqual(blocked.locator('strong').inner_text(), 'Needs attention')
                         self.assertIn('Work entry 2 has no employer', blocked.inner_text())
                         self.assertNotIn('experience[1]', page.locator('body').inner_text())
-                        # The panel follows the job still running, never the stopped job's error.
-                        self.assertIn('Retrying automatically', page.locator('#auto-status').inner_text())
-                        self.assertNotIn('Work entry', page.locator('#auto-status').inner_text())
+                        # Progress lives in each card: no banner above the list repeats it.
+                        self.assertIn('Retrying automatically', retrying.inner_text())
+                        self.assertTrue(page.locator('#auto-status').is_hidden())
                         self.assertNotIn('%', blocked.inner_text())
                         self.assertNotIn('Extracting', blocked.inner_text())
                         self.assertIn('Retrying automatically at', retrying.inner_text())
