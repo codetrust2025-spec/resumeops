@@ -428,7 +428,9 @@ class DashboardLayoutTests(unittest.TestCase):
         expect(dialog).to_be_visible()
         dialog.get_by_label('Correction').fill("Change the graduation year from 2024 to 2026 and add Docker to skills")
         dialog.get_by_role('button', name='Preview changes').click()
-        expect(dialog).to_contain_text('End (Example University): 2024 → 2026')
+        first = dialog.locator('.auto-compare-table tr').nth(1)
+        self.assertEqual([first.locator('td').nth(i).inner_text() for i in (1, 2, 3)],
+                         ['End (Example University)', '2024', '2026'], 'original vs edited, before approval')
         expect(dialog).to_contain_text('Skill gaps (not in the verified facts, so not added): Kafka')
         self.assertEqual(sent['preview']['id'], row.get_attribute('data-id'), 'opened from the card: that resume')
         dialog.locator('.auto-edit-changes input[type=checkbox]').nth(1).uncheck()

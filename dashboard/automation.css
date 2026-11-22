@@ -493,3 +493,12 @@ li[data-status=blocked] .auto-state strong{background:var(--a-red-bg);color:var(
 .auto-compare td:nth-child(2){color:#9a2b2b}.auto-compare td:nth-child(3){color:#1c6b3c}
 .auto-compare p{margin:0;font-size:.84rem;color:var(--a-muted)}
 @media (max-width:760px){.auto-compare{max-height:none}.auto-compare th,.auto-compare td{padding:6px 4px}}
+
+/* AI Edit preview: original vs edited, each change approved by its own tick box */
+.auto-compare-table{width:100%;border-collapse:collapse;font-size:.85rem;background:#fff;border-radius:8px}
+.auto-compare-table th,.auto-compare-table td{text-align:left;vertical-align:top;padding:6px;border-top:1px solid var(--a-line);overflow-wrap:anywhere}
+.auto-compare-table th{border-top:0;color:var(--a-muted);font-weight:600}
+.auto-compare-table td:first-child,.auto-compare-table th:first-child{width:44px;text-align:center}
+.auto-compare-table input[type=checkbox]{width:20px;height:20px}
+.auto-compare-table td:nth-child(3){color:#9a2b2b}.auto-compare-table td:nth-child(4){color:#1c6b3c}
+@media (max-width:760px){.auto-compare-table{font-size:.82rem}.auto-compare-table th,.auto-compare-table td{padding:6px 3px}}

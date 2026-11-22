@@ -408,15 +408,26 @@ function showEditPreview(result) {
   editing.preview = result;
   editing.id = result.id;
   byId('auto-edit-for').textContent = 'Editing ' + result.candidate + ' · ' + result.role + versionText(result);
+  // Original vs edited, before approval: each proposed change beside the current value, with its own tick box.
   const box = byId('auto-edit-changes');
-  box.replaceChildren(element('strong', 'Proposed changes (untick any you do not want)'));
+  box.replaceChildren(element('strong', 'Original vs edited: untick any change you do not want'));
+  const table = element('table');
+  table.className = 'auto-compare-table';
+  const head = element('tr');
+  head.append(element('th', 'Apply'), element('th', 'Change'), element('th', 'Original'), element('th', 'Edited'));
+  table.append(head);
+  const shown = value => Array.isArray(value) ? value.slice(0, 4).join(', ') + (value.length > 4 ? ', …' : '') : (value || '—');
   result.edits.forEach((change, index) => {
-    const option = element('label');
+    const row = element('tr');
     const tick = element('input');
     tick.type = 'checkbox'; tick.checked = true; tick.dataset.index = String(index);
-    option.append(tick, element('span', change.label + ': ' + changeText(change)));
-    box.append(option);
+    tick.setAttribute('aria-label', 'Apply ' + change.label + ': ' + changeText(change));
+    const cell = element('td'); cell.append(tick);
+    row.append(cell, element('td', change.label), element('td', shown(change.old)),
+      element('td', change.kind === 'order' ? 'Reordered: ' + shown(change.new) : shown(change.new)));
+    table.append(row);
   });
+  box.append(table);
   if (result.keywords.length) box.append(element('p', 'Job keywords your verified facts show (they lead the resume and its ATS keywords): ' + result.keywords.join(', ')));
   if (result.gaps.length) box.append(element('p', 'Skill gaps (not in the verified facts, so not added): ' + result.gaps.join(', ')));
   if ((result.strengths || []).length >= 2) box.append(element('p', 'Career Objective priorities from the job description: ' + result.strengths.slice(0, 2).join(' and ')));
