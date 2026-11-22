@@ -80,13 +80,10 @@ function bucket(entry) {
 function stats() {
   const counts = {};
   for (const entry of data.candidates) if (!entry.deleted) counts[bucket(entry)] = (counts[bucket(entry)] || 0) + 1;
-  const deleted = data.candidates.filter(entry => entry.deleted).length;
+  // Three summary cards; each application's detailed status stays on its own row (and in the status filter).
   const items = [['file', 'Applications', data.candidates.filter(entry => !entry.deleted).length],
-    ['clock', 'Not started', counts.submitted || 0], ['layers', 'Waiting in queue', counts.queued || 0],
-    ['gear', 'Preparing', counts.processing || 0], ['eye', 'Waiting for review', counts.needs_input || 0],
-    ['check', 'Complete', counts.complete || 0], ['stop', 'Stopped', counts.blocked || 0],
-    ['chip', 'GPU slots in use', `${data.gpu?.busy ?? 0} of ${data.gpu?.slots ?? 1}`],
-    ['trash', 'Deleted', deleted]];
+    ['check', 'Completed', counts.complete || 0],
+    ['chip', 'GPU Usage', `${data.gpu?.busy ?? 0} of ${data.gpu?.slots ?? 1}`]];
   $('cd-stats').replaceChildren(...items.map(([name, label, value]) => {
     const box = el('div', null, 'cd-stat');
     box.append(icon(name), el('strong', String(value)), el('span', label));
