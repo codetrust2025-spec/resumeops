@@ -434,7 +434,8 @@ class DashboardLayoutTests(unittest.TestCase):
         dialog.locator('.auto-edit-changes input[type=checkbox]').nth(1).uncheck()
         dialog.get_by_role('button', name='Apply and regenerate').click()
         expect(dialog).to_be_hidden()
-        self.assertEqual(sent['apply'], {'id': 'c' * 64, 'edits': [proposal['edits'][0]], 'keywords': ['React']})
+        self.assertEqual(sent['apply'], {'id': 'c' * 64, 'edits': [proposal['edits'][0]], 'keywords': ['React'],
+                                         'strengths': []})
         expect(page.locator('#auto-delete-status')).to_contain_text('The original is kept')
         self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth - innerWidth'), 0)
         page.close()

@@ -1084,7 +1084,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                     return self.send_json({'error': 'Invalid resume identifier.'}, 400)
                 if not workspace.automation_ready():
                     return self.send_json({'error': 'The resume watcher version is not ready. Retry shortly.'}, 503)
-                new_id = automation.edit_apply(owner, identifier, request.get('edits') or [], request.get('keywords'))
+                new_id = automation.edit_apply(owner, identifier, request.get('edits') or [], request.get('keywords'),
+                                               request.get('strengths'))
                 return self.send_json({'id': new_id, 'status': 'queued'}, 202)
             except EditError as exc:
                 return self.send_json({'error': str(exc)}, 400)

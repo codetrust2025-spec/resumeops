@@ -215,12 +215,23 @@ def tailor(facts, jd_text, role):
             edits.append({'path': f'experience.{i}.bullets', 'kind': 'order',
                           'label': f'Work line order ({job.get("company") or job.get("position")}, job keywords first)',
                           'old': lines, 'new': ranked})
+    # The Career Objective's priorities the description asks for, in its order (the role's approved ones are used).
+    asks = [('attention to detail', r'attention to detail|detail[- ]oriented|meticulous'),
+            ('clear communication', r'communicat'),
+            ('attention to quality', r'\bquality\b'),
+            ('clear technical judgment', r'problem[- ]solving|judg(?:e)?ment|decision[- ]making|analytical thinking'),
+            ('user experience', r'user experience|\bux\b|usability'),
+            ('data accuracy', r'data (?:accuracy|quality|integrity)'),
+            ('analytical clarity', r'\banalytic')]
+    strengths = [name for name, pattern in sorted(
+        ((name, pattern) for name, pattern in asks if re.search(pattern, jd, re.I)),
+        key=lambda pair: re.search(pair[1], jd, re.I).start())]
     projects = facts.get('projects', [])
     ranked = sorted(projects, key=lambda project: -len(matched_terms(have, project)))
     if ranked != projects:
         edits.append({'path': 'projects', 'kind': 'order', 'label': 'Projects order (job keywords first)',
                       'old': projects, 'new': ranked})
-    return {'role': new_role, 'keywords': have, 'gaps': gaps, 'edits': edits}
+    return {'role': new_role, 'keywords': have, 'gaps': gaps, 'edits': edits, 'strengths': strengths}
 
 
 def _resolve(facts, path):
