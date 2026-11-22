@@ -2,7 +2,8 @@
 import unittest
 from unittest.mock import patch
 
-from resume_bot.generate import DRAFT_ACHIEVEMENT, draft_problem, draft_role_content, named_tools
+from resume_bot.generate import (DRAFT_ACHIEVEMENT, draft_problem, draft_role_content, named_tools,
+                                 without_generic_tail)
 from resume_bot.profile import validate_profile
 from resume_bot.workflow import load_roles
 
@@ -28,7 +29,13 @@ class NoClaimedResultsTests(unittest.TestCase):
         for line in CLAIMS:
             with self.subTest(line=line):
                 self.assertTrue(DRAFT_ACHIEVEMENT.search(line))
-                self.assertIn('claimed results', draft_problem(line, tools, tools, [], 'past'))
+                problem = draft_problem(line, tools, tools, [], 'past')
+                # Rejected, or offered only without its claim (a generic closing clause is cut from fill lines).
+                self.assertTrue((problem and 'claimed results' in problem)
+                                or not DRAFT_ACHIEVEMENT.search(without_generic_tail(line)), line)
+        # A claim inside the work itself is always rejected.
+        self.assertIn('claimed results', draft_problem(CLAIMS[0], tools, tools, [], 'past'))
+        self.assertIn('claimed results', draft_problem(CLAIMS[3], tools, tools, [], 'past'))
         for line in TASKS:
             with self.subTest(line=line):
                 self.assertIsNone(DRAFT_ACHIEVEMENT.search(line))

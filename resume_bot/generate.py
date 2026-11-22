@@ -1588,7 +1588,9 @@ def draft_problem(line, allowed, tools, names, tense):
         return 'bullets must be complete sentences of 12-28 words'
     if proposal_problems(line) or DRAFT_INFLATION.search(line):
         return 'no metrics, production claims, filler or inflated qualities'
-    if DRAFT_ACHIEVEMENT.search(line):
+    # Judged as offered: a generic closing clause (", reducing manual intervention.") is cut from a fill line
+    # before the candidate sees it, so only a claim that would be shown rejects the line.
+    if DRAFT_ACHIEVEMENT.search(without_generic_tail(line)):
         return 'no achievements or claimed results: say what the work was and what it was for'
     if STANDALONE_NUMBER.search(line):
         return 'no numbers'

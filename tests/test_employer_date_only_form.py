@@ -212,7 +212,10 @@ class EmployerDateOnlyTests(unittest.TestCase):
             self.assertEqual([p['name'] for p in result['proposals']], ['Practice Platform', 'Practice Landing Zone'])
             self.assertIn('work lines from your employers and dates', result['error'])
 
-            jobs.answer(owner, identity, {q['id']: q['value'] for q in questions}, [{'include': True}, {'include': False}])
+            # AI skill suggestions start unticked: the operator ticks them (automation.js adds ticked ones to the box).
+            answers = {q['id']: ', '.join(filter(None, [q['value'], *(q.get('suggestions') or [])]))
+                       if q['field'] == 'skills' else q['value'] for q in questions}
+            jobs.answer(owner, identity, answers, [{'include': True}, {'include': False}])
             prepare()
             result = jobs.list(owner, identity)[0]
             queued = list(workspace.private_inbox.glob('*.json'))
