@@ -940,7 +940,14 @@ function jobItem(job) {
     remove.setAttribute('aria-label', 'Delete ' + meta(job));
     remove.addEventListener('click', () => { closeMenus(); deleteOne(remove, job); });
   }
-  for (const notice of job.notice || []) body.append(element('span', notice));
+  // The AI verification notes (what was confirmed, left out or kept) fold into one expandable line.
+  const notices = job.notice || [];
+  if (notices.length) {
+    const log = element('details');
+    log.className = 'auto-log';
+    log.append(element('summary', 'AI verification details (' + notices.length + ')'), ...notices.map(text => element('span', text)));
+    body.append(log);
+  }
   let again = null;
   if (job.status === 'complete') {
     if (job.ats) body.append(atsDetails(job.ats));
@@ -1015,18 +1022,13 @@ function setText(node, text) {
   if (node.textContent !== text) node.textContent = text;
 }
 
-// The summary strip: total, completed, and the completed share.
+// The summary: Total Resumes, Completed and In Progress (everything not finished or stopped). Each resume card
+// carries its own live progress, so the summary has no progress bar of its own.
+const SETTLED = new Set(['complete', 'blocked', 'failed', 'stopped']);
 function renderStats(jobs) {
-  const done = jobs.filter(job => job.status === 'complete').length;
-  const percent = jobs.length ? Math.round(done * 100 / jobs.length) : 0;
-  const count = byId('auto-count');
-  if (count.textContent !== jobs.length + (jobs.length === 1 ? ' resume' : ' resumes')) {
-    count.replaceChildren(element('span', String(jobs.length)), jobs.length === 1 ? ' resume' : ' resumes');
-  }
-  setText(byId('auto-done'), done + ' completed');
-  byId('auto-done-bar').style.width = percent + '%';
-  const share = byId('auto-done-percent');
-  if (share.textContent !== percent + '% completed') share.replaceChildren(element('b', percent + '%'), ' completed');
+  setText(byId('auto-count'), String(jobs.length));
+  setText(byId('auto-done'), String(jobs.filter(job => job.status === 'complete').length));
+  setText(byId('auto-active'), String(jobs.filter(job => !SETTLED.has(job.status)).length));
 }
 
 // Page numbers (at most five, around the current page); hidden when everything fits on one page.
