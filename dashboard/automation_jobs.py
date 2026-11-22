@@ -514,7 +514,7 @@ class AutomationJobs:
             waiting = json.loads(job.pop('waiting') or '{}')  # only the questions and proposals leave the server
             if job['status'] == 'needs_input':
                 job['questions'] = [{key: question.get(key) for key in ('id', 'field', 'label', 'explanation', 'value',
-                                                                        'drafted')}
+                                                                        'drafted', 'suggestions')}
                                     for question in waiting.get('questions', [])]
                 job['proposals'] = waiting.get('proposals', [])
                 job['certifications'] = waiting.get('certification_options', [])
@@ -1167,16 +1167,19 @@ class AutomationJobs:
                                                    if other_field_tools(line, tools, target)])
                              for index in missing if not facts['experience'][index]['bullets'] or work.get(index)]
                 if need_skills:
-                    value = list(dict.fromkeys([*role_skills, *skills]))
+                    # The box holds only the candidate's own skills. AI suggestions arrive unticked beside it and
+                    # reach the resume only when ticked: pre-filled suggestions were confirmed with one click.
+                    have = {s.casefold() for s in role_skills}
                     questions.append({
                         'id': 'skills', 'section': 'profile', 'entry': None, 'field': 'skills', 'drafted': bool(skills),
                         'label': f'Skills for {label}' + (' (with AI suggestions)' if skills else ''),
                         'explanation': (('None of the skills you confirmed is used for ' + label + '. '
                                          if checkpoints.get('skills_reviewed') == label else '')
-                                        + (f'Your skills that fit {label}, plus AI suggestions for the role. Keep only '
-                                           'tools you have used; add or remove any.' if skills else
+                                        + (f'Your skills that fit {label}. Tick a suggestion only if you have used it; '
+                                           'add or remove any.' if skills else
                                            'List the tools and technologies you have used, separated by commas.')),
-                        'value': ', '.join(value),
+                        'value': ', '.join(role_skills),
+                        'suggestions': [s for s in skills if s.casefold() not in have],
                         # Skills for other fields stay in the candidate's facts, off this role's resume.
                         'carry': [s for s in facts['skills'] if s not in role_skills]})
                     checkpoints['skills_review_role'] = label

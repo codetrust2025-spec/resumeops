@@ -99,6 +99,41 @@ def plain(text):
     return ' '.join(''.join(ch for ch in text if ch.isprintable() and ord(ch) < 256).split())
 
 
+def _skill_key(skill):
+    """One key per skill however it is written: 'Node.js', 'node js', 'NodeJS' and 'node js.' are the same skill;
+    'C', 'C#' and 'C++' stay different."""
+    return re.sub(r'[\s._-]+', '', skill.casefold().strip().rstrip('.,;:'))
+
+
+def distinct_skills(skills, left=None):
+    """Each skill once, in first-seen order, without a trailing full stop. A skill written twice keeps the catalog's
+    spelling when one of the spellings is the catalog's (otherwise the first). Seen live: Technical Skills printed
+    "Node.js" under Frameworks and "next js, node js, Gen Ai, node js." under Other skills. Only the candidate's
+    own spellings are ever kept: nothing is added or renamed."""
+    known = {term.casefold() for term in named_tools()}
+    chosen = {}
+    for skill in skills:
+        clean = skill.strip().rstrip('.,;:').strip() or skill
+        key = _skill_key(clean)
+        if key not in chosen:
+            chosen[key] = clean
+            continue
+        if left is not None:
+            left.append(f'skill "{skill}": listed twice')
+        if chosen[key].casefold() not in known and clean.casefold() in known:
+            chosen[key] = clean  # the catalog's spelling ("Node.js") over "node js", in the first one's place
+    return list(chosen.values())
+
+
+# A comma or semicolon followed straight by a word ("enhancements,and"), as PDF and DOCX extraction leaves it.
+MISSING_SPACE = re.compile(r'(?<=[a-z)])([,;])(?=[A-Za-z])')
+
+
+def comma_spaced(line):
+    """The candidate's line with the space its source lost after a comma; digits ("1,200") are left alone."""
+    return MISSING_SPACE.sub(r'\1 ', line)
+
+
 def clean_bullet(text):
     """Remove list markers typed into the text ("- Built...") so bullets never render as "• - Built"."""
     return LIST_MARKER.sub('', text).strip()
@@ -313,6 +348,8 @@ def present_for_role(facts, target, role_title, origin_bullets=None, keep_own=Fa
       employment. A line repeating another is not shown.
     * projects: those about the role's technologies.
     * extraction notes such as "(branch not specified in source)" are removed.
+    * each skill is shown once ("node js", "node js." and "Node.js" are one skill), and a shown work line gets the
+      space its source lost after a comma ("enhancements,and" -> "enhancements, and"). Nothing else is reworded.
     Employers, designations, dates and education always stay. Returns (facts, [what was left out, and why]).
 
     keep_own=True (a candidate's application, typed for this one role): the candidate's own skills, work lines and
@@ -334,7 +371,7 @@ def present_for_role(facts, target, role_title, origin_bullets=None, keep_own=Fa
             left.append(f'skill "{skill}": not used for {role_title}')
         else:
             skills.append(skill)
-    out['skills'] = skills
+    out['skills'] = distinct_skills(skills, left)
     origin = {' '.join(b.split()).casefold() for b in origin_bullets or []}
     shown = []
     for job in out['experience']:
@@ -359,7 +396,7 @@ def present_for_role(facts, target, role_title, origin_bullets=None, keep_own=Fa
         for line, named in off_role:
             if line not in restored:
                 left.append(f'work line at {job["company"]} naming {", ".join(named[:3])}: not used for {role_title}')
-        job['bullets'] = [line for line in job['bullets'] if line in kept or line in restored]
+        job['bullets'] = [comma_spaced(line) for line in job['bullets'] if line in kept or line in restored]
         shown.extend(restored)
     projects = []
     for project in facts.get('projects', []):
@@ -1161,7 +1198,7 @@ def _accept_project_bullet(raw, stack, bullets, skills, tools, clash, avoid):
         bullet += '.'  # a complete sentence, never a fragment
     # A short complete sentence is kept ("Integrated Redis for caching and session management."); five
     # words or fewer is a fragment or a generic claim ("Ensured database consistency with PostgreSQL.").
-    if not 6 <= len(bullet.split()) <= 35 or proposal_problems(bullet):
+    if not 6 <= len(bullet.split()) <= 35 or proposal_problems(bullet) or DRAFT_ACHIEVEMENT.search(bullet):
         return False
     # A bullet may name only tools in this project's stack or the candidate's confirmed skills
     # ("onboarding flow with Formik" is invented when the candidate never listed Formik).
@@ -1264,6 +1301,17 @@ DRAFT_INFLATION = re.compile(r'\b(?:scalab(?:le|ility)|high[- ]performance|large
                              r'mission[- ]critical|production[- ](?:grade|ready)|world[- ]class|best[- ]in[- ]class|'
                              r'innovative|cutting[- ]edge|award)\b', re.IGNORECASE)
 STANDALONE_NUMBER = re.compile(r'(?<![\w.#+/-])\d+(?:[.,]\d+)?(?![\w.#+/-])')
+# A claimed result or achievement in an AI draft: drafts say what the work was and what it was for, never what it
+# achieved, because nothing in the candidate's documents supports the claim. Seen live: "Automated deployment
+# pipelines with Docker and AWS, achieving zero-downtime deployments." and "..., improving the user interface's
+# reliability." The candidate's own lines are never checked by this: their stated results are their facts.
+DRAFT_ACHIEVEMENT = re.compile(
+    r'\b(?:achiev\w*|accomplish\w*|zero[- ](?:downtime|defects?|bugs?|errors?|incidents?)|'
+    r'improv(?:e|ed|es|ing|ements?)|increas(?:e|ed|es|ing)|reduc(?:e|ed|es|ing|tion)|boost(?:s|ed|ing)?|'
+    r'accelerat(?:e|ed|es|ing)|enhanc(?:e|ed|es|ing|ements?)|sav(?:e|ed|es|ing)\s+(?:time|costs?|money|hours|effort)|'
+    r'(?:faster|quicker|higher|lower|fewer)\s+(?:than|response|load|page|build|release|deployment|turnaround)|'
+    r'result(?:ed|ing)?\s+in|lead(?:ing)?\s+to|led\s+to|significant(?:ly)?|dramatic(?:ally)?|substantial(?:ly)?)\b',
+    re.IGNORECASE)
 
 
 def role_vocabulary(target):
@@ -1383,7 +1431,9 @@ def draft_role_content(profile, target, role_title, years, missing, need_skills,
                       'transformation, APIs, data access, orchestration, testing, monitoring, deployment) and states '
                       'three things: what was built, automated, integrated, tested or monitored; which one to three '
                       'target_role_technologies were used and how (a specific technique, data flow, configuration or '
-                      'check); and the concrete result for the team or product. candidate_skills may appear beside them. '
+                      'check); and what the work was for. Describe the work only: never claim a result, improvement '
+                      'or achievement (no achieving, improving, reducing, increasing, zero-downtime, faster). '
+                      'candidate_skills may appear beside them. '
                       'Keep the job title, level and dates as they are; never claim another title, team leadership or '
                       'seniority. kind "own": the job is outside technology: describe only that job\'s own work '
                       '(reporting, reconciliation, coordination, analysis) without target_role_technologies. Never repeat '
@@ -1523,7 +1573,7 @@ def draft_weakness(line):
     if VAGUE.search(line):
         return f'concrete wording instead of vague words such as "{VAGUE.search(line).group(0)}"'
     if GENERIC_TAIL.search(line):
-        return 'end with the concrete result, not a generic clause such as "ensuring code quality"'
+        return 'end with what the work was for, not a generic clause such as "ensuring code quality"'
     return None
 
 
@@ -1538,6 +1588,8 @@ def draft_problem(line, allowed, tools, names, tense):
         return 'bullets must be complete sentences of 12-28 words'
     if proposal_problems(line) or DRAFT_INFLATION.search(line):
         return 'no metrics, production claims, filler or inflated qualities'
+    if DRAFT_ACHIEVEMENT.search(line):
+        return 'no achievements or claimed results: say what the work was and what it was for'
     if STANDALONE_NUMBER.search(line):
         return 'no numbers'
     if tools_outside(line, allowed, tools):
