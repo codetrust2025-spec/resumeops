@@ -145,8 +145,9 @@ ANSWER_LIMIT = 250
 # Work lines and skills arrive as AI drafts the candidate keeps, edits or clears: several lines, and optional
 # (an empty answer lists the job without lines, or the resume without a skills section).
 # Max items, item length, total. Seen live: a QA applicant's own list of 40-odd skills could not be confirmed
-# under a limit of 20 ("Use at most 20 skills"), so the review card stopped at Continue.
-DRAFTED_FIELDS = {'bullets': (10, 240, 2400), 'skills': (60, 60, 3000)}
+# under a limit of 20 ("Use at most 20 skills"), so the review card stopped at Continue; the same applicant's
+# full list is 73 skills.
+DRAFTED_FIELDS = {'bullets': (10, 240, 2400), 'skills': (100, 60, 3000)}
 # A group label typed before a list of skills ("Programming: Java, TypeScript"): the label is not a skill.
 SKILL_GROUP_LABEL = re.compile(r'^[A-Za-z][A-Za-z &/()+.-]{1,40}:\s*(?=\S)')
 # Said under each question, so the answer goes in the right field.

@@ -25,7 +25,7 @@ class SkillsAnswerTests(unittest.TestCase):
 
     def test_limits_still_apply(self):
         with self.assertRaises(AnswerError):
-            _drafted_answer(', '.join(f'Skill {n}' for n in range(61)), 'skills', 'skills')
+            _drafted_answer(', '.join(f'Skill {n}' for n in range(101)), 'skills', 'skills')
         with self.assertRaises(AnswerError):
             _drafted_answer('x' * 3001, 'skills', 'skills')
         self.assertEqual(_drafted_answer('C++, C#, Node.js, ASP.NET', 'skills', 'skills'), ['C++', 'C#', 'Node.js', 'ASP.NET'])
