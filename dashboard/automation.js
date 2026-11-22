@@ -698,16 +698,16 @@ function explain(error) {
 }
 
 // The panel follows only the submission made on this page, or one still running after a reload.
-// Finished and stopped jobs are reported once, in My resumes, so a fresh form never shows an old error.
+// Finished and stopped jobs are reported once, in My Resumes, so a fresh form never shows an old error.
 function showCurrent(jobs) {
   if (!tracked) tracked = jobs.find(job => ACTIVE.has(job.status))?.id || null;
   const job = jobs.find(item => item.id === tracked);
   if (!job || pending) { if (!pending && !requestRunning) byId('auto-status').hidden = true; return; }
   if (job.status === 'needs_input') progress('Needs your input', null,
-    (job.questions || []).some(question => question.drafted) ? 'Review the drafts in My resumes.'
-      : (job.questions || []).length ? 'Answer the questions in My resumes.'
-        : 'Review the suggested projects in My resumes.');
-  else if (job.status === 'blocked') progress('Stopped', null, 'See My resumes for the reason.');
+    (job.questions || []).some(question => question.drafted) ? 'Review the drafts in My Resumes.'
+      : (job.questions || []).length ? 'Answer the questions in My Resumes.'
+        : 'Review the suggested projects in My Resumes.');
+  else if (job.status === 'blocked') progress('Stopped', null, 'See My Resumes for the reason.');
   else progress(stageText(job), job.percent, job.status === 'retrying' ? retryText(job) : '');
 }
 
@@ -1119,7 +1119,7 @@ function turnPage(step) {
   byId('auto-history').scrollTop = 0;
 }
 
-// /#resume-<id> (from "Review in My resumes" on the Candidates page) opens that resume's card wherever it is in the
+// /#resume-<id> (from "Review in My Resumes" on the Candidates page) opens that resume's card wherever it is in the
 // list: filters are cleared, its page is shown and the card is scrolled into view and marked for a few seconds.
 let focusing = (location.hash.match(/^#resume-([0-9a-f]{64})$/) || [])[1] || null;
 

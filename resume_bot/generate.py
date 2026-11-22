@@ -1059,10 +1059,21 @@ def named_tools():
     return sorted((tools - concepts) | set(EXTRA_TOOLS))
 
 
+# Tool names that are also everyday words, recognised only as written (capitalised): "Express" is Express.js.
+# Seen live: a proposed project for a candidate who never listed it said "Configured Express routes ...".
+CASED_TOOLS = {'Express.js': re.compile(r'(?<![\w.])Express(?![\w.])')}
+
+
+def _cased_tools(text):
+    return [term for term, pattern in CASED_TOOLS.items() if pattern.search(text)]
+
+
 def tools_outside(text, allowed, tools=None):
     """Named tools a sentence uses that are not among `allowed` (a stack and/or confirmed skills)."""
     listed = ' '.join(allowed)
-    return [term for term in matched_terms(tools or named_tools(), text) if not matched_terms([term], listed)]
+    named = list(dict.fromkeys([*matched_terms(tools or named_tools(), text), *_cased_tools(text)]))
+    have = set(_cased_tools(listed))
+    return [term for term in named if term not in have and not matched_terms([term], listed)]
 
 
 # PostgreSQL and other databases persist password hashes; they are not password-hashing
@@ -1310,7 +1321,10 @@ DRAFT_ACHIEVEMENT = re.compile(
     r'improv(?:e|ed|es|ing|ements?)|increas(?:e|ed|es|ing)|reduc(?:e|ed|es|ing|tion)|boost(?:s|ed|ing)?|'
     r'accelerat(?:e|ed|es|ing)|enhanc(?:e|ed|es|ing|ements?)|sav(?:e|ed|es|ing)\s+(?:time|costs?|money|hours|effort)|'
     r'(?:faster|quicker|higher|lower|fewer)\s+(?:than|response|load|page|build|release|deployment|turnaround)|'
-    r'result(?:ed|ing)?\s+in|lead(?:ing)?\s+to|led\s+to|significant(?:ly)?|dramatic(?:ally)?|substantial(?:ly)?)\b',
+    r'result(?:ed|ing)?\s+in|lead(?:ing)?\s+to|led\s+to|significant(?:ly)?|dramatic(?:ally)?|substantial(?:ly)?|'
+    # Optimising, and deploying to production, are results the candidate's documents would have to state.
+    r'optimi[sz](?:e|ed|es|ing|ations?)|production\s+(?:servers?|environments?|systems?|deployments?|releases?|traffic)|'
+    r'(?:to|into)\s+production)\b',
     re.IGNORECASE)
 
 
