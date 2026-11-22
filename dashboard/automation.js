@@ -1009,18 +1009,21 @@ function cardHeight() {
   return row;
 }
 
-const STATUS_STRIP_ROOM = 56;  // the strip above the list (about 42 px) and its gap
+let fitted = {key: '', size: 0};
 
+// Cards per page on a computer, from the panel's height. Computed once per window size: a strip or message that
+// appears later never changes how many cards a page holds (seen in CI: 4 cards on page 1, then 3 on page 2).
 function fittedPageSize() {
   if (!matchMedia('(min-width: 901px)').matches) return PHONE_PAGE_SIZE;
   const list = byId('auto-job-list');
+  const key = list.clientWidth + 'x' + innerHeight;
+  if (fitted.key === key) return fitted.size;
   const row = cardHeight();
   const gap = parseFloat(getComputedStyle(list).rowGap) || 12;
-  // Room for the status strip is kept while it is hidden, so a strip that appears between two pages never changes
-  // how many cards a page holds (seen in CI: 4 cards on page 1, then 3 on page 2).
-  const strip = byId('auto-status');
-  const space = byId('auto-history').clientHeight - 8 - (strip.hidden ? STATUS_STRIP_ROOM : 0);
-  return Math.max(3, Math.min(12, Math.floor((space + gap) / (row + gap))));
+  const space = byId('auto-history').clientHeight - 8;
+  const size = Math.max(3, Math.min(12, Math.floor((space + gap) / (row + gap))));
+  if (list.clientWidth && space > row) fitted = {key, size};  // only once the panel is laid out
+  return size;
 }
 
 function setText(node, text) {
