@@ -31,7 +31,7 @@ VISIBLE = ['UI Developer', 'Frontend Developer', 'React.js Developer', 'Angular 
            '.NET Developer', 'DevOps Engineer', 'AWS Cloud Engineer', 'Azure Cloud Engineer', 'GCP Cloud Engineer',
            'Azure Data Engineer', 'GCP Data Engineer', 'Data Analyst', 'Data Scientist', 'AI / ML Engineer',
            'Generative AI Engineer', 'QA Automation Engineer', 'Salesforce Developer', 'Mobile App Developer',
-           'Android Developer', 'iOS Developer']
+           'Android Developer', 'iOS Developer', 'Full Stack Developer']
 
 
 def facts():
@@ -53,7 +53,8 @@ class CatalogTests(unittest.TestCase):
     def test_every_requested_role_is_offered(self):
         load_roles(force=True)
         self.assertEqual([r['name'] for r in ROLES.values() if not r['hidden']], VISIBLE)
-        for legacy in ('fullstack-developer', 'backend-developer', 'cloud-engineer'):
+        # Full Stack Developer is offered again (requested): generic full-stack applicants did not fit Java or MERN.
+        for legacy in ('backend-developer', 'cloud-engineer'):
             self.assertTrue(ROLES[legacy]['hidden'], 'saved jobs keep rendering with retired roles')
 
     def test_operator_catalog_adds_replaces_and_hides_without_code(self):
@@ -381,7 +382,7 @@ class PageTests(unittest.TestCase):
                     page.goto(origin)
                     options = page.locator('#auto-role-options option')
                     options.first.wait_for(state='attached')
-                    self.assertEqual(options.count(), 26)
+                    self.assertEqual(options.count(), 27)
                     self.assertEqual(options.last.get_attribute('value'), 'Custom Role')
                     page.get_by_label('Target role').fill('Custom Role')
                     self.assertTrue(page.locator('#auto-custom-wrap').is_visible())

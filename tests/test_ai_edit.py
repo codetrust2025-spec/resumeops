@@ -85,6 +85,16 @@ class AiEditTests(unittest.TestCase):
         self.assertNotIn('Kafka', json.dumps(facts))
 
 
+    def test_a_title_variation_names_the_role_and_projects_lead_with_job_keywords(self):
+        facts = validate_profile({**bhavana(), 'projects': ['Notes App - Flutter mobile notes app.',
+                                                           'Library Manager - Spring Boot and MySQL application.']})
+        result = tailor(facts, 'Full Stack Engineer wanted. Build Spring Boot services with MySQL and React screens.',
+                        'Java Developer')
+        self.assertEqual(result['role'], 'Full Stack Developer')
+        order = next(e for e in result['edits'] if e['path'] == 'projects')
+        self.assertTrue(order['new'][0].startswith('Library Manager'))
+
+
 class AiEditServerTests(unittest.TestCase):
     def setUp(self):
         import sys
@@ -115,6 +125,16 @@ class AiEditServerTests(unittest.TestCase):
         self.assertEqual(json.loads(built['payload'])['regenerated_from'], 'e' * 64)
         self.assertIn('2024 -> 2026', built['notice'])
         self.assertEqual(json.loads(self.row('e' * 64)['facts'])['education'][0]['end'], '2024', 'original kept')
+
+    def test_a_request_without_a_name_offers_the_resumes_to_choose(self):
+        only = self.jobs.edit_preview(OWNER, 'Change the graduation year from 2024 to 2026')
+        self.assertEqual(only['id'], 'e' * 64, 'one resume: it is the one, and the change still needs approval')
+        with closing(self.jobs.connection()) as db, db:
+            db.execute("INSERT INTO automation(owner,id,status,created,updated,role,candidate,facts) "
+                       "VALUES (?,?,'handed_off',2,2,'QA Engineer','Kiran Sample',?)",
+                       (OWNER, 'f' * 64, json.dumps({**bhavana(), 'full_name': 'Kiran Sample'})))
+        result = self.jobs.edit_preview(OWNER, 'Change the graduation year from 2024 to 2026')
+        self.assertEqual(sorted(item['candidate'] for item in result['choose']), ['Bhavana Example', 'Kiran Sample'])
 
     def test_another_owner_cannot_edit(self):
         with self.assertRaises(EditError):

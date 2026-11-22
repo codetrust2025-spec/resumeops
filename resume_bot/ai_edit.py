@@ -192,11 +192,13 @@ def tailor(facts, jd_text, role):
                          *(line for job in facts.get('experience', []) for line in job.get('bullets', []))])
     have = [term for term in found if matched_terms([term], evidence)]
     gaps = [term for term in found if term not in have]
-    names = sorted({entry['name'] for entry in ROLES.values() if entry.get('name')}, key=len, reverse=True)
-    head = jd[:400]
-    new_role = next((name for name in names if re.search(r'(?<!\w)' + re.escape(name) + r'(?!\w)', head, re.I)),
-                    None) or next((name for name in names if re.search(r'(?<!\w)' + re.escape(name) + r'(?!\w)', jd, re.I)),
-                                  None) or role
+    # A catalog role the description names, by its name or a title variation ("Full Stack Engineer"), the heading first.
+    titles = sorted({(title, entry['name']) for entry in ROLES.values() if entry.get('name') and not entry.get('hidden')
+                     for title in [entry['name'], *(entry.get('titleVariations') or [])]},
+                    key=lambda pair: len(pair[0]), reverse=True)
+    named = lambda text: next((name for title, name in titles
+                               if re.search(r'(?<!\w)' + re.escape(title) + r'(?!\w)', text, re.I)), None)
+    new_role = named(jd[:400]) or named(jd) or role
     edits = []
     if new_role.casefold() != (role or '').casefold():
         edits.append({'path': 'role', 'label': 'Target role (from the job description)', 'old': role, 'new': new_role})
@@ -213,6 +215,11 @@ def tailor(facts, jd_text, role):
             edits.append({'path': f'experience.{i}.bullets', 'kind': 'order',
                           'label': f'Work line order ({job.get("company") or job.get("position")}, job keywords first)',
                           'old': lines, 'new': ranked})
+    projects = facts.get('projects', [])
+    ranked = sorted(projects, key=lambda project: -len(matched_terms(have, project)))
+    if ranked != projects:
+        edits.append({'path': 'projects', 'kind': 'order', 'label': 'Projects order (job keywords first)',
+                      'old': projects, 'new': ranked})
     return {'role': new_role, 'keywords': have, 'gaps': gaps, 'edits': edits}
 
 

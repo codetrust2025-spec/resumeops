@@ -845,8 +845,13 @@ class AutomationJobs:
         else:
             matches = find_candidates(sources, message)
             if not matches:
-                raise EditError('Name the candidate (for example "Change Bhavana\'s graduation year from 2024 to 2026"), '
-                                'or open AI Edit from their resume.')
+                # No candidate named: every candidate's newest resume is offered to choose from.
+                latest = {}
+                for item in sources:
+                    latest.setdefault(item['candidate'].casefold(), item)
+                matches = list(latest.values())
+            if not matches:
+                raise EditError('There is no finished resume to edit yet.')
             if len(matches) > 1:
                 return {'choose': [{'id': item['id'], 'candidate': item['candidate'], 'role': item['role']}
                                    for item in matches]}
