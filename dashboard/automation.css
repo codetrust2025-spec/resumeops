@@ -471,5 +471,5 @@ li[data-status=blocked] .auto-state strong{background:var(--a-red-bg);color:var(
 .auto-edit-choose,.auto-edit-changes{display:grid;gap:6px;padding:10px;border:1px solid var(--a-line);border-radius:10px;background:#f7faff;
   max-height:40vh;overflow:auto}
 .auto-edit-choose[hidden],.auto-edit-changes[hidden]{display:none}
-.auto-edit-changes label{display:flex;align-items:flex-start;gap:8px;font-weight:500;font-size:.88rem}
+.auto-edit-dialog .auto-edit-changes label{display:flex;align-items:flex-start;gap:8px;font-weight:500;font-size:.88rem}
 .auto-edit-changes p{font-size:.85rem;color:var(--a-muted);margin:0}
