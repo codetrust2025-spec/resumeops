@@ -824,47 +824,48 @@ class AutomationJobs:
     def _edit_sources(self, owner):
         """The owner's finished resumes (newest first): those with verified facts."""
         with closing(self.connection()) as db:
-            rows = db.execute('SELECT id, candidate, role, facts FROM automation WHERE owner=? AND facts IS NOT NULL '
-                              'ORDER BY updated DESC', (owner,)).fetchall()
+            rows = db.execute('SELECT id, candidate, role, facts, updated FROM automation WHERE owner=? AND facts IS NOT '
+                              'NULL ORDER BY updated DESC', (owner,)).fetchall()
         return [{'id': row['id'], 'candidate': row['candidate'] or '', 'role': row['role'] or '',
-                 'facts': json.loads(row['facts'])} for row in rows]
+                 'updated': row['updated'], 'facts': json.loads(row['facts'])} for row in rows]
 
     def edit_preview(self, owner, message='', identifier=None, jd=''):
         """AI Edit: the proposed changes for one resume (named in the request, or chosen), for approval. Nothing is
         changed here. A correction request and a job description can be given together."""
-        from resume_bot.ai_edit import EditError, corrections, find_candidates, tailor
+        from resume_bot.ai_edit import EditError, corrections, role_change, select_resume, tailor
         from resume_bot.ollama import Ollama
         message, jd = ' '.join(str(message or '').split())[:2000], str(jd or '')[:20000]
         if not message and not jd.strip():
             raise EditError('Describe the correction, or paste a job description.')
         sources = self._edit_sources(owner)
         if identifier:
+            # Per-resume AI Edit: exactly this resume, whatever names the request mentions.
             resume = next((item for item in sources if item['id'] == identifier), None)
             if not resume:
                 raise EditError('Only a finished resume can be edited.')
         else:
-            matches = find_candidates(sources, message)
-            if not matches:
-                # No candidate named: every candidate's newest resume is offered to choose from.
-                latest = {}
-                for item in sources:
-                    latest.setdefault(item['candidate'].casefold(), item)
-                matches = list(latest.values())
-            if not matches:
+            # Global AI Edit: the candidate by name, the resume by role (newest version); ask only when ambiguous.
+            if not sources:
                 raise EditError('There is no finished resume to edit yet.')
-            if len(matches) > 1:
-                return {'choose': [{'id': item['id'], 'candidate': item['candidate'], 'role': item['role']}
-                                   for item in matches]}
-            resume = matches[0]
+            kind, found = select_resume(sources, message)
+            if kind == 'choose':
+                return {'choose': [{'id': item['id'], 'candidate': item['candidate'], 'role': item['role'],
+                                    'updated': item['updated'], 'versions': item['versions']} for item in found]}
+            resume = found
         facts, role = resume['facts'], resume['role']
-        result = {'id': resume['id'], 'candidate': resume['candidate'], 'role': role, 'edits': [], 'keywords': [],
-                  'gaps': []}
+        versions = sum(1 for item in sources if item['candidate'].casefold() == resume['candidate'].casefold()
+                       and item['role'].casefold() == role.casefold())
+        result = {'id': resume['id'], 'candidate': resume['candidate'], 'role': role, 'updated': resume['updated'],
+                  'versions': versions, 'edits': [], 'keywords': [], 'gaps': []}
         if jd.strip():
             tailored = tailor(facts, jd, role)
             result.update(keywords=tailored['keywords'], gaps=tailored['gaps'], edits=tailored['edits'],
                           strengths=tailored['strengths'])
-        if message and not (jd.strip() and not re.search(r'\b(?:change|update|correct|fix|set|replace|add|remove|'
-                                                          r'delete)\b', message, re.I)):
+        retarget = role_change(message, role) if message else None
+        if retarget:
+            result['edits'].append(retarget)  # regeneration for another role, through the same approval and apply
+        elif message and not (jd.strip() and not re.search(r'\b(?:change|update|correct|fix|set|replace|add|remove|'
+                                                            r'delete)\b', message, re.I)):
             result['edits'] += corrections(facts, message, Ollama(model=self.workspace.model))
         if not result['edits'] and not result['keywords']:
             raise EditError('No change to propose: the resume already matches.')

@@ -440,6 +440,20 @@ class DashboardLayoutTests(unittest.TestCase):
         self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth - innerWidth'), 0)
         page.close()
 
+    def test_ai_edit_is_a_full_screen_sheet_on_a_phone(self):
+        page = self.open(**self.playwright.devices['iPhone 13'])
+        row = page.locator('#auto-job-list > li[data-status="complete"]').first
+        row.get_by_role('button', name=re.compile('^AI Edit')).click()
+        dialog = page.locator('#auto-edit-dialog')
+        box, width = dialog.bounding_box(), page.evaluate('innerWidth')
+        self.assertLessEqual(abs(box['width'] - width), 1, 'the sheet spans the phone')
+        for name in ('Preview changes', 'Cancel'):
+            self.assertGreaterEqual(dialog.get_by_role('button', name=name).bounding_box()['height'], 44)
+        self.assertRegex(page.locator('#auto-edit-for').inner_text(), r'^Editing Candidate \d+ Example', 'that resume, no choice')
+        self.assertTrue(page.locator('#auto-edit-choose').is_hidden())
+        self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth - innerWidth'), 0)
+        page.close()
+
     def test_ai_drafts_and_projects_are_reviewed_in_one_card(self):
         from playwright.sync_api import expect
         jobs = fake_jobs(4)
