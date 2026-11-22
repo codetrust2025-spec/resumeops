@@ -1009,12 +1009,17 @@ function cardHeight() {
   return row;
 }
 
+const STATUS_STRIP_ROOM = 56;  // the strip above the list (about 42 px) and its gap
+
 function fittedPageSize() {
   if (!matchMedia('(min-width: 901px)').matches) return PHONE_PAGE_SIZE;
   const list = byId('auto-job-list');
   const row = cardHeight();
   const gap = parseFloat(getComputedStyle(list).rowGap) || 12;
-  const space = byId('auto-history').clientHeight - 8;
+  // Room for the status strip is kept while it is hidden, so a strip that appears between two pages never changes
+  // how many cards a page holds (seen in CI: 4 cards on page 1, then 3 on page 2).
+  const strip = byId('auto-status');
+  const space = byId('auto-history').clientHeight - 8 - (strip.hidden ? STATUS_STRIP_ROOM : 0);
   return Math.max(3, Math.min(12, Math.floor((space + gap) / (row + gap))));
 }
 
