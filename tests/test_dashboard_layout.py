@@ -275,7 +275,13 @@ class DashboardLayoutTests(unittest.TestCase):
         self.assertTrue(page.get_by_label('Upload Files').is_checked(), 'upload is the default')
         self.assertLess(page.locator('#auto-upload').bounding_box()['y'], page.locator('#auto-role').bounding_box()['y'],
                         'documents come before the target role')
-        page.get_by_label('Target role').fill('React.js Developer')
+        # Upload Files: only the files, Target Role, consent and Create Resume.
+        self.assertFalse(page.locator('#auto-manual').is_visible(), 'no typed fields with Upload Files')
+        for text in ('Full name', 'Phone', 'More details'):
+            self.assertFalse(page.get_by_text(text, exact=True).is_visible(), text)
+        self.assertTrue(page.get_by_text('Choose Files').is_visible())
+        self.assertTrue(page.locator('#auto-consent').is_visible())
+        page.get_by_label('Target Role').fill('React.js Developer')
         page.get_by_label('Enter Manually').check()
         self.assertTrue(page.get_by_placeholder('Enter full name').is_visible())
         self.assertTrue(page.get_by_placeholder('Enter phone number').is_visible())
@@ -283,6 +289,7 @@ class DashboardLayoutTests(unittest.TestCase):
         page.get_by_label('Phone', exact=True).fill('+91 90000 00000')
         page.locator('#auto-background').fill('Worked at Example Works as Frontend Developer from 2023.')
         page.get_by_label('Upload Files').check()
+        self.assertFalse(page.locator('#auto-manual').is_visible(), 'typed fields hide again with Upload Files')
         with tempfile.TemporaryDirectory() as folder:
             resume = Path(folder) / 'resume.txt'
             resume.write_text('Kiran Example (fictional)\n+91 90000 00000\n', encoding='utf-8')

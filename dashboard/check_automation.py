@@ -213,14 +213,14 @@ def check():
                     browser = pw.chromium.launch()
                     page = browser.new_page(**pw.devices['iPhone 13'])
                     page.goto(origin)
-                    target = page.get_by_label('Target role')
+                    target = page.get_by_label('Target Role')
                     target.fill('Full Stack Developer')
-                    # Typed facts remain available inline with uploads, without an optional-details accordion.
+                    # Upload Files holds only the files, Target Role, consent and Create Resume: no typed fields.
                     expect(page.locator('#auto-extra')).to_have_count(0)
-                    expect(page.get_by_label('Full name')).to_be_visible()
-                    assert not page.get_by_label('Full name').evaluate('node => node.required')
-                    page.get_by_text('More details', exact=True).click()
-                    page.get_by_label('Technical skills (comma separated)').fill('Kubernetes')
+                    expect(page.locator('#auto-manual')).to_be_hidden()
+                    for name in ('Full name', 'Phone', 'Work or education facts (optional)', 'More details'):
+                        expect(page.get_by_text(name, exact=True)).to_be_hidden()
+                    expect(page.get_by_text('Choose Files')).to_be_visible()
                     upload = Path(temp) / 'extra-check.txt'
                     upload.write_text(SOURCE, encoding='utf-8')
                     page.locator('#auto-file').set_input_files(str(upload))
@@ -234,9 +234,7 @@ def check():
                     page.get_by_role('button', name='Create Resume').click()
                     expect(page.get_by_text('Checked.')).to_be_visible()
                     page.unroute('**/api/automation')
-                    assert len(sent) == 1 and len(sent[0]['documents']) == 1, sent
-                    assert sent[0]['candidate']['skills'] == 'Kubernetes' and sent[0]['candidate']['full_name'] == '', sent
-                    page.get_by_text('More details', exact=True).click()  # closed again, as the AI-first flow expects
+                    assert len(sent) == 1 and len(sent[0]['documents']) == 1 and 'candidate' not in sent[0], sent
                     page.get_by_label('Enter Manually').check()
                     page.get_by_label('Full name').fill('Fresher Synthetic')
                     page.get_by_label('Phone', exact=True).fill('+44 7700 900456')

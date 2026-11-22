@@ -257,8 +257,12 @@ class RegenerationTests(unittest.TestCase):
         job = self.jobs.list(OWNER, new)[0]
         self.assertEqual(job['status'], 'needs_input')
         self.assertEqual([q['id'] for q in job['questions']], ['skills'], 'one question: the role skills')
-        self.assertEqual(job['questions'][0]['value'], 'Python, SQL, BigQuery, Dataflow, Pub/Sub, Cloud Storage')
-        self.assertNotIn('Data Analyst', job['questions'][0]['value'])
+        # No AI suggestion is pre-filled: the box holds the candidate's own role skills (none here) and the
+        # suggestions start unticked beside it.
+        self.assertEqual(job['questions'][0]['value'], '')
+        self.assertEqual(job['questions'][0]['suggestions'],
+                         ['Python', 'SQL', 'BigQuery', 'Dataflow', 'Pub/Sub', 'Cloud Storage'])
+        self.assertNotIn('Data Analyst', job['questions'][0]['suggestions'])
         self.assertEqual(job['error'], 'AI drafted skill suggestions for GCP Data Engineer. Keep only what is true for '
                                        'you and edit anything. Then confirm once.', 'only what was drafted is named')
         self.jobs.answer(OWNER, new, {'skills': 'Python, SQL, BigQuery'})

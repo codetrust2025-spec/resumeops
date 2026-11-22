@@ -140,23 +140,17 @@ function addSection([key, title, fields]) {
   byId('auto-lists').append(details);
 }
 
+// Upload Files shows only the files, Target Role and consent: the documents are the evidence. The typed fields
+// belong to Enter Manually, and what was typed there stays in place when switching back and forth.
 function mode() {
   const manual = form.elements.method.value === 'manual';
   const fields = byId('auto-manual');
-  fields.hidden = false;
-  fields.disabled = false;
-  fields.classList.toggle('auto-basics-optional', !manual);
+  fields.hidden = !manual;
+  fields.disabled = !manual;
   for (const field of byId('auto-basics').querySelectorAll('input')) field.required = manual;
   byId('auto-upload').hidden = manual;
   fileControl.disabled = manual;
   return manual;
-}
-
-// Documents may be supplemented by typed facts; blank entry rows add no facts.
-function typedAnything(info) {
-  return Object.entries(info).some(([key, value]) => Array.isArray(value)
-    ? value.some(row => Object.values(row).some(item => String(item).trim()))
-    : value !== null && String(value).trim() !== '');
 }
 
 function candidate() {
@@ -194,9 +188,7 @@ async function body() {
     }
     documents.push({extension, document: btoa(binary)});
   }
-  const typed = candidate();
-  for (const [key] of collections) typed[key] = typed[key].filter(row => Object.values(row).some(v => v.trim()));
-  return typedAnything(typed) ? {...data, documents, candidate: typed} : {...data, documents};
+  return {...data, documents};
 }
 
 function progress(stage, value, error = '') {
@@ -508,6 +500,32 @@ function certificationChoices(job) {
   return box;
 }
 
+// AI skill suggestions for the role: unticked, so a skill reaches the resume only when the candidate ticks a tool
+// they have used (pre-filled suggestions were confirmed with one click). Ticked ones join the skills box on confirm.
+function skillSuggestions(question, field) {
+  if (question.field !== 'skills' || !(question.suggestions || []).length) return null;
+  const box = element('fieldset');
+  box.className = 'auto-picks';
+  box.append(element('legend', 'AI suggestions (tick only tools you have used)'));
+  for (const name of question.suggestions) {
+    const option = element('label'); const tick = element('input');
+    tick.type = 'checkbox'; tick.value = name; tick.name = 'skill_suggestion';
+    option.append(tick, ' ' + name); box.append(option);
+  }
+  box.target = field;
+  return box;
+}
+
+function addTickedSkills(form) {
+  for (const box of form.querySelectorAll('.auto-picks')) {
+    const typed = box.target.value.split(',').map(item => item.trim()).filter(Boolean);
+    const have = new Set(typed.map(item => item.toLowerCase()));
+    const ticked = [...box.querySelectorAll('input[type=checkbox]:checked')].map(item => item.value)
+      .filter(item => !have.has(item.toLowerCase()));
+    if (ticked.length) box.target.value = [...typed, ...ticked].join(', ');
+  }
+}
+
 function chosenCertifications(form) {
   const box = form.querySelector('.auto-certs');
   if (!box) return undefined;
@@ -726,6 +744,8 @@ function answerForm(job) {
     hint.className = 'field-hint';
     label.append(field, hint);
     box.append(label);
+    const picks = skillSuggestions(question, field);
+    if (picks) box.append(picks);
   }
   const cards = (job.proposals || []).length ? proposalCards(job) : [];
   box.append(...cards);
@@ -739,7 +759,8 @@ function answerForm(job) {
     event.preventDefault();
     clearFieldErrors(box);
     const fields = [...box.querySelectorAll('input, textarea')]
-      .filter(field => !field.closest('.auto-proposal') && !field.closest('.auto-certs'));
+      .filter(field => !field.closest('.auto-proposal') && !field.closest('.auto-certs') && !field.closest('.auto-picks'));
+    addTickedSkills(box);
     const empty = fields.find(field => field.required && !field.value.trim());
     if (empty) { fieldError(empty, 'Enter this detail to continue.'); return; }
     const decisions = cards.length ? projectDecisions(cards) : undefined;
