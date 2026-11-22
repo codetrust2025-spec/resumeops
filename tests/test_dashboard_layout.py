@@ -319,6 +319,8 @@ class DashboardLayoutTests(unittest.TestCase):
         page.locator('#auto-file').set_input_files([
             {'name': 'education.txt', 'mimeType': 'text/plain', 'buffer': b'Example College diploma'},
             {'name': 'certificate.png', 'mimeType': 'image/png', 'buffer': b'fixture image bytes'}])
+        # The upload area names the chosen files, centred under Choose Files (approved mockup).
+        self.assertEqual(page.locator('#auto-file-name').inner_text(), '2 files: education.txt, certificate.png')
         page.locator('#auto-consent').check()
         with page.expect_request(lambda request: request.method == 'POST' and request.url.endswith('/api/automation')) as sent:
             page.get_by_role('button', name='Create Resume', exact=True).click()

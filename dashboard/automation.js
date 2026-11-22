@@ -1191,6 +1191,14 @@ async function init() {
     document.addEventListener('keydown', event => { if (event.key === 'Escape') closeMenus(); });
   }
   form.addEventListener('change', event => { if (event.target.name === 'method') mode(); });
+  // The upload area names the chosen files (centred, as in the approved mockup).
+  const chosen = () => {
+    const files = [...fileControl.files];
+    byId('auto-file-name').textContent = !files.length ? 'No file chosen'
+      : files.length === 1 ? files[0].name : files.length + ' files: ' + files.map(file => file.name).join(', ');
+  };
+  fileControl.addEventListener('change', chosen);
+  form.addEventListener('reset', () => setTimeout(chosen));
   role.addEventListener('input', roleChanged);
   role.addEventListener('change', roleChanged);
   form.addEventListener('invalid', event => {
