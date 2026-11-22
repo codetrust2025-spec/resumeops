@@ -1,6 +1,7 @@
 """Browser acceptance: Cloudflare Access session expiry and dashboard restarts never lose work or
 create duplicate jobs. Expiry is simulated at the browser edge exactly as Access answers an expired
 background request: 401 when X-Requested-With is sent, otherwise a redirect to the team domain."""
+import re
 import json
 import sys
 import tempfile
@@ -72,7 +73,7 @@ def main():
         page.goto(url)
 
         # 1. Fill a candidate, then the session expires (Access 401) before Review.
-        page.get_by_role('button', name='Create Resume').click()
+        page.get_by_role('button', name=re.compile(r'^(?:Create|Generate) Resume$')).click()
         page.locator('[name=source][value=manual]').check()
         page.get_by_role('button', name='Continue').click()
         page.locator('[name=role]').select_option('fullstack-developer')
@@ -162,7 +163,7 @@ def main():
         imports.route(url + '/**', edge)
         fresh = imports.new_page()
         fresh.goto(url)
-        fresh.get_by_role('button', name='Create Resume').click()
+        fresh.get_by_role('button', name=re.compile(r'^(?:Create|Generate) Resume$')).click()
         fresh.locator('#resume-upload').set_input_files({'name': 'resume.txt', 'mimeType': 'text/plain',
                                                          'buffer': b'Session Import Example resume text. ' * 10})
         expired['mode'] = '401'
@@ -184,14 +185,14 @@ def main():
         imports.route(url + '/**', edge)
         fresh = imports.new_page()
         fresh.goto(url)
-        fresh.get_by_role('button', name='Create Resume').click()
+        fresh.get_by_role('button', name=re.compile(r'^(?:Create|Generate) Resume$')).click()
         fresh.locator('#resume-upload').set_input_files({'name': 'resume.txt', 'mimeType': 'text/plain',
                                                          'buffer': b'Session Import Example resume again. ' * 10})
         fresh.get_by_role('button', name='Import and prefill').click()
         fresh.wait_for_function("ResumeRecovery.read('import').then(work => work && !work.file)")
         second = imports.new_page()
         second.goto(url)
-        second.get_by_role('button', name='Create Resume').click()
+        second.get_by_role('button', name=re.compile(r'^(?:Create|Generate) Resume$')).click()
         second.locator('#resume-upload').set_input_files({'name': 'second.txt', 'mimeType': 'text/plain',
                                                          'buffer': b'Another synthetic candidate.'})
         second.get_by_role('button', name='Import and prefill').click()
@@ -254,7 +255,7 @@ def main():
         same = imports.new_page()
         same.add_init_script('window.open = () => null')
         same.goto(url)
-        same.get_by_role('button', name='Create Resume').click()
+        same.get_by_role('button', name=re.compile(r'^(?:Create|Generate) Resume$')).click()
         same.locator('#resume-upload').set_input_files({'name': 'blocked.txt', 'mimeType': 'text/plain',
                                                         'buffer': b'Synthetic candidate in blocked popup test.'})
         same.get_by_role('button', name='Import and prefill').click()
