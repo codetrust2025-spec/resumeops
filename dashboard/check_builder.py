@@ -56,7 +56,7 @@ def check(screenshots):
                 import_page = context.new_page()
                 import_page.goto(url)
                 assert import_page.locator('a[href="/operations"]').count() == 0
-                import_page.get_by_role('button', name='Create Resume').click()
+                import_page.get_by_role('button', name=re.compile(r'^(?:Create|Generate) Resume$')).click()
                 expect(import_page.get_by_role('heading', name='Import or enter manually')).to_be_visible()
                 # Continue with "import" selected but nothing imported explains why it cannot continue.
                 import_page.get_by_role('button', name='Continue').click()
@@ -124,7 +124,7 @@ def check(screenshots):
                     upload_context = browser.new_context()
                     upload_page = upload_context.new_page()
                     upload_page.goto(url)
-                    upload_page.get_by_role('button', name='Create Resume').click()
+                    upload_page.get_by_role('button', name=re.compile(r'^(?:Create|Generate) Resume$')).click()
                     upload_page.locator('#resume-upload').set_input_files({
                         'name':'candidate.txt','mimeType':'text/plain',
                         'buffer':b'Taylor Document Example resume. Employment Sample Inc. ' * 5})
@@ -163,7 +163,7 @@ def check(screenshots):
                 finally:
                     workspace.draft = original_draft
 
-                page.get_by_role('button', name='Create Resume').click()
+                page.get_by_role('button', name=re.compile(r'^(?:Create|Generate) Resume$')).click()
                 page.locator('[name=source][value=manual]').check()
                 page.get_by_role('button', name='Continue').click()
                 expect(page.get_by_role('heading', name='Choose a target role')).to_be_visible()
@@ -323,7 +323,7 @@ def check(screenshots):
                 expect(mobile.locator('#history')).to_be_visible()
                 mobile.get_by_role('button', name='Back to builder').click()
                 expect(mobile.locator('#history')).to_be_hidden()
-                mobile.get_by_role('button', name='Create Resume').click()
+                mobile.get_by_role('button', name=re.compile(r'^(?:Create|Generate) Resume$')).click()
                 expect(mobile.locator('.step-actions')).to_have_css('position', 'sticky')
                 mobile.locator('[name=source][value=manual]').check()
                 mobile.get_by_role('button', name='Continue').click()

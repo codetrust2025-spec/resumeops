@@ -5,6 +5,7 @@ pagination, actions, regeneration and progress.
 The page and its scripts are the real dashboard served by the real handler; only the history list is a
 fictional fixture (request interception), so every layout case has the same rows. End-to-end flows
 (builder, real downloads, session renewal) are covered by dashboard/check_automation.py."""
+import re
 import json
 import sys
 import tempfile
@@ -323,7 +324,7 @@ class DashboardLayoutTests(unittest.TestCase):
         self.assertEqual(page.locator('#auto-file-name').inner_text(), '2 files: education.txt, certificate.png')
         page.locator('#auto-consent').check()
         with page.expect_request(lambda request: request.method == 'POST' and request.url.endswith('/api/automation')) as sent:
-            page.get_by_role('button', name='Create Resume', exact=True).click()
+            page.get_by_role('button', name=re.compile(r'^(?:Create|Generate) Resume$')).click()
         payload = sent.value.post_data_json
         self.assertEqual([item['extension'] for item in payload['documents']], ['txt', 'png'])
         self.assertNotIn('candidate', payload)
@@ -481,7 +482,7 @@ class DashboardLayoutTests(unittest.TestCase):
         dialog = page.locator('#auto-delete-dialog')
         confirm = dialog.get_by_role('button', name='Permanently delete all')
         phrase = dialog.get_by_label('Type DELETE ALL to confirm')
-        page.get_by_role('button', name='Delete all', exact=True).click()
+        page.get_by_role('button', name='Delete All', exact=True).click()
         expect(dialog).to_be_visible()
         for typed in ('', 'delete all', 'DELETE AL', 'DELETE ALL '):
             phrase.fill(typed)
@@ -490,7 +491,7 @@ class DashboardLayoutTests(unittest.TestCase):
         dialog.get_by_role('button', name='Cancel').click()
         expect(dialog).to_be_hidden()
         self.assertEqual(len(self.posts), 1, 'cancel sends nothing')
-        page.get_by_role('button', name='Delete all', exact=True).click()
+        page.get_by_role('button', name='Delete All', exact=True).click()
         expect(phrase).to_have_value('')
         phrase.fill('DELETE ALL')
         expect(confirm).to_be_enabled()

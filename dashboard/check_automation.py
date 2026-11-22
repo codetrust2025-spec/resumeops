@@ -231,7 +231,7 @@ def check():
                         sent.append(route.request.post_data_json)
                         route.fulfill(status=400, content_type='application/json', body='{"error": "Checked."}')
                     page.route('**/api/automation', refuse)
-                    page.get_by_role('button', name='Create Resume').click()
+                    page.get_by_role('button', name=re.compile(r'^(?:Create|Generate) Resume$')).click()
                     expect(page.get_by_text('Checked.')).to_be_visible()
                     page.unroute('**/api/automation')
                     assert len(sent) == 1 and len(sent[0]['documents']) == 1 and 'candidate' not in sent[0], sent
@@ -251,7 +251,7 @@ def check():
                     page.locator('#auto-consent').check()
                     with page.expect_response(lambda response: response.url.endswith('/api/automation') and
                                               response.request.method == 'POST') as accepted:
-                        page.get_by_role('button', name='Create Resume').click()
+                        page.get_by_role('button', name=re.compile(r'^(?:Create|Generate) Resume$')).click()
                     assert accepted.value.status == 202, accepted.value.text()
                     # SQL and JavaScript are none of Full Stack Developer's own stack: the role's skills are confirmed
                     # once (here the fake model suggests nothing, so the candidate's own skills are kept as listed).
