@@ -86,8 +86,7 @@ function stats() {
     ['gear', 'Preparing', counts.processing || 0], ['eye', 'Waiting for review', counts.needs_input || 0],
     ['check', 'Complete', counts.complete || 0], ['stop', 'Stopped', counts.blocked || 0],
     ['chip', 'GPU slots in use', `${data.gpu?.busy ?? 0} of ${data.gpu?.slots ?? 1}`],
-    // Applications the candidates deleted: counted only when there are some (the row of eight stays one line).
-    ...(deleted ? [['trash', 'Deleted', deleted]] : [])];
+    ['trash', 'Deleted', deleted]];
   $('cd-stats').replaceChildren(...items.map(([name, label, value]) => {
     const box = el('div', null, 'cd-stat');
     box.append(icon(name), el('strong', String(value)), el('span', label));
