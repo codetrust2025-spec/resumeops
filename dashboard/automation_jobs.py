@@ -821,6 +821,88 @@ class AutomationJobs:
         self.wake.set()
         return new_id
 
+    def _edit_sources(self, owner):
+        """The owner's finished resumes (newest first): those with verified facts."""
+        with closing(self.connection()) as db:
+            rows = db.execute('SELECT id, candidate, role, facts FROM automation WHERE owner=? AND facts IS NOT NULL '
+                              'ORDER BY updated DESC', (owner,)).fetchall()
+        return [{'id': row['id'], 'candidate': row['candidate'] or '', 'role': row['role'] or '',
+                 'facts': json.loads(row['facts'])} for row in rows]
+
+    def edit_preview(self, owner, message='', identifier=None, jd=''):
+        """AI Edit: the proposed changes for one resume (named in the request, or chosen), for approval. Nothing is
+        changed here. A correction request and a job description can be given together."""
+        from resume_bot.ai_edit import EditError, corrections, find_candidates, tailor
+        from resume_bot.ollama import Ollama
+        message, jd = ' '.join(str(message or '').split())[:2000], str(jd or '')[:20000]
+        if not message and not jd.strip():
+            raise EditError('Describe the correction, or paste a job description.')
+        sources = self._edit_sources(owner)
+        if identifier:
+            resume = next((item for item in sources if item['id'] == identifier), None)
+            if not resume:
+                raise EditError('Only a finished resume can be edited.')
+        else:
+            matches = find_candidates(sources, message)
+            if not matches:
+                raise EditError('Name the candidate (for example "Change Bhavana\'s graduation year from 2024 to 2026"), '
+                                'or open AI Edit from their resume.')
+            if len(matches) > 1:
+                return {'choose': [{'id': item['id'], 'candidate': item['candidate'], 'role': item['role']}
+                                   for item in matches]}
+            resume = matches[0]
+        facts, role = resume['facts'], resume['role']
+        result = {'id': resume['id'], 'candidate': resume['candidate'], 'role': role, 'edits': [], 'keywords': [],
+                  'gaps': []}
+        if jd.strip():
+            tailored = tailor(facts, jd, role)
+            result.update(keywords=tailored['keywords'], gaps=tailored['gaps'], edits=tailored['edits'])
+        if message and not (jd.strip() and not re.search(r'\b(?:change|update|correct|fix|set|replace|add|remove|'
+                                                          r'delete)\b', message, re.I)):
+            result['edits'] += corrections(facts, message, Ollama(model=self.workspace.model))
+        if not result['edits'] and not result['keywords']:
+            raise EditError('No change to propose: the resume already matches.')
+        return result
+
+    def edit_apply(self, owner, identifier, edits, keywords=None):
+        """A new version of a finished resume with the approved changes (the original stays). Every change is checked
+        against the current facts; the new version is built by the normal pipeline (PDF, LaTeX, ATS, Overleaf)."""
+        from resume_bot.ai_edit import EditError, apply_edits
+        from resume_bot.automation import CONSENT_VERSION, select_target
+        if not isinstance(edits, list) or len(edits) > 40:
+            raise EditError('Choose the changes to apply.')
+        keywords = [' '.join(str(k).split())[:60] for k in (keywords or []) if str(k).strip()][:40]
+        if not edits and not keywords:
+            raise EditError('Choose at least one change.')
+        with closing(self.connection()) as db, db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT facts, candidate, role, origin, notice, source, client FROM automation '
+                             'WHERE owner=? AND id=?', (owner, identifier)).fetchone()
+            if not row or not row['facts']:
+                raise EditError('Only a finished resume can be edited.')
+            facts, role, notes = apply_edits(json.loads(row['facts']), edits)
+            role = select_target(role or row['role'])
+            origin = json.loads(row['origin']) if row['origin'] else self._legacy_origin(facts, row['notice'])
+            # Work lines the user wrote or corrected are their own attested words.
+            origin['bullets'] = list(dict.fromkeys([*origin.get('bullets', []), *(
+                e['new'] for e in edits if isinstance(e, dict) and '.bullets.' in str(e.get('path')) and e.get('new'))]))
+            if keywords:
+                notes.append('Tailored to a job description: ' + ', '.join(keywords[:12]) + '.')
+            now = time.time()
+            new_id = hashlib.sha256(json.dumps({'from': identifier, 'edits': edits, 'keywords': keywords, 'at': now},
+                                               sort_keys=True, default=str).encode()).hexdigest()
+            payload = json.dumps({'consent': CONSENT_VERSION, 'role': role, 'regenerated_from': identifier,
+                                  'edited_from': identifier, 'jd_keywords': keywords})
+            db.execute('INSERT INTO automation(owner,id,payload,checkpoints,created,updated,role,candidate,percent,stage,'
+                       "origin,source,client,notice) VALUES (?,?,?,?,?,?,?,?,30,'AI Edit approved: building the new version',"
+                       '?,?,?,?)',
+                       (owner, new_id, payload, json.dumps({'source': facts, 'facts': facts}), now, now, role,
+                        facts.get('full_name') or row['candidate'], json.dumps(origin), row['source'], row['client'],
+                        json.dumps(notes)))
+        self.start()
+        self.wake.set()
+        return new_id
+
     def answer(self, owner, identifier, answers, decisions=None, certifications=None):
         """Apply the candidate's answers to a job that needs input, then continue it where it stopped. When the
         same review also holds project suggestions, their decisions come with the answers (one confirmation)."""
@@ -1110,6 +1192,11 @@ class AutomationJobs:
             if intelligence is None:
                 progress(26, f'Selected role analysis: {role}')
                 intelligence = checkpoint('role', role_intelligence(role, self.workspace.root))
+            if request.get('jd_keywords'):
+                # AI Edit, tailored to a job description: its keywords the candidate's facts show lead the role's
+                # terms (skills and evidence order, ATS keywords). Content still comes from the facts only.
+                jd_terms = [t for t in request['jd_keywords'] if isinstance(t, str)]
+                intelligence = {**intelligence, 'terms': list(dict.fromkeys([*jd_terms, *intelligence['terms']]))}
             target = {'role': intelligence['role'], 'keywords': intelligence['terms']}
             label = intelligence['label']
             # A designation is never a skill, and extraction notes are never resume text (any source, including a

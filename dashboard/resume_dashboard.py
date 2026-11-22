@@ -1052,6 +1052,45 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return self.send_json({'error': str(exc) if action == 'regenerate' else 'Invalid request.'}, 400)
             return self.send_json({'id': identifier, 'status': 'queued'})
 
+        def automation_edit(self, request_origin, action):
+            """AI Edit for the signed-in account: edit-preview proposes changes (nothing is changed), edit-apply builds
+            the approved changes as a new version. A job description may come as text or as a document."""
+            from resume_bot.ai_edit import EditError
+            owner = self.session_owner(request_origin)
+            if not owner:
+                return self.reject_post('Sign in first.')
+            try:
+                size = int(self.headers.get('Content-Length', ''))
+                if not 0 < size <= 6 * 1024 * 1024 or self.headers.get_content_type() != 'application/json':
+                    return self.send_json({'error': 'Keep the request under 6 MB.'}, 413)
+                request = json.loads(self.rfile.read(size))
+                if not isinstance(request, dict):
+                    return self.send_json({'error': 'Invalid request.'}, 400)
+                identifier = request.get('id')
+                if identifier is not None and (not isinstance(identifier, str)
+                                               or not re.fullmatch(r'[0-9a-f]{64}', identifier)):
+                    return self.send_json({'error': 'Invalid resume identifier.'}, 400)
+                if action == 'edit-preview':
+                    jd = request.get('jd') or ''
+                    document = request.get('jd_document')
+                    if isinstance(document, dict) and document.get('document'):
+                        extension = str(document.get('extension', '')).lower()
+                        if extension not in ('pdf', 'docx', 'txt'):
+                            return self.send_json({'error': 'Upload the job description as PDF, DOCX or TXT.'}, 415)
+                        text = workspace.read_automation_source(extension, base64.b64decode(document['document']))
+                        jd = (jd + '\n' + (text if isinstance(text, str) else json.dumps(text))).strip()
+                    return self.send_json(automation.edit_preview(owner, request.get('message', ''), identifier, jd))
+                if not identifier:
+                    return self.send_json({'error': 'Invalid resume identifier.'}, 400)
+                if not workspace.automation_ready():
+                    return self.send_json({'error': 'The resume watcher version is not ready. Retry shortly.'}, 503)
+                new_id = automation.edit_apply(owner, identifier, request.get('edits') or [], request.get('keywords'))
+                return self.send_json({'id': new_id, 'status': 'queued'}, 202)
+            except EditError as exc:
+                return self.send_json({'error': str(exc)}, 400)
+            except (ValueError, UnicodeError, KeyError, TypeError):
+                return self.send_json({'error': 'Invalid request.'}, 400)
+
         def audit_client(self, request_origin):
             """Who asked, for the deletion record: the access path, the client address (Cloudflare's view of it on
             the public site) and the browser, without the session token or any request body."""
@@ -1133,7 +1172,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return self.apply_post()
             request_origin = self.request_origin()
             if (self.path not in ('/api/automation', '/api/automation/answer', '/api/automation/projects',
-                                  '/api/automation/regenerate', '/api/automation/delete', '/api/intake/key',
+                                  '/api/automation/regenerate', '/api/automation/delete', '/api/automation/edit-preview',
+                                  '/api/automation/edit-apply', '/api/intake/key',
                                   '/api/intake/queue', '/api/intake/human-check', '/api/intake/start', '/api/intake/delete', '/api/roles', '/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry', '/api/ai-draft', '/api/ai-review', '/api/ai-queue') or request_origin is None
                     or self.headers.get('Origin') != request_origin
                     or not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token)):
@@ -1144,6 +1184,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 return self.submit_automation(request_origin)
             if self.path in ('/api/automation/answer', '/api/automation/projects', '/api/automation/regenerate', '/api/automation/delete'):
                 return self.automation_action(request_origin, self.path.rsplit('/', 1)[1])
+            if self.path in ('/api/automation/edit-preview', '/api/automation/edit-apply'):
+                return self.automation_edit(request_origin, self.path.rsplit('/', 1)[1])
             if self.path in ('/api/intake/key', '/api/intake/queue', '/api/intake/human-check', '/api/intake/start',
                              '/api/intake/delete'):
                 if not self.is_operator(request_origin):

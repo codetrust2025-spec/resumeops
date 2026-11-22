@@ -404,6 +404,41 @@ class DashboardLayoutTests(unittest.TestCase):
         self.assertEqual(self.posts[-1], {'id': '03' + 'f' * 62, 'role': 'Node.js Developer'})
         page.close()
 
+    def test_ai_edit_previews_changes_and_applies_only_the_ticked_ones(self):
+        from playwright.sync_api import expect
+        page = self.open(viewport={'width': 1440, 'height': 900})
+        sent = {}
+        proposal = {'id': 'c' * 64, 'candidate': 'Candidate 03 Example', 'role': 'React.js Developer', 'keywords': ['React'],
+                    'gaps': ['Kafka'], 'edits': [
+                        {'path': 'education.0.end', 'label': 'End (Example University)', 'old': '2024', 'new': '2026'},
+                        {'path': 'skills.+', 'label': 'Skill (added)', 'old': '', 'new': 'Docker'}]}
+
+        def preview(route):
+            sent['preview'] = json.loads(route.request.post_data)
+            route.fulfill(status=200, content_type='application/json', body=json.dumps(proposal))
+
+        def apply(route):
+            sent['apply'] = json.loads(route.request.post_data)
+            route.fulfill(status=202, content_type='application/json', body=json.dumps({'id': 'd' * 64, 'status': 'queued'}))
+        page.route('**/api/automation/edit-preview', preview)
+        page.route('**/api/automation/edit-apply', apply)
+        row = page.locator('#auto-job-list > li[data-status="complete"]').first
+        row.get_by_role('button', name=re.compile('^AI Edit')).click()
+        dialog = page.locator('#auto-edit-dialog')
+        expect(dialog).to_be_visible()
+        dialog.get_by_label('Correction').fill("Change the graduation year from 2024 to 2026 and add Docker to skills")
+        dialog.get_by_role('button', name='Preview changes').click()
+        expect(dialog).to_contain_text('End (Example University): 2024 → 2026')
+        expect(dialog).to_contain_text('Skill gaps (not in the verified facts, so not added): Kafka')
+        self.assertEqual(sent['preview']['id'], row.get_attribute('data-id'), 'opened from the card: that resume')
+        dialog.locator('.auto-edit-changes input[type=checkbox]').nth(1).uncheck()
+        dialog.get_by_role('button', name='Apply and regenerate').click()
+        expect(dialog).to_be_hidden()
+        self.assertEqual(sent['apply'], {'id': 'c' * 64, 'edits': [proposal['edits'][0]], 'keywords': ['React']})
+        expect(page.locator('#auto-delete-status')).to_contain_text('The original is kept')
+        self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth - innerWidth'), 0)
+        page.close()
+
     def test_ai_drafts_and_projects_are_reviewed_in_one_card(self):
         from playwright.sync_api import expect
         jobs = fake_jobs(4)
