@@ -12,24 +12,28 @@
 </head>
 <body class="cd-page">
 <header class="cd-bar">
-  <a class="cd-brand" href="/">ResumeOps</a>
+  <a class="cd-brand" href="/"><svg class="cd-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>ResumeOps</a>
   <nav><a href="/">My Resumes</a><a href="/candidates" aria-current="page">Candidates</a></nav>
 </header>
 <main class="cd-main">
-  <section class="cd-card cd-head">
-    <div>
-      <h1>Candidates</h1>
+  <section class="cd-card cd-top">
+    <div class="cd-head">
+      <div class="cd-title">
+        <span class="cd-tile" aria-hidden="true"><svg class="cd-ic" viewBox="0 0 24 24"><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.5"/><path d="M20 20v-1.3a3.3 3.3 0 0 0-2.5-3.2"/><path d="M15.5 4.8a3.5 3.5 0 0 1 0 6.4"/></svg></span>
+        <div><h1>Candidates</h1><p>Manage candidate applications and resume processing.</p></div>
+      </div>
+      <div class="cd-share">
+        <label for="cd-form-url">Public form link</label>
+        <div class="cd-share-row">
+          <input id="cd-form-url" readonly>
+          <button type="button" id="cd-copy-form"><svg class="cd-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>Copy</button>
+          <a id="cd-whatsapp" class="cd-whatsapp" target="_blank" rel="noopener noreferrer" hidden><svg viewBox="0 0 24 24"
+            width="20" height="20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 3a9 9 0 0 0-7.8 13.5L3
+            21l4.6-1.2A9 9 0 1 0 12 3Zm0 1.8a7.2 7.2 0 1 1-3.7 13.4l-.3-.2-2.6.7.7-2.5-.2-.3A7.2 7.2 0 0 1 12 4.8Z"/></svg>Share
+            via WhatsApp</a>
+        </div>
+      </div>
     </div>
-    <div class="cd-share">
-      <label for="cd-form-url">Public form link</label>
-      <div class="cd-inline"><input id="cd-form-url" readonly><button type="button" id="cd-copy-form">Copy</button></div>
-      <a id="cd-whatsapp" class="cd-whatsapp" target="_blank" rel="noopener noreferrer" hidden><svg viewBox="0 0 24 24"
-        width="20" height="20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 3a9 9 0 0 0-7.8 13.5L3
-        21l4.6-1.2A9 9 0 1 0 12 3Zm0 1.8a7.2 7.2 0 1 1-3.7 13.4l-.3-.2-2.6.7.7-2.5-.2-.3A7.2 7.2 0 0 1 12 4.8Z"/></svg>Share
-        via WhatsApp</a>
-    </div>
-  </section>
-  <section class="cd-card">
     <div class="cd-stats" id="cd-stats" aria-live="polite"></div>
     <div class="cd-queue">
       <span id="cd-queue-state" role="status"></span>
@@ -38,11 +42,12 @@
   </section>
   <section class="cd-card">
     <div class="cd-tools">
-      <input type="search" id="cd-search" placeholder="Search name, email, phone, ID or role" aria-label="Search candidates">
+      <span class="cd-search"><svg class="cd-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input type="search" id="cd-search" placeholder="Search name, email, phone, ID or role" aria-label="Search candidates"></span>
       <select id="cd-status" aria-label="Filter by status">
         <option value="">All statuses</option><option value="submitted">Not started</option>
         <option value="queued">Waiting in queue</option>
-        <option value="processing">Preparing</option><option value="needs_input">Waiting for your review</option>
+        <option value="processing">Preparing</option><option value="needs_input">Waiting for review</option>
         <option value="complete">Complete</option><option value="blocked">Stopped</option>
       </select>
     </div>
@@ -55,12 +60,15 @@
     </div>
     <p id="cd-empty" hidden>No applications yet.</p>
   </section>
-  <section class="cd-card" aria-labelledby="cd-human-title">
-    <h2 id="cd-human-title">Bot protection (Cloudflare Turnstile)</h2>
-    <p id="cd-human-state" role="status"></p>
+  <section class="cd-card cd-human-card" aria-labelledby="cd-human-title">
+    <div class="cd-human-head">
+      <svg class="cd-ic cd-shield" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6z"/></svg>
+      <div><h2 id="cd-human-title">Bot protection (Cloudflare Turnstile)</h2>
+        <p id="cd-human-state" role="status"></p></div>
+    </div>
     <form id="cd-human-form" class="cd-human" autocomplete="off">
-      <label>Site key <input id="cd-human-site" spellcheck="false" autocomplete="off"></label>
-      <label>Secret key <input id="cd-human-secret" type="password" spellcheck="false" autocomplete="new-password"></label>
+      <label>Site key <input id="cd-human-site" spellcheck="false" autocomplete="off" placeholder="Enter site key"></label>
+      <label>Secret key <input id="cd-human-secret" type="password" spellcheck="false" autocomplete="new-password" placeholder="Enter secret key"></label>
       <div class="cd-inline"><button type="submit">Save and turn on</button>
         <button type="button" id="cd-human-off">Turn off</button></div>
       <p class="cd-hint">Use Turnstile keys for resumeops.tech. The secret is stored locally and never displayed.</p>

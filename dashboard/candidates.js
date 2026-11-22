@@ -21,7 +21,43 @@ function whatsappLink(formUrl) {
 }
 
 const LABELS = {submitted: 'Not started', queued: 'Waiting in queue', retrying: 'Retrying', processing: 'Preparing',
-  handed_off: 'Building', needs_input: 'Waiting for your review', complete: 'Complete', blocked: 'Stopped'};
+  handed_off: 'Building', needs_input: 'Waiting for review', complete: 'Complete', blocked: 'Stopped'};
+
+// Line icons (24px grid, stroked), as in the approved Candidates design.
+const ICONS = {
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  layers: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  check: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+  stop: '<circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/>',
+  chip: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  play: '<path d="M7 4v16l13-8z"/>',
+  refresh: '<path d="M20 11a8 8 0 0 0-14.6-4.5L4 8"/><path d="M4 3v5h5"/><path d="M4 13a8 8 0 0 0 14.6 4.5L20 16"/><path d="M20 21v-5h-5"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  pause: '<path d="M8 5v14M16 5v14"/>',
+};
+
+function icon(name) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('class', 'cd-ic');
+  svg.innerHTML = ICONS[name];
+  return svg;
+}
+
+// A button with a leading icon; the label stays its accessible name.
+function iconButton(name, text, className) {
+  const button = el('button', null, className);
+  button.type = 'button';
+  button.append(icon(name), document.createTextNode(text));
+  return button;
+}
 
 function el(tag, text, className) {
   const node = document.createElement(tag);
@@ -44,21 +80,23 @@ function bucket(entry) {
 function stats() {
   const counts = {};
   for (const entry of data.candidates) if (!entry.deleted) counts[bucket(entry)] = (counts[bucket(entry)] || 0) + 1;
-  const items = [['Applications', data.candidates.filter(entry => !entry.deleted).length],
-    ['Not started', counts.submitted || 0], ['Waiting in queue', counts.queued || 0],
-    ['Preparing', counts.processing || 0], ['Waiting for your review', counts.needs_input || 0],
-    ['Complete', counts.complete || 0], ['Stopped', counts.blocked || 0],
-    ['GPU slots in use', `${data.gpu?.busy ?? 0} of ${data.gpu?.slots ?? 1}`],
-    ['Deleted', data.candidates.filter(entry => entry.deleted).length]];
-  $('cd-stats').replaceChildren(...items.map(([label, value]) => {
+  const deleted = data.candidates.filter(entry => entry.deleted).length;
+  const items = [['file', 'Applications', data.candidates.filter(entry => !entry.deleted).length],
+    ['clock', 'Not started', counts.submitted || 0], ['layers', 'Waiting in queue', counts.queued || 0],
+    ['gear', 'Preparing', counts.processing || 0], ['eye', 'Waiting for review', counts.needs_input || 0],
+    ['check', 'Complete', counts.complete || 0], ['stop', 'Stopped', counts.blocked || 0],
+    ['chip', 'GPU slots in use', `${data.gpu?.busy ?? 0} of ${data.gpu?.slots ?? 1}`],
+    // Applications the candidates deleted: counted only when there are some (the row of eight stays one line).
+    ...(deleted ? [['trash', 'Deleted', deleted]] : [])];
+  $('cd-stats').replaceChildren(...items.map(([name, label, value]) => {
     const box = el('div', null, 'cd-stat');
-    box.append(el('strong', String(value)), el('span', label));
+    box.append(icon(name), el('strong', String(value)), el('span', label));
     return box;
   }));
   const paused = data.queue?.paused;
   $('cd-queue-state').textContent = paused ? 'Paused. Applications are saved.' :
     'One AI job at a time. Your resumes have priority.';
-  $('cd-pause').textContent = paused ? 'Resume processing' : 'Pause processing';
+  $('cd-pause').replaceChildren(icon(paused ? 'play' : 'pause'), document.createTextNode(paused ? 'Resume processing' : 'Pause processing'));
   $('cd-pause').dataset.paused = paused ? '1' : '';
 }
 
@@ -77,12 +115,13 @@ function row(entry) {
   const tr = el('tr');
   tr.id = 'cand-' + entry.candidate;
   const who = el('td');
-  who.append(el('strong', entry.deleted ? '(deleted by the candidate)' : entry.name), el('span', entry.candidate, 'cd-id'),
-    el('span', when(entry.created), 'cd-muted'));
+  const created = el('span', null, 'cd-muted cd-when');
+  created.append(icon('calendar'), document.createTextNode(when(entry.created)));
+  who.append(el('strong', entry.deleted ? '(deleted by the candidate)' : entry.name), el('span', entry.candidate, 'cd-id'), created);
   const contact = el('td');
   if (!entry.deleted) contact.append(el('span', entry.email), el('span', entry.phone, 'cd-muted'));
   const role = el('td', entry.role || '');
-  if (entry.versions > 1) role.append(el('span', `${entry.versions} versions`, 'cd-muted'));
+  if (entry.versions > 1) role.title = `${entry.versions} versions`;  // compact rows; the count is on hover
   const state = el('td');
   const job = entry.job || {};
   const status = bucket(entry);
@@ -104,7 +143,7 @@ function row(entry) {
   const outputs = el('td', null, 'cd-outputs');
   // A version prepared only in another operator account (the local dashboard on this computer, say): its files are
   // that account's, so none are offered here (they could not be downloaded); Process again prepares one here.
-  if (job.elsewhere) outputs.append(el('span', 'Prepared in another ResumeOps account. Process again to get the files here.', 'cd-muted'));
+  const elsewhere = job.elsewhere ? 'Prepared in another ResumeOps account. Process again to get the files here.' : '';
   if (status === 'complete' && job.revision && !job.elsewhere) {
     if (entry.ats) outputs.append(el('span', `ATS ${entry.ats}`, 'cd-ats'));
     outputs.append(download(entry, 'resume.pdf', 'PDF'), download(entry, 'main.tex', 'LaTeX'),
@@ -121,14 +160,13 @@ function row(entry) {
     const legacy = Boolean(entry.job?.candidates_own);
     if (!entry.started || entry.details_changed || legacy) {
       const label = !entry.started || legacy ? 'Start processing' : 'Start again with new details';
-      const go = el('button', label, 'cd-start');
-      go.type = 'button';
+      const go = iconButton('play', label, 'cd-start');
       go.addEventListener('click', () => start(entry, go));
       outputs.prepend(go);
     } else if (status === 'complete' || status === 'blocked') {
       // A finished or stopped resume can be prepared again from the same details (the earlier one stays).
-      const again = el('button', 'Process again', 'cd-small');
-      again.type = 'button';
+      const again = iconButton('refresh', 'Process again', 'cd-small');
+      if (elsewhere) again.title = elsewhere;
       again.addEventListener('click', () => {
         if (window.confirm(`Prepare a new resume for ${entry.name} from the same details? The current one stays.`)) start(entry, again, true);
       });
@@ -139,21 +177,20 @@ function row(entry) {
       review.href = '/#resume-' + job.id;  // that resume's card in My Resumes
       outputs.append(review);
     }
-    const more = el('button', opened.has(entry.candidate) ? 'Hide details' : 'Details', 'cd-small');
-    more.type = 'button';
+    const more = iconButton('info', opened.has(entry.candidate) ? 'Hide details' : 'Details', 'cd-small');
     more.setAttribute('aria-expanded', String(opened.has(entry.candidate)));
     more.addEventListener('click', () => {
       if (opened.has(entry.candidate)) opened.delete(entry.candidate); else opened.add(entry.candidate);
       render();
     });
-    const key = el('button', 'New private link', 'cd-small');
-    key.type = 'button';
+    const key = iconButton('link', 'New private link', 'cd-small');
     key.addEventListener('click', () => newLink(entry));
-    const drop = el('button', 'Delete', 'cd-small cd-danger');
-    drop.type = 'button';
+    const drop = iconButton('trash', 'Delete', 'cd-small cd-danger');
     drop.addEventListener('click', () => remove(entry));
     outputs.append(more, key, drop);
   }
+  // Without a Process again button to carry it, the note on another account's version stays visible.
+  if (elsewhere && !outputs.querySelector('[title]')) outputs.append(el('span', elsewhere, 'cd-muted'));
   tr.append(who, contact, role, state, outputs);
   if (!opened.has(entry.candidate) || !entry.form) return [tr];
   const extra = el('tr', null, 'cd-details-row');
