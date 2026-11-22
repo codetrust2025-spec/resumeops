@@ -144,7 +144,11 @@ FIELD_NAMES = {'full_name': 'full name', 'email': 'email address', 'phone': 'pho
 ANSWER_LIMIT = 250
 # Work lines and skills arrive as AI drafts the candidate keeps, edits or clears: several lines, and optional
 # (an empty answer lists the job without lines, or the resume without a skills section).
-DRAFTED_FIELDS = {'bullets': (10, 240, 2400), 'skills': (20, 60, 1500)}  # max items, item length, total
+# Max items, item length, total. Seen live: a QA applicant's own list of 40-odd skills could not be confirmed
+# under a limit of 20 ("Use at most 20 skills"), so the review card stopped at Continue.
+DRAFTED_FIELDS = {'bullets': (10, 240, 2400), 'skills': (60, 60, 3000)}
+# A group label typed before a list of skills ("Programming: Java, TypeScript"): the label is not a skill.
+SKILL_GROUP_LABEL = re.compile(r'^[A-Za-z][A-Za-z &/()+.-]{1,40}:\s*(?=\S)')
 # Said under each question, so the answer goes in the right field.
 FIELD_HINTS = {'phone': ' Include the country code, for example +91 98765 43210.',
                'email': ' Correct it so recruiters can reach you.',
@@ -457,7 +461,10 @@ def _drafted_answer(value, field, qid):
     if len(value) > total:
         raise AnswerError(f'Keep the {FIELD_NAMES[field]} under {total} characters.', qid)
     parts = value.splitlines() if field == 'bullets' else re.split(r'[\n,;]', value)
-    items = list(dict.fromkeys(item for item in (clean_bullet(plain(part)) for part in parts) if item))
+    items = (clean_bullet(plain(part)) for part in parts)
+    if field == 'skills':
+        items = (SKILL_GROUP_LABEL.sub('', item) for item in items)
+    items = list(dict.fromkeys(item for item in items if item))
     if len(items) > most:
         raise AnswerError(f'Use at most {most} {"lines" if field == "bullets" else "skills"}.', qid)
     if any(len(item) > longest for item in items):

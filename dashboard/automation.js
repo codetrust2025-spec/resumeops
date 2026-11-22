@@ -737,7 +737,7 @@ function answerForm(job) {
     else field.rows = question.field === 'bullets' ? Math.min(8, Math.max(3, (question.value || '').split('\n').length))
       : question.field === 'skills' ? 2 : 3;
     field.maxLength = question.field === 'source_text' ? 7500 : question.field === 'bullets' ? 2400
-      : DRAFTED.has(question.field) ? 1500 : 250;
+      : question.field === 'skills' ? 3000 : DRAFTED.has(question.field) ? 1500 : 250;
     field.required = !DRAFTED.has(question.field);
     field.value = question.value || '';
     const hint = element('span', question.explanation);
