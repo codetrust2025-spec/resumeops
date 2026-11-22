@@ -266,9 +266,12 @@ class DashboardLayoutTests(unittest.TestCase):
         page = self.open(jobs=fake_jobs(4), viewport={'width': 1920, 'height': 1080})
         self.assertEqual(page.locator('#auto-page').inner_text(), 'Showing 1 – 4 of 4 resumes')
         self.assertTrue(page.locator('#auto-pager').is_hidden())
-        self.assertEqual(page.locator('#auto-count').inner_text(), '4 resumes')
-        self.assertEqual(page.locator('#auto-done').inner_text(), '1 completed')
-        self.assertEqual(page.locator('#auto-done-percent').inner_text(), '25% completed')
+        self.assertEqual(page.locator('#auto-count').inner_text(), '4')
+        self.assertEqual(page.locator('#auto-done').inner_text(), '1')
+        stats = page.locator('#auto-stats').inner_text()
+        for label in ('Total Resumes', 'Completed', 'In Progress'):
+            self.assertIn(label, stats)
+        self.assertEqual(page.locator('#auto-done-percent').count(), 0, 'no summary progress bar')
         page.close()
 
     def test_switching_modes_keeps_what_was_entered(self):
@@ -476,7 +479,7 @@ class DashboardLayoutTests(unittest.TestCase):
         expect(page.locator('#auto-delete-status')).to_have_text('Permanently deleted 1 resume.')
         self.assertEqual(self.posts, [{'id': '03' + 'f' * 62, 'confirm': 'DELETE'}])
         expect(page.locator('#auto-job-list > li[data-id^="03"]')).to_have_count(0)
-        expect(page.locator('#auto-count')).to_have_text('14 resumes')
+        expect(page.locator('#auto-count')).to_have_text('14')
         status_filter.select_option('')
 
         dialog = page.locator('#auto-delete-dialog')
@@ -500,7 +503,7 @@ class DashboardLayoutTests(unittest.TestCase):
         expect(dialog.locator('#auto-delete-error')).to_have_text(
             'ResumeOps is building a resume right now. Nothing was deleted; try again in a minute.')
         expect(dialog).to_be_visible()
-        expect(page.locator('#auto-count')).to_have_text('14 resumes')
+        expect(page.locator('#auto-count')).to_have_text('14')
         with page.expect_request('**/api/automation/delete'):
             confirm.click()
         expect(dialog).to_be_hidden()

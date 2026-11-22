@@ -445,3 +445,20 @@ li[data-status=blocked] .auto-state strong{background:var(--a-red-bg);color:var(
   .auto-navlink .ic{width:20px;height:20px}
   .auto-navlink::after{bottom:0}
 }
+
+/* Simplified summary and cards: three compact metrics, one progress bar per resume card, notes folded away. */
+.auto-page .auto-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.auto-page .auto-stats .auto-stat{display:flex;align-items:center;gap:10px;min-width:0}
+.auto-page .auto-stats .auto-stat > div{display:grid;min-width:0}
+.auto-page .auto-stat-label{color:var(--a-muted);font-size:.84rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.auto-stat-busy{color:#2c63c9}
+.auto-page .auto-status .auto-progress{display:none}
+.auto-log{font-size:.86rem;color:var(--a-muted)}
+.auto-log summary{cursor:pointer;font-weight:600;color:var(--a-text);list-style:revert}
+.auto-log[open]{display:grid;gap:4px}
+.auto-log > span{display:block;padding-left:14px}
+@media (max-width:760px){
+  .auto-page .auto-stats{gap:6px}
+  .auto-page .auto-stats .auto-stat{flex-direction:column;align-items:flex-start;gap:4px;padding:8px}
+  .auto-page .auto-stats .auto-stat-icon{width:28px;height:28px}
+}
