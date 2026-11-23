@@ -8,7 +8,8 @@ from .workflow import ROLES, analyze, matched_terms, normalize_request
 # "Software Tester" got none, and its resume scored 0 for keywords and skills). The resume keeps the title as typed
 # (a custom role); only the keywords come from the nearest role. The first field that matches wins, specific fields
 # before general ones; among its roles, the one whose technologies the title names most ("Azure DevOps Engineer":
-# Azure Cloud Engineer), else the first. A title in no listed field ("Software Developer") takes GENERAL_ROLE.
+# Azure Cloud Engineer), else the first. A technical title in no listed field ("Software Developer") takes GENERAL_ROLE.
+# A title outside technology ("Warehouse Planning Manager", "Quality Control Manager") assumes no catalog terms.
 NEAREST_ROLES = (
     (r'secur|cyber|penetration|\bsoc\b', ('cloud-engineer',)),
     (r'\bqa\b|quality|\btest|\bsdet\b', ('software-tester', 'automation-tester')),
@@ -38,6 +39,7 @@ GENERAL_ROLE = 'software-engineer'
 
 def nearest_role(title):
     """The id of the catalog role whose keywords suit a title the catalog does not list, or None."""
+    from .generate import NON_SOFTWARE_TITLE, technical_job
     from .market import title_words
 
     words = title_words(title)
@@ -54,6 +56,8 @@ def nearest_role(title):
         found = [key for key, size in contained.items() if size == best]
         if len(found) == 1:
             return found[0]
+    if NON_SOFTWARE_TITLE.search(title):
+        return None
     for pattern, keys in NEAREST_ROLES:
         if re.search(pattern, title, re.IGNORECASE):
             present = [key for key in keys if key in ROLES]
@@ -61,7 +65,7 @@ def nearest_role(title):
                 # A more specific role only when it names more of the title than the field's first role does.
                 named = max(present, key=lambda key: len(matched_terms(ROLES[key]['keywords'], title)))
                 return named
-    return GENERAL_ROLE if GENERAL_ROLE in ROLES else None
+    return GENERAL_ROLE if GENERAL_ROLE in ROLES and technical_job(title) else None
 
 
 def role_intelligence(role, root=None):

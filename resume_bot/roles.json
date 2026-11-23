@@ -1296,6 +1296,18 @@
     "Manual Test Engineer"
    ],
    "groups": {
+    "Tools": [
+     "Postman",
+     "TestRail",
+     "JIRA",
+     "Zephyr",
+     "Selenium WebDriver",
+     "Apache JMeter",
+     "Git"
+    ],
+    "Databases": [
+     "SQL"
+    ],
     "Testing Practices": [
      "Manual Testing",
      "Functional Testing",
@@ -1319,18 +1331,6 @@
      "Boundary Value Analysis",
      "Bug Reporting",
      "Defect Tracking"
-    ],
-    "Tools": [
-     "Postman",
-     "JIRA",
-     "TestRail",
-     "Zephyr",
-     "Selenium WebDriver",
-     "Apache JMeter",
-     "Git"
-    ],
-    "Databases": [
-     "SQL"
     ],
     "Methodologies": [
      "Agile",

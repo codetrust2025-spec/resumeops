@@ -13,7 +13,10 @@ COMMON_TITLES = ['Software Engineer', 'Senior Software Engineer', 'Software Deve
                  'Software Test Engineer', 'Data Engineer', 'Big Data Engineer', 'ETL Developer', 'Business Analyst',
                  'Power BI Developer', 'Database Administrator', 'PHP Developer', 'Golang Developer',
                  'Spring Boot Developer', 'Python Full Stack Developer', 'System Administrator', 'Network Engineer',
-                 'Technical Support Engineer', 'UI/UX Designer', 'Scrum Master', 'Project Manager']
+                 'Technical Support Engineer', 'UI/UX Designer']
+# Outside technology: no catalog terms are assumed (a custom title's own market sources only).
+NON_TECHNICAL = ['Warehouse Planning Manager', 'Scrum Master', 'Project Manager', 'Quality Control Manager',
+                 'Mobile Sales Executive', 'Customer Service Engineer']
 
 
 def tester_profile():
@@ -59,7 +62,7 @@ class UnknownTitleTests(unittest.TestCase):
                     'Senior Azure Data Engineer': 'azure-data-engineer', 'Azure DevOps Engineer': 'azure-cloud-engineer',
                     'Python Full Stack Developer': 'fullstack-developer', 'Business Analyst': 'data-analyst',
                     'JavaScript Developer': 'frontend-developer', 'UI/UX Designer': 'ui-developer',
-                    'Golang Developer': 'backend-developer', 'Scrum Master': 'software-engineer'}
+                    'Golang Developer': 'backend-developer', 'Embedded Software Engineer': 'software-engineer'}
         for title, role in expected.items():
             with self.subTest(title=title):
                 self.assertEqual(nearest_role(title), role)
@@ -67,6 +70,13 @@ class UnknownTitleTests(unittest.TestCase):
         self.assertEqual(intelligence['role'], 'custom')
         self.assertEqual(intelligence['terms'], ROLES['software-tester']['keywords'][:40])
         self.assertIn('nearest role Software Tester', intelligence['sources'][-1]['label'])
+
+    def test_a_title_outside_technology_assumes_no_catalog_terms(self):
+        for title in NON_TECHNICAL:
+            with self.subTest(title=title):
+                self.assertIsNone(nearest_role(title))
+                intelligence = role_intelligence(title)
+                self.assertEqual((intelligence['role'], intelligence['label'], intelligence['terms']), ('custom', title, []))
 
     def test_a_software_tester_resume_scores_keywords_and_skill_areas(self):
         profile = tester_profile()
@@ -78,7 +88,8 @@ class UnknownTitleTests(unittest.TestCase):
         self.assertGreater(scores['keyword_coverage'], 10)
         self.assertEqual(scores['skills_alignment'], 15)
         groups = skill_groups(profile['skills'], ROLES['software-tester'])
-        self.assertEqual([g['name'] for g in groups][:3], ['Testing Practices', 'Test Design', 'Tools'])
+        self.assertEqual([g['name'] for g in groups],
+                         ['Tools', 'Databases', 'Testing Practices', 'Test Design', 'Methodologies'])
         self.assertNotIn('Other skills', [g['name'] for g in groups])
 
     def test_testing_practices_are_not_named_tools(self):
