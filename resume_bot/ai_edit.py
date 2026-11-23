@@ -64,24 +64,6 @@ def leaves(facts):
     return out
 
 
-def find_candidates(jobs, message):
-    """The resumes whose candidate the request names ("Change Bhavana's graduation year ..."): every distinct
-    candidate whose best name match is the highest, newest version first."""
-    text = message.casefold()
-    scored = {}
-    for job in jobs:
-        name = (job.get('candidate') or '').strip()
-        parts = [p for p in re.findall(r"[^\W\d_]{3,}", name.casefold())]
-        score = sum(bool(re.search(r'(?<![^\W\d_])' + re.escape(p) + r"(?:'s)?(?![^\W\d_])", text)) for p in parts)
-        key = name.casefold()
-        if score and (key not in scored or scored[key][0] < score):  # jobs come newest first: ties keep the newest
-            scored[key] = (score, job)
-    if not scored:
-        return []
-    best = max(score for score, _ in scored.values())
-    return [job for score, job in scored.values() if score == best]
-
-
 def _role_titles():
     """(title, catalog role name) for every offered role and its title variations, longest title first."""
     from .workflow import ROLES, load_roles

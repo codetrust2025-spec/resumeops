@@ -5,7 +5,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
-from resume_bot.ai_edit import EditError, apply_edits, corrections, find_candidates, tailor
+from resume_bot.ai_edit import EditError, apply_edits, corrections, select_resume, tailor
 from resume_bot.profile import validate_profile
 from resume_bot.workflow import load_roles
 
@@ -45,13 +45,18 @@ class AiEditTests(unittest.TestCase):
         self.assertIn('2024 -> 2026', notes[0])
 
     def test_the_candidate_is_found_by_name(self):
-        jobs = [{'id': '1', 'candidate': 'Bhavana Example'}, {'id': '2', 'candidate': 'Kiran Sample'},
-                {'id': '3', 'candidate': 'Bhavana Example'}]
-        self.assertEqual([j['id'] for j in find_candidates(jobs, "Change Bhavana's graduation year")], ['1'],
+        jobs = [{'id': '1', 'candidate': 'Bhavana Example', 'role': 'Data Analyst'},
+                {'id': '2', 'candidate': 'Kiran Sample', 'role': 'Data Analyst'},
+                {'id': '3', 'candidate': 'Bhavana Example', 'role': 'Data Analyst'}]
+        kind, found = select_resume(jobs, "Change Bhavana's graduation year")
+        self.assertEqual((kind, found['id'], found['versions']), ('resume', '1', 2),
                          'the newest version of the named candidate')
-        self.assertEqual(find_candidates(jobs, 'Change the graduation year'), [])
-        both = [{'id': '1', 'candidate': 'Bhavana Rao'}, {'id': '2', 'candidate': 'Bhavana Iyer'}]
-        self.assertEqual(len(find_candidates(both, 'Change Bhavana phone to +91 90000 00099')), 2, 'asked to choose')
+        kind, found = select_resume(jobs, 'Change the graduation year')
+        self.assertEqual((kind, [j['id'] for j in found]), ('choose', ['1', '2']), 'no name: every resume to choose from')
+        both = [{'id': '1', 'candidate': 'Bhavana Rao', 'role': 'Data Analyst'},
+                {'id': '2', 'candidate': 'Bhavana Iyer', 'role': 'Data Analyst'}]
+        kind, found = select_resume(both, 'Change Bhavana phone to +91 90000 00099')
+        self.assertEqual((kind, len(found)), ('choose', 2), 'asked to choose')
 
     def test_skills_are_added_and_removed_only_as_asked(self):
         added = corrections(bhavana(), 'Add Docker to the skills')

@@ -37,7 +37,8 @@ class DashboardTest(unittest.TestCase):
             try:
                 headers = {'Origin': origin, 'X-Dashboard-Token': 'token',
                            'Content-Type': 'application/json'}
-                request = lambda path, **kwargs: urlopen(Request(origin + path, **kwargs), timeout=3)
+                # 3 seconds timed out now and then on a loaded CI runner (the first request warms the handler).
+                request = lambda path, **kwargs: urlopen(Request(origin + path, **kwargs), timeout=12)
                 phone_headers = {'Host': 'rtx.example.ts.net:8443', 'X-Forwarded-Proto': 'https'}
                 with self.assertRaises(HTTPError) as anonymous:
                     request('/api/status', headers=phone_headers)

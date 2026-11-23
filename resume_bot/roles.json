@@ -125,6 +125,46 @@
    "GitHub",
    "GitLab",
    "Bitbucket"
+  ],
+  "User Acceptance Testing": [
+   "UAT",
+   "User Acceptance Testing (UAT)"
+  ],
+  "End-to-End Testing": [
+   "E2E Testing",
+   "End-to-End (E2E) Testing"
+  ],
+  "Requirement Traceability Matrix": [
+   "RTM",
+   "Requirement Traceability Matrix (RTM)"
+  ],
+  "Test Case Design": [
+   "Test Cases",
+   "Test Case Writing"
+  ],
+  "Test Scenarios": [
+   "Test Scenario Design",
+   "Test Scenario"
+  ],
+  "Defect Tracking": [
+   "Bug Tracking",
+   "Defect Management",
+   "Defect Life Cycle"
+  ],
+  "Bug Reporting": [
+   "Defect Reporting"
+  ],
+  "Apache JMeter": [
+   "JMeter"
+  ],
+  "Object-Oriented Programming": [
+   "OOP",
+   "OOPs",
+   "Object Oriented Programming"
+  ],
+  "Data Structures": [
+   "Data Structures and Algorithms",
+   "DSA"
   ]
  },
  "roles": [
@@ -878,6 +918,56 @@
    ]
   },
   {
+   "id": "data-engineer",
+   "name": "Data Engineer",
+   "family": "data-engineering",
+   "titleVariations": [
+    "Data Engineer"
+   ],
+   "groups": {
+    "Languages": [
+     "Python",
+     "SQL",
+     "Scala"
+    ],
+    "Big Data": [
+     "Apache Spark",
+     "PySpark",
+     "Hadoop",
+     "Hive",
+     "Kafka"
+    ],
+    "Orchestration": [
+     "Apache Airflow"
+    ],
+    "Data Warehousing": [
+     "Snowflake",
+     "Amazon Redshift",
+     "BigQuery"
+    ],
+    "Cloud & DevOps": [
+     "Amazon Web Services",
+     "Microsoft Azure",
+     "Google Cloud",
+     "Docker",
+     "Git"
+    ],
+    "Concepts": [
+     "ETL",
+     "ELT",
+     "Data Pipelines",
+     "Data Modeling",
+     "Data Warehousing",
+     "Data Quality"
+    ]
+   },
+   "projectThemes": [
+    "Batch ETL pipeline from CSV and API sources into a data warehouse with Airflow",
+    "Streaming events through Kafka into Spark for daily aggregates",
+    "Dimensional data model with data-quality checks for sales reporting"
+   ]
+  },
+  {
    "id": "azure-data-engineer",
    "name": "Azure Data Engineer",
    "family": "data-azure",
@@ -1194,6 +1284,68 @@
    ]
   },
   {
+   "id": "software-tester",
+   "name": "Software Tester",
+   "family": "qa",
+   "titleVariations": [
+    "Software Tester",
+    "Manual Tester",
+    "QA Tester",
+    "Manual QA Tester",
+    "Software Test Engineer",
+    "Manual Test Engineer"
+   ],
+   "groups": {
+    "Testing Practices": [
+     "Manual Testing",
+     "Functional Testing",
+     "Regression Testing",
+     "Smoke Testing",
+     "Sanity Testing",
+     "Integration Testing",
+     "System Testing",
+     "End-to-End Testing",
+     "User Acceptance Testing",
+     "Cross-Browser Testing",
+     "Exploratory Testing",
+     "API Testing"
+    ],
+    "Test Design": [
+     "Test Case Design",
+     "Test Scenarios",
+     "Test Planning",
+     "Test Execution",
+     "Requirement Traceability Matrix",
+     "Boundary Value Analysis",
+     "Bug Reporting",
+     "Defect Tracking"
+    ],
+    "Tools": [
+     "Postman",
+     "JIRA",
+     "TestRail",
+     "Zephyr",
+     "Selenium WebDriver",
+     "Apache JMeter",
+     "Git"
+    ],
+    "Databases": [
+     "SQL"
+    ],
+    "Methodologies": [
+     "Agile",
+     "Scrum",
+     "SDLC",
+     "STLC"
+    ]
+   },
+   "projectThemes": [
+    "Manual and API test suite for an online booking application",
+    "Regression test plan and defect tracking for a web store release",
+    "Postman collection that checks the status codes and responses of a REST API"
+   ]
+  },
+  {
    "id": "salesforce-developer",
    "name": "Salesforce Developer",
    "family": "salesforce",
@@ -1428,6 +1580,57 @@
     "Task tracker with React, Node.js and PostgreSQL",
     "Online store with React front end and REST APIs",
     "Appointment booking app with Angular and Spring Boot"
+   ]
+  },
+  {
+   "id": "software-engineer",
+   "name": "Software Engineer",
+   "family": "software",
+   "titleVariations": [
+    "Software Engineer"
+   ],
+   "groups": {
+    "Languages": [
+     "Java",
+     "Python",
+     "JavaScript",
+     "C++",
+     "SQL"
+    ],
+    "Frameworks": [
+     "Spring Boot",
+     "Django",
+     "React.js",
+     "Node.js"
+    ],
+    "Databases": [
+     "MySQL",
+     "PostgreSQL",
+     "MongoDB"
+    ],
+    "Cloud & DevOps": [
+     "Docker",
+     "Amazon Web Services",
+     "CI/CD"
+    ],
+    "Tools": [
+     "Git",
+     "Linux",
+     "JIRA"
+    ],
+    "Concepts": [
+     "Data Structures",
+     "Algorithms",
+     "Object-Oriented Programming",
+     "REST APIs",
+     "Microservices",
+     "Unit Testing"
+    ]
+   },
+   "projectThemes": [
+    "REST API with authentication and a relational database",
+    "Web application with a React front end and a Spring Boot or Django back end",
+    "Command-line tool with unit tests and a CI pipeline"
    ]
   },
   {
