@@ -28,7 +28,7 @@ from zipfile import BadZipFile, ZipFile
 APPLY_ASSETS = {'apply.js': 'text/javascript', 'apply.css': 'text/css', 'apply-status.js': 'text/javascript',
                 'candidate.js': 'text/javascript',
                 'candidate.css': 'text/css', 'automation.js': 'text/javascript', 'automation.css': 'text/css',
-                'builder.css': 'text/css', 'recovery.js': 'text/javascript'}
+                'builder.css': 'text/css', 'recovery.js': 'text/javascript', 'favicon.svg': 'image/svg+xml'}
 PREFILL_BODY = 6 * 1024 * 1024 * 4 // 3 + 4096
 TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com'
 ARTIFACTS = ('resume.pdf', 'overleaf.pdf', 'main.tex', 'overleaf-project.zip',
@@ -439,8 +439,8 @@ class Workspace:
 
 
 RENEWED_PAGE = b'''<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Signed in \xc2\xb7 ResumeOps</title>
-<link rel="stylesheet" href="/builder.css"><script defer src="/auth-renewed.js"></script></head>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>ResumeOps</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="stylesheet" href="/builder.css"><script defer src="/auth-renewed.js"></script></head>
 <body><main class="width intro"><h1>Signed in</h1><p>ResumeOps is resuming your work.</p></main></body></html>'''
 
 
@@ -729,7 +729,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                       '/recovery.js': ('recovery.js', 'text/javascript'),
                       '/dashboard.css': ('dashboard.css', 'text/css'),
                       '/dashboard.js': ('dashboard.js', 'text/javascript'),
-                      '/workflow.js': ('workflow.js', 'text/javascript')}
+                      '/workflow.js': ('workflow.js', 'text/javascript'),
+                      '/favicon.svg': ('favicon.svg', 'image/svg+xml')}
             if url.path in assets:
                 name, mime = assets[url.path]
                 path = Path(__file__).with_name(name)
