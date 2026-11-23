@@ -1056,12 +1056,16 @@ EXTRA_TOOLS = ['Formik', 'WebSocket', 'WebSockets', 'Socket.IO', 'GraphQL', 'Apo
                'RabbitMQ', 'gRPC', 'Nginx', 'Swagger', 'OpenAPI', 'Pandas', 'NumPy', 'Matplotlib', 'Streamlit']
 
 
+# Catalog skill groups that hold practices, not named tools ("Regression Testing", "Test Case Design", "Agile").
+CONCEPT_GROUPS = {'Concepts', 'Testing Practices', 'Test Design', 'Methodologies'}
+
+
 def named_tools():
     """Named tools (not concepts such as "Unit Testing" or "Accessibility") the catalog and common libraries know."""
     load_roles()
     groups = [(name, items) for role in ROLES.values() for name, items in (role.get('groups') or {}).items()]
-    concepts = {item for name, items in groups if name == 'Concepts' for item in items}
-    tools = {item for name, items in groups if name != 'Concepts' for item in items}
+    concepts = {item for name, items in groups if name in CONCEPT_GROUPS for item in items}
+    tools = {item for name, items in groups if name not in CONCEPT_GROUPS for item in items}
     return sorted((tools - concepts) | set(EXTRA_TOOLS))
 
 

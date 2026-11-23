@@ -29,9 +29,10 @@ TOOLS = all(shutil.which(tool) for tool in ('pdflatex', 'pdftotext', 'pdfinfo'))
 VISIBLE = ['UI Developer', 'Frontend Developer', 'React.js Developer', 'Angular Developer', 'Java Backend Developer',
            'Python Backend Developer', 'Node.js Developer', 'Java Full Stack Developer', 'MERN Stack Developer',
            '.NET Developer', 'DevOps Engineer', 'AWS Cloud Engineer', 'Azure Cloud Engineer', 'GCP Cloud Engineer',
-           'Azure Data Engineer', 'GCP Data Engineer', 'Data Analyst', 'Data Scientist', 'AI / ML Engineer',
-           'Generative AI Engineer', 'QA Automation Engineer', 'Salesforce Developer', 'Mobile App Developer',
-           'Android Developer', 'iOS Developer', 'Full Stack Developer']
+           'Data Engineer', 'Azure Data Engineer', 'GCP Data Engineer', 'Data Analyst', 'Data Scientist',
+           'AI / ML Engineer', 'Generative AI Engineer', 'QA Automation Engineer', 'Software Tester',
+           'Salesforce Developer', 'Mobile App Developer', 'Android Developer', 'iOS Developer', 'Full Stack Developer',
+           'Software Engineer']
 
 
 def facts():
@@ -382,7 +383,7 @@ class PageTests(unittest.TestCase):
                     page.goto(origin)
                     options = page.locator('#auto-role-options option')
                     options.first.wait_for(state='attached')
-                    self.assertEqual(options.count(), 27)
+                    self.assertEqual(options.count(), len(VISIBLE) + 1)
                     self.assertEqual(options.last.get_attribute('value'), 'Custom Role')
                     page.get_by_label('Target role').fill('Custom Role')
                     self.assertTrue(page.locator('#auto-custom-wrap').is_visible())

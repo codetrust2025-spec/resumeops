@@ -2,6 +2,32 @@
 
 ResumeOps combines candidate entry, target roles, keyword coverage, and template preview with the existing Ollama, LaTeX, PDF, Overleaf, and watcher pipeline. Confirm facts at intake. The watcher handles generation, validation, publication, verification, and retries. Target keywords are scored against the supplied facts and never inserted as qualifications.
 
+## Create Resume
+
+**Create Resume** has two modes with one layout:
+
+- **Upload Files** has only **Choose Files** (up to 10 PDF, DOCX, TXT, JPG or PNG files, 12 MB in all), **Target Role**, the required consent and **Generate Resume**. Every other fact comes from the documents. A fact they do not state becomes a question on the resume card; nothing is guessed.
+- **Enter Manually** is a separate form for typing the candidate's details.
+
+**Target Role** offers the catalog roles in `resume_bot/roles.json`, plus **Custom Role** for any other title. A title that is a catalog role name or one of its title variations uses that role. Any other title is kept as typed on the resume and takes its ATS keywords from the nearest catalog role, so no title is left without keywords. For example, QA Engineer takes the Software Tester keywords, Senior Software Engineer the Software Engineer ones and Big Data Engineer the Data Engineer ones (`nearest_role` in `resume_bot/ai_review.py`).
+
+**My Resumes** shows three metrics (Total Resumes, Completed, In Progress). Each resume card shows its own live progress, with the AI verification details collapsed.
+
+## AI Edit
+
+AI Edit changes a finished resume. Both entry points use one engine (`resume_bot/ai_edit.py`):
+
+- **AI Edit on a resume card** works on that exact resume, with no candidate selection.
+- **AI Edit in the My Resumes header** (global) finds the resume from the request: the candidate by name, then the resume by the role the request names. When more than one resume matches, it lists them to choose from.
+
+A request can be a correction in plain words ("Change Bhavana's graduation year from 2024 to 2026", "Add Docker to the skills", "Remove Git from skills"), a new target role ("Regenerate as DevOps Engineer"), or a job description. A job description can be pasted or uploaded as a PDF, DOCX, TXT, JPG, JPEG or PNG file of up to 6 MB. AI Edit then lists the job keywords the verified facts support, the skill gaps it will not add, and the Career Objective priorities. It reorders skills, work lines and projects so that what the job asks for comes first. It uses verified candidate facts only, and never adds a skill, technology or result that the facts do not state.
+
+**Original vs edited, before approval.** The preview lists every proposed change in a table with Apply, Change, Original and Edited columns. Each change has its own tick box. Untick any change you do not want, then choose **Apply**. Nothing changes until you apply.
+
+Applying creates a new version. It regenerates the PDF and LaTeX, recalculates the ATS score and syncs Overleaf. The original resume stays unchanged.
+
+**Compare with original.** A resume made by AI Edit has a **Compare with original** button on its card. It shows every field that differs between that version and the resume it came from.
+
 ## Isolated staging on Windows
 
 The automation intake accepts candidate evidence documents, including education records, earned

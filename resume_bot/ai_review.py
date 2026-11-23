@@ -4,9 +4,72 @@ import re
 from .ai_first import IntakeError, unsubstantiated_quantification, validate_intake
 from .workflow import ROLES, analyze, matched_terms, normalize_request
 
+# The nearest catalog role for a title the catalog does not list, so no title is left without keywords (seen live:
+# "Software Tester" got none, and its resume scored 0 for keywords and skills). The resume keeps the title as typed
+# (a custom role); only the keywords come from the nearest role. The first field that matches wins, specific fields
+# before general ones; among its roles, the one whose technologies the title names most ("Azure DevOps Engineer":
+# Azure Cloud Engineer), else the first. A technical title in no listed field ("Software Developer") takes GENERAL_ROLE.
+# A title outside technology ("Warehouse Planning Manager", "Quality Control Manager") assumes no catalog terms.
+NEAREST_ROLES = (
+    (r'secur|cyber|penetration|\bsoc\b', ('cloud-engineer',)),
+    (r'\bqa\b|quality|\btest|\bsdet\b', ('software-tester', 'automation-tester')),
+    (r'data engineer|\betl\b|\belt\b|big data|data platform|data pipeline|data warehous',
+     ('data-engineer', 'azure-data-engineer', 'gcp-data-engineer')),
+    (r'generative|\bgen ?ai\b|\bllm', ('generative-ai-engineer',)),
+    (r'data scien', ('data-scientist',)),
+    (r'machine learning|deep learning|computer vision|\bml\b|\bai\b|\bnlp\b', ('ml-engineer', 'data-scientist')),
+    (r'data analyst|business analyst|reporting|business intelligence|\bbi\b|\bmis\b|analytics|power ?bi|tableau',
+     ('data-analyst',)),
+    (r'salesforce|\bsfdc\b|\bcrm\b', ('salesforce-developer',)),
+    (r'mobile|android|\bios\b|flutter|react native|swift|kotlin',
+     ('mobile-app-developer', 'android-developer', 'ios-developer')),
+    (r'full[- ]?stack|\bmern\b|\bmean\b', ('fullstack-developer', 'java-fullstack-developer', 'mern-stack-developer')),
+    (r'designer|\bux\b', ('ui-developer',)),
+    (r'front[- ]?end|\bui\b|react|angular|\bvue|javascript|typescript|web developer',
+     ('frontend-developer', 'react-developer', 'angular-developer', 'ui-developer')),
+    (r'database|\bdba\b|\bsql\b', ('backend-developer',)),
+    (r'devops|\bbuild\b|release|\bsre\b|site reliability|platform|infrastructure|cloud|\baws\b|azure|\bgcp\b|'
+     r'systems? (?:engineer|administrator)|network|linux|support engineer|technical support',
+     ('cloud-engineer', 'devops-engineer', 'aws-cloud-engineer', 'azure-cloud-engineer', 'gcp-cloud-engineer')),
+    (r'back[- ]?end|\bjava\b|python|\bnode|\.net|dotnet|c#|\bapi\b|django|spring|golang|\bgo\b|\bphp\b|ruby|rust',
+     ('backend-developer', 'java-backend-developer', 'python-backend-developer', 'nodejs-developer', 'dotnet-developer')),
+)
+GENERAL_ROLE = 'software-engineer'
+
+
+def nearest_role(title):
+    """The id of the catalog role whose keywords suit a title the catalog does not list, or None."""
+    from .generate import NON_SOFTWARE_TITLE, technical_job
+    from .market import title_words
+
+    words = title_words(title)
+    # A title that contains a catalog title: "Senior Software Engineer", "Big Data Engineer", "Senior SDET". The
+    # longest such title wins; a tie ("AWS Data Engineer": Data Engineer or AWS Engineer) is left to the fields below.
+    contained = {}
+    for key, row in ROLES.items():
+        size = max((len(found) for found in map(title_words, [row['name'], *row['titleVariations']])
+                    if found and found <= words), default=0)
+        if size:
+            contained[key] = size
+    if contained:
+        best = max(contained.values())
+        found = [key for key, size in contained.items() if size == best]
+        if len(found) == 1:
+            return found[0]
+    if NON_SOFTWARE_TITLE.search(title):
+        return None
+    for pattern, keys in NEAREST_ROLES:
+        if re.search(pattern, title, re.IGNORECASE):
+            present = [key for key in keys if key in ROLES]
+            if present:
+                # A more specific role only when it names more of the title than the field's first role does.
+                named = max(present, key=lambda key: len(matched_terms(ROLES[key]['keywords'], title)))
+                return named
+    return GENERAL_ROLE if GENERAL_ROLE in ROLES and technical_job(title) else None
+
 
 def role_intelligence(role, root=None):
-    from .market import relevant_sources, title_words
+    from .market import relevant_sources
     from .workflow import valid_role_title
 
     from .workflow import load_roles, role_by_title
@@ -32,14 +95,11 @@ def role_intelligence(role, root=None):
     sources = relevant_sources(title, root)
     keywords = list(dict.fromkeys(term for row in sources for term in row['terms']))
     if not keywords:
-        family = exact
-        if not family:
-            candidates = [(len(title_words(title) & title_words(row['name'])), key) for key, row in ROLES.items()]
-            ranked = sorted(candidates, reverse=True)
-            if ranked[0][0] >= 2 and ranked[0][0] > ranked[1][0]:
-                family = ranked[0][1]
-        keywords = ROLES[family]['keywords'] if family else []
-        sources.append({'label': 'ResumeOps role catalog (curated)', 'url': '', 'terms': keywords})
+        nearest = nearest_role(title)
+        keywords = ROLES[nearest]['keywords'] if nearest else []
+        sources.append({'label': 'ResumeOps role catalog (curated)' + (f': nearest role {ROLES[nearest]["name"]}'
+                                                                       if nearest else ''),
+                        'url': '', 'terms': keywords})
     terms = keywords[:40]
     keyword_relevance = {
         term: sum(row.get('relevance', 0) for row in sources if term in row['terms'])

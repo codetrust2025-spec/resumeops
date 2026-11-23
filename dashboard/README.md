@@ -10,6 +10,19 @@ Use **Import candidate** to open a résumé. JSON inputs queue directly. DOCX, s
 
 To update an existing dashboard, close its terminal, extract this ZIP over the existing dashboard files, and relaunch it. If launched from Downloads with `--root`, replace the Downloads copy and use the same command.
 
+## Create Resume, My Resumes and AI Edit
+
+The signed-in home page (`automation.html`, `automation.js`, `automation.css`) has **Create Resume** and **My Resumes**. The [main README](../README.md#create-resume) describes them for users.
+
+- **Upload Files** sends only the chosen files, the target role and the consent. **Enter Manually** sends the typed details.
+- **AI Edit** is offered on each resume card (that resume only) and in the My Resumes header (global: the resume is found from the request). Both call the same account-scoped endpoints:
+  - `POST /api/automation/edit-preview` proposes changes and changes nothing. It takes `message`, an optional `id` for a per-resume edit, a pasted `jd`, or a `jd_document` (PDF, DOCX, TXT, JPG, JPEG or PNG, up to 6 MB).
+  - `POST /api/automation/edit-apply` takes the ticked changes. It builds a new version with `edited_from` set to the original, and leaves the original unchanged.
+  - `POST /api/automation/compare` returns original-vs-edited differences for a version made by AI Edit. The card's **Compare with original** button uses it.
+- The AI Edit preview is a table with Apply, Change, Original and Edited columns, one tick box per change. On a phone it opens as a full-height sheet.
+
+Each endpoint needs the same origin, the dashboard token and a signed-in account. It acts only on that account's resumes.
+
 ## Open on iPhone with Tailscale
 
 Use the same Tailscale account on the RTX laptop and iPhone. Keep the dashboard on its default local bind address. In Windows PowerShell, check `tailscale serve status` for an existing service on 8443. If the port is free, run:
