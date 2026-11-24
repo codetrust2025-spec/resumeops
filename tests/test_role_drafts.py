@@ -242,6 +242,9 @@ class ReviewOnceTests(unittest.TestCase):
         self.assertFalse(any(q['drafted'] for q in job['questions'][:2]), 'drafts using unstated tools are discarded')
         self.assertEqual(job['questions'][2]['value'], 'React.js, TypeScript')
         self.assertIn('Next.js', job['questions'][2]['suggestions'])
+        # The skills box already holds the candidate's skills: the message asks to tick others, not to add skills.
+        self.assertIn('Tick any other skills you have used.', job['error'])
+        self.assertNotIn('Add your skills', job['error'])
         self.assertEqual(job['questions'][0]['value'], '')
         self.assertEqual([p['name'] for p in job['proposals']], ['Practice Catalogue', 'Practice Planner'])
         self.assertIn('confirm once', job['error'])

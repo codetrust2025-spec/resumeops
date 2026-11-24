@@ -1453,7 +1453,7 @@ SHORT_STINT = re.compile(r'\b(?:intern|internship|trainee|apprentice|freelance|p
 def draft_lines(rank, position):
     """How many lines the job at ``rank`` (0 = most recent) is drafted to, whatever the years of experience."""
     if SHORT_STINT.search(position or ''):
-        return 4
+        return 7  # every job, internships and freelance work included, gets 7-8 lines to confirm
     return DRAFT_LINES if rank == 0 else 7
 
 
