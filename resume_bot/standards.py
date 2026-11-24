@@ -65,7 +65,7 @@ def standards_report(profile, target, years=None, ats=None, pdf_checks=None):
         others = [line for other in experience if other is not job for line in other['bullets']]
         repeated += [line for line in job['bullets'] if _near_duplicate(line, others)]
     _check(checks, 'experience', 'Professional experience depth and variety', not short and not repeated,
-           'Every technical job has 7-8 distinct lines (internships 4).' if not short and not repeated else
+           'Every technical job has 7-8 distinct lines.' if not short and not repeated else
            ' '.join(filter(None, ['Fewer lines than the role needs: ' + ', '.join(short) + '.' if short else '',
                                   f'{len(repeated)} line(s) repeat another job.' if repeated else ''])),
            applies=bool(experience))

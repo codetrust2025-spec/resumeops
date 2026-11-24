@@ -130,8 +130,8 @@ class LayoutTests(unittest.TestCase):
 class ExperienceDepthTests(unittest.TestCase):
     def test_regular_jobs_get_seven_or_eight_lines_and_short_ones_fewer(self):
         self.assertEqual([draft_lines(rank, 'Software Engineer') for rank in range(5)], [8, 7, 7, 7, 7])
-        self.assertEqual(draft_lines(0, 'Software Engineer Intern'), 4)
-        self.assertEqual(draft_lines(1, 'Freelance Developer'), 4)
+        self.assertEqual(draft_lines(0, 'Software Engineer Intern'), 7)
+        self.assertEqual(draft_lines(1, 'Freelance Developer'), 7)
 
     def test_each_company_describes_different_work(self):
         facts = {'full_name': 'Nila', 'skills': ['Java'], 'education': [],

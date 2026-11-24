@@ -1340,11 +1340,18 @@ class AutomationJobs:
                 drafted = [text for field, text in (('bullets', 'work lines from your job titles and dates' if titled
                                                      else 'work lines from your employers and dates'),
                                                     ('skills', 'skill suggestions')) if has(field, True)]
+                # A skills box already holding the candidate's skills is not asked for again: the review offers the
+                # role's other skills to tick instead.
+                stated = any(q['field'] == 'skills' and q.get('value') for q in questions)
                 asked = [text for field, text in (('bullets', 'what you did in these jobs (or leave a job without '
-                                                              'details)'), ('skills', 'your skills')) if has(field, False)]
+                                                              'details)'), ('skills', 'your skills'))
+                         if has(field, False) and not (field == 'skills' and stated)]
+                offered = any(q['field'] == 'skills' and not q.get('drafted') and q.get('value') and q.get('suggestions')
+                              for q in questions)
                 message = ' '.join(filter(None, [
                     f'AI drafted {" and ".join(drafted)} for {label}. Keep only what is true for you and edit anything.'
-                    if drafted else '', 'Add ' + ' and '.join(asked) + '.' if asked else '', 'Then confirm once.']))
+                    if drafted else '', 'Add ' + ' and '.join(asked) + '.' if asked else '',
+                    'Tick any other skills you have used.' if offered else '', 'Then confirm once.']))
                 if proposals:
                     message += ' Suggested projects are included as drafts: skip any you have not built.'
                 with closing(self.connection()) as db, db:
