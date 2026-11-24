@@ -400,7 +400,8 @@ def write_skill_groups(skills, categories, role_title, ai, on_progress=None):
 
 
 def _same_words(before, after):
-    norm = lambda text: re.findall(r'[a-z0-9+#]+', str(text or '').casefold())
+    """Only letter case and spacing differ: every character, punctuation included, stays."""
+    norm = lambda text: ' '.join(str(text or '').split()).casefold()  # noqa: E731
     return norm(before) == norm(after)
 
 
@@ -416,7 +417,7 @@ def write_education(education, ai, on_progress=None):
                                                      'required': list(fields),
                                                      'properties': {k: {'type': 'string'} for k in fields}}}}}
     prompt = (
-        'Clean the education entries for a professional resume: proper title case for institution names, '
+        'Fix only the letter case of the education entries for a professional resume: title case for institution names, '
         'degrees and subjects (keep abbreviations such as B.Tech, M.Sc, CGPA as commonly written), single '
         'spaces. Keep exactly the same words in the same order: never expand, add, translate or remove a word. '
         'Return JSON {"education": [...]} with the same number of entries in the same order.\n'
