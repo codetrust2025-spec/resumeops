@@ -1142,6 +1142,9 @@ function jobItem(job) {
     body.append((job.questions || []).length ? answerForm(job) : proposalsForm(job));  // drafts and projects: one card
   } else if (job.status === 'blocked') {
     state.append(pill('Needs attention'));
+    if (job.stage === 'Waiting for Overleaf sign-in') {
+      detail.append(element('span', job.stage + ' · ' + job.percent + '%'));
+    }
     detail.append(element('span', explain(job.error)));
   } else if (job.status === 'complete') {
     state.append(pill('Complete'));

@@ -14,7 +14,7 @@ from .latex import FIT_LEVELS, render
 from .polish import polish, safe_edit, verify_tailored
 from .claim_audit import claim_violations, matches_pdf_text, records_for
 from .compile import BuildError, compile_latex, page_lines, verify_pdf, verify_remote_pdf
-from .overleaf import OVERLEAF_STEP_COUNT, OverleafAuthError, OverleafError, import_zip
+from .overleaf import OVERLEAF_STEP_COUNT, OverleafAuthError, OverleafError, import_zip, sign_in_time
 from .progress import LegacyTracker, Tracker
 from .storage import workspace_lock, write_json
 from .profile import ProfileError, validate_profile
@@ -475,6 +475,7 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
         digest = hashlib.sha256(repr(config).encode('utf-8')).hexdigest()
         same = previous.get('sha256') == digest
         failures = previous.get('failures', 0) if same else 0
+        attempt = failures + 1
         if same and previous.get('status') == 'ok':
             built = Path(previous['output'])
             required = ARTIFACTS + (('overleaf.pdf',) if overleaf else ())
@@ -482,15 +483,22 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
                 continue
         retry_marker = inbox / RETRY_DIR / key
         retry_now = retry_marker.is_file()
-        if same and previous.get('status') == 'failed' and not retry_now:
+        if same and previous.get('status') == 'failed':
+            attempt = previous.get('attempt', failures) + 1
             new_code = previous.get('code_version') != CODE_VERSION
-            if previous.get('retryable') is False and not new_code:
-                continue  # deterministic: waits for new code, a changed file, or Retry now
-            if (previous.get('retryable', True) and failures >= MAX_AUTO_ATTEMPTS
-                    and not previous.get('awaiting_sign_in') and not new_code):
-                continue  # transient retries are bounded
-            if not new_code and time.time() - previous['last_attempt'] < _backoff(failures):
-                continue
+            awaiting_sign_in = previous.get('awaiting_sign_in')
+            signed_in = awaiting_sign_in and sign_in_time(browser_profile) > previous['last_attempt']
+            if retry_now or new_code or signed_in:
+                failures = 0
+            else:
+                if awaiting_sign_in:
+                    if not OVERLEAF:
+                        OVERLEAF.update(ok=False, reason='sign-in required', checked=previous['last_attempt'])
+                    continue
+                if previous.get('retryable') is False or failures >= MAX_AUTO_ATTEMPTS:
+                    continue
+                if time.time() - previous['last_attempt'] < _backoff(failures):
+                    continue
         retry_marker.unlink(missing_ok=True)
         started_at = time.time()
         activity = {}
@@ -505,7 +513,7 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
                     if snapshot.get('stage_key') == 'done':
                         return  # 100% is written only with the final status 'ok' record below
                 record = {'sha256': digest, 'status': 'processing', 'last_attempt': started_at,
-                          'failures': failures, 'attempt': failures + 1, **activity,
+                          'failures': failures, 'attempt': attempt, **activity,
                           'heartbeat': time.time()}
                 known[key] = record
                 write_json(state, known)
@@ -532,13 +540,13 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
             if fingerprint != result['source_sha256']:
                 continue
             record = {'sha256': digest, 'status': 'ok', 'output': result['output'],
-                      'attempt': failures + 1, 'code_version': CODE_VERSION, **activity}
+                      'attempt': attempt, 'code_version': CODE_VERSION, **activity}
             print('OK resume processed', flush=True)
         except Exception as exc:
             blocked = isinstance(exc, (OllamaError, OverleafError, BuildError, DatabaseUnavailable,
                                        ProfileError, ExtractionError, json.JSONDecodeError))
             error = {
-                OverleafAuthError: 'Overleaf sign-in required. Run "Sign in to Overleaf" on the RTX laptop, then press Retry now.',
+                OverleafAuthError: 'Overleaf sign-in required. Run "Sign in to Overleaf" on the RTX laptop to resume this job.',
                 OllamaError: 'Local Ollama is unavailable or returned an unusable result.',
                 OverleafError: 'Overleaf is unavailable or requires an authorized browser session.',
                 BuildError: 'Local or Overleaf PDF verification failed. Check the build dependencies.',
@@ -552,18 +560,16 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
                 error = ('The resume did not pass the final fact check, so nothing was published. '
                          'It is checked again automatically when ResumeOps is updated.')
             now = time.time()
-            retryable = not isinstance(exc, DETERMINISTIC) or isinstance(exc, (OSError,))
+            awaiting_sign_in = isinstance(exc, OverleafAuthError)
+            retryable = not isinstance(exc, DETERMINISTIC + (OverleafAuthError,))
             detail = f'{type(exc).__name__}: {exc}'[:300]
-            awaiting_sign_in = key.startswith('private-') and isinstance(exc, OverleafAuthError)
-            if awaiting_sign_in:
-                error = 'Overleaf sign-in required on the RTX laptop. The job will retry automatically.'
-            stopped = not retryable or (failures + 1 >= MAX_AUTO_ATTEMPTS and not awaiting_sign_in)
+            stopped = not retryable or failures + 1 >= MAX_AUTO_ATTEMPTS
             runtime = ai.runtime() if isinstance(exc, OllamaError) and hasattr(ai, 'runtime') else None
             if runtime:
                 LAST_RUNTIME.update(runtime, checked=time.time())
             record = {'sha256': digest, 'status': 'failed', 'blocked': blocked, 'error': error,
                       'error_detail': detail, 'ollama_runtime': runtime,
-                      'failures': failures + 1, 'attempt': failures + 1, **activity,
+                      'failures': failures + 1, 'attempt': attempt, **activity,
                       'failed_stage': activity.get('stage_key', ''), 'retryable': retryable,
                       'awaiting_sign_in': awaiting_sign_in,
                       'code_version': CODE_VERSION,

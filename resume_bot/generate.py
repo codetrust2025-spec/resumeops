@@ -18,6 +18,7 @@ import re
 
 from .ats import CLICHES, FIRST_PERSON, LIST_MARKER
 from .ollama import generate
+from .profile import limit_skill_groups
 from .workflow import ALIASES, ROLES, load_roles, matched_terms
 
 PROPOSAL_SCHEMA = {
@@ -515,7 +516,7 @@ def skill_groups(skills, role):
     rest = [s for s in skills if s not in placed]
     if rest:
         groups.append({'name': 'Other skills' if groups else 'Skills', 'items': rest})
-    return groups
+    return limit_skill_groups(groups)
 
 
 # The resume title (headline) as recruiters search for the role on Naukri and LinkedIn: the selected role, then up
