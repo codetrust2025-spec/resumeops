@@ -80,7 +80,8 @@ class NoClaimedResultsTests(unittest.TestCase):
                                   emphasis=['clear communication', 'attention to detail'])
         self.assertEqual(how, 'job description')
         self.assertIn('clear communication and attention to detail', text)
-        self.assertEqual(broad_objective_problems(text, facts, 'QA Automation Engineer'), [], 'the approved template')
+        self.assertEqual(broad_objective_problems(text, facts, 'QA Automation Engineer', 'first'), [],
+                         'the approved template')
 
     def test_drafted_lines_with_claims_never_reach_the_review_card(self):
         profile = validate_profile({

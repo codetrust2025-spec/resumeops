@@ -200,7 +200,7 @@ class StandardsReportTests(unittest.TestCase):
         failed = {c['id']: c['detail'] for c in report['checks'] if c['ok'] is False}
         self.assertFalse(report['verified'])
         self.assertIn('Certifications', failed['sections'])
-        self.assertIn('None confirmed', failed['certifications'])
+        self.assertIn('None listed', failed['certifications'])
         self.assertIn('Example Retail Labs (fictional) (3 lines)', failed['experience'])
         self.assertIn(f'at least {SKILL_BREADTH}', failed['skills'])
         self.assertIn('30%', failed['keywords'])
@@ -213,7 +213,7 @@ class StandardsReportTests(unittest.TestCase):
         profile['projects'][0] = ('Merchant Service Portal - Tech stack: React.js, Redux | '
                                   + profile['experience'][0]['bullets'][1] + ' | Two. | Three. | Four.')
         failed = {c['id']: c['detail'] for c in self.report(profile)['checks'] if c['ok'] is False}
-        self.assertIn('repeat another job', failed['experience'])
+        self.assertIn('repeat other work', failed['experience'])
         self.assertIn('Repeats work lines: Merchant Service Portal', failed['projects'])
 
     def test_a_fresher_without_jobs_needs_no_experience_section(self):

@@ -119,6 +119,7 @@ def _lines(value):
 
 
 def _rows(form, key):
+    from resume_bot.facts_quality import is_placeholder  # resume_bot is importable once the dashboard set its path
     rows = form.get(key) or []
     if not isinstance(rows, list) or len(rows) > 20:
         raise IntakeError('Too many entries.', key)
@@ -127,7 +128,10 @@ def _rows(form, key):
         if not isinstance(row, dict):
             raise IntakeError('Invalid entry.', key)
         if any(isinstance(value, str) and value.strip() for value in row.values()):
-            kept.append({k: v if isinstance(v, str) else '' for k, v in row.items()})
+            # "NA", "N/A", "-" and "none" are not facts: a row of placeholders is no row at all.
+            row = {k: v if isinstance(v, str) and not is_placeholder(v) else '' for k, v in row.items()}
+            if any(value.strip() for value in row.values()):
+                kept.append(row)
     return kept
 
 

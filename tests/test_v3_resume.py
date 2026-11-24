@@ -150,7 +150,7 @@ class SummaryTests(unittest.TestCase):
     def test_unavailable_model_falls_back_to_facts(self):
         text, how = write_summary(facts(), 'Java Backend Developer', 3, ROLES['java-backend-developer']['keywords'], NoModel())
         self.assertEqual(how, 'composed')
-        self.assertEqual(objective_problems(text, facts(), 'Java Backend Developer'), [])
+        self.assertEqual(objective_problems(text, facts(), 'Java Backend Developer', 'first'), [])
 
     def test_every_role_gets_role_specific_content_from_its_own_skills(self):
         for name in VISIBLE:

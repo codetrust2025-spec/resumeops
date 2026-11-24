@@ -122,8 +122,14 @@ def score(profile, target, keywords, *, role_title, matched_terms, experience, e
     categories.append(_category('structure', 'Resume structure', checks))
 
     checks = []
-    texts = [*bullets, *projects, profile.get('summary') or '']
+    # The Career Objective may be written in the first person ("I am ..."); bullets and projects never are.
+    texts = [*bullets, *projects]
     duplicates = [text for text, count in Counter(t.casefold() for t in bullets).items() if count > 1]
+    # The same work said twice in other words, or once in a job and again in a project, is a repeat too.
+    from .generate import _near_duplicate, _same_task, split_project
+    lines = [*bullets, *(line for project in projects for line in split_project(project)[2])]
+    duplicates += [line for index, line in enumerate(lines)
+                   if _near_duplicate(line, lines[:index]) or _same_task(line, lines[:index])]
     _check(checks, 2, not duplicates, 'Remove repeated bullet points.', 'No repeated bullets.')
     _check(checks, 2, not any(LIST_MARKER.match(b) for b in bullets), 'Remove list markers typed inside bullet text.',
            'Bullets carry no stray list markers.')
