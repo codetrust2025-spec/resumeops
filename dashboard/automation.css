@@ -230,6 +230,8 @@ li[data-status=blocked] .auto-state strong{background:var(--a-red-bg);color:var(
 .auto-page .auto-dialog input{letter-spacing:.04em}
 .auto-delete-field{display:grid;gap:4px}
 .auto-delete-prompt{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px}
+/* One line: "Type DELETE ALL [copy] to confirm". The dialog's other labels stack their text over a field. */
+.auto-page .auto-dialog .auto-delete-prompt label{display:inline;font-weight:600;font-size:.9rem;line-height:32px}
 .auto-delete-code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.04em;padding:1px 6px;border-radius:5px;background:#f1f4f9;color:var(--a-text)}
 .auto-page .auto-dialog .auto-copy{display:inline-grid;place-items:center;width:32px;height:32px;min-height:32px;padding:0;border:1px solid var(--a-field);border-radius:7px;background:#fff;color:var(--a-muted);cursor:pointer}
 .auto-page .auto-dialog .auto-copy:hover,.auto-page .auto-dialog .auto-copy:focus-visible{color:var(--a-text);border-color:var(--a-muted)}
