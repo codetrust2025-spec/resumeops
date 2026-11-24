@@ -41,7 +41,7 @@ def form(n=0, **extra):
             'email': f'asha.{n}@example.com', 'phone': '+91 90000 1%04d' % n, 'location': 'Pune',
             'linkedin': '', 'github': '', 'portfolio': '', 'skills': 'Java, Spring Boot, MySQL, JUnit',
             'education': [{'degree': 'B.Tech', 'university': 'Example Institute (fictional)', 'graduation_year': '2021',
-                           'specialization': '', 'cgpa': ''}],
+                           'specialization': 'Computer Science', 'cgpa': '8.4'}],
             'work_experience': [{'company': 'Example Labs (fictional)', 'position': 'Software Engineer',
                                  'start': 'Jan 2022', 'end': 'Present', 'location': '',
                                  'responsibilities': 'Built Spring Boot REST APIs for order workflows with Java and MySQL.\n'
@@ -86,23 +86,46 @@ class ValidationTests(unittest.TestCase):
 
     def test_each_mandatory_fact_is_asked_for_by_field(self):
         cases = [({'full_name': ''}, 'full_name'), ({'email': 'not-an-email'}, 'email'), ({'phone': '12'}, 'phone'),
-                 ({'location': ''}, 'location'), ({'role': ''}, 'role'), ({'skills': ' , '}, 'skills'),
+                 ({'location': ''}, 'location'), ({'role': ''}, 'role'),
                  ({'education': []}, 'education'), ({'work_experience': []}, 'work_experience'),
-                 ({'projects': []}, 'projects'), ({'consent': False}, 'consent')]
+                 ({'consent': False}, 'consent')]
         for change, field in cases:
             with self.subTest(field=field), self.assertRaises(IntakeError) as caught:
                 intake_request(form(**change))
             self.assertEqual(caught.exception.field, field)
+        for key in ('graduation_year', 'specialization', 'cgpa'):  # specialization and CGPA / percentage: mandatory
+            broken = form()
+            broken['education'][0][key] = '  '
+            with self.subTest(field=key), self.assertRaises(IntakeError) as caught:
+                intake_request(broken)
+            self.assertEqual(caught.exception.field, f'education.0.{key}')
         broken = form()
-        broken['work_experience'][0]['responsibilities'] = '  '
+        broken['projects'][0]['name'] = ''  # an entered project needs its name
         with self.assertRaises(IntakeError) as caught:
             intake_request(broken)
-        self.assertEqual(caught.exception.field, 'work_experience.0.responsibilities')
-        broken = form()
-        broken['education'][0]['graduation_year'] = ''
-        with self.assertRaises(IntakeError) as caught:
-            intake_request(broken)
-        self.assertEqual(caught.exception.field, 'education.0.graduation_year')
+        self.assertEqual(caught.exception.field, 'projects.0.name')
+
+    def test_what_you_did_skills_and_projects_are_optional(self):
+        data = form(skills='', projects=[])
+        data['work_experience'][0]['responsibilities'] = ''
+        request, _ = intake_request(data)
+        profile = request['profile']
+        self.assertEqual(profile['skills'], [])
+        self.assertEqual(profile.get('projects') or [], [])
+        self.assertEqual(profile['experience'][0]['bullets'], [])
+        self.assertEqual(profile['experience'][0]['company'], 'Example Labs (fictional)')
+        # A project with only its name is kept; the AI drafts the rest for review.
+        request, _ = intake_request(form(projects=[{'name': 'Order Service', 'stack': '', 'description': ''}]))
+        self.assertEqual(request['profile']['projects'], ['Order Service'])
+
+    def test_a_fresher_skips_employment_and_the_grade_is_printed_with_its_scale(self):
+        data = form(work_experience=[{'company': '', 'position': '', 'start': '', 'end': '', 'responsibilities': ''}],
+                    fresher=True, skills='', projects=[])
+        data['education'][0]['cgpa'] = '78%'
+        request, _ = intake_request(data)
+        self.assertEqual(request['profile']['experience'], [])
+        self.assertEqual(request['profile']['education'][0]['details'], 'Computer Science | Percentage 78%')
+        self.assertEqual(intake_request(form())[0]['profile']['education'][0]['details'], 'Computer Science | CGPA 8.4')
 
     def test_a_fresher_needs_no_employment_and_has_no_years(self):
         request, _ = intake_request(form(work_experience=[], fresher=True))
@@ -195,7 +218,7 @@ class DeskTests(unittest.TestCase):
              'description': 'Managed database operations and bug fixes.\nBuilt REST endpoints for invoices.\n'
                             'Wrote tests for the invoice service.\nAdded role-based access.\nDeployed with Docker.'}],
             education=[{'degree': 'Bachelor of engineering', 'university': 'Example Engineering College (fictional)',
-                        'graduation_year': '2018', 'specialization': 'Mechanical engineering', 'cgpa': ''}],
+                        'graduation_year': '2018', 'specialization': 'Mechanical engineering', 'cgpa': '7.6'}],
             certifications='Oracle Java SE 11 Developer', linkedin='https://www.linkedin.com/in/asha-example')
         first = self.d.desk.submit(applicant, key())
         started = self.d.desk.start(first['candidate'], OPERATOR)

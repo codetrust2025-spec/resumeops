@@ -25,13 +25,15 @@ const PERSONAL = [['full_name', 'Full name', 'text', true, 'name'], ['email', 'E
   ['linkedin', 'LinkedIn URL', 'url'], ['github', 'GitHub URL', 'url'], ['portfolio', 'Portfolio URL', 'url']];
 const LISTS = {
   education: [['degree', 'Degree', 'text', true, 'e.g. B.Tech'], ['university', 'Institution', 'text', true],
-    ['graduation_year', 'Year of completion', 'text', true, 'e.g. 2022'], ['specialization', 'Specialization'],
-    ['cgpa', 'CGPA / percentage']],
+    ['graduation_year', 'Year of completion', 'text', true, 'e.g. 2022'],
+    ['specialization', 'Specialization', 'text', true, 'e.g. Computer Science'],
+    ['cgpa', 'CGPA / percentage', 'text', true, 'e.g. 8.2 or 78%']],
   work_experience: [['company', 'Employer', 'text', true], ['position', 'Job title', 'text', true],
     ['start', 'Start date', 'text', true, 'e.g. Jul 2022'], ['end', 'End date', 'text', true, 'e.g. Present'],
-    ['location', 'Location'], ['responsibilities', 'What you did (one point per line)', 'textarea', true]],
-  projects: [['name', 'Project name', 'text', true], ['stack', 'Technologies used (comma separated)', 'text', true],
-    ['description', 'What you built (one point per line)', 'textarea', true]],
+    ['location', 'Location'], ['responsibilities', 'What you did (one point per line, optional)', 'textarea']],
+  // Projects are optional; a project that is entered needs its name.
+  projects: [['name', 'Project name', 'text', true], ['stack', 'Technologies used (comma separated)', 'text'],
+    ['description', 'What you built (one point per line)', 'textarea']],
 };
 const NAMES = {education: 'Education', work_experience: 'Job', projects: 'Project'};
 
@@ -191,17 +193,17 @@ function showError(message, path) {
 // Mandatory facts are checked here too, so a candidate sees every gap at once on a phone (the server decides).
 function check(data) {
   const need = [['full_name', 'Enter your full name.'], ['email', 'Enter your email address.'],
-    ['phone', 'Enter your phone number.'], ['location', 'Enter your city.'], ['role', 'Enter the target role.'],
-    ['skills', 'List your technical skills, separated by commas.']];
+    ['phone', 'Enter your phone number.'], ['location', 'Enter your city.'], ['role', 'Enter the target role.']];
   for (const [name, message] of need) if (!data[name].trim()) return [message, name];
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email.trim())) return ['Enter a valid email address.', 'email'];
   const digits = data.phone.replace(/\D/g, '').length;
   if (digits < 7 || digits > 15) return ['Enter a valid phone number (7 to 15 digits).', 'phone'];
-  const lists = [['education', 'Add your education: degree, institution and year.'],
-    ['work_experience', 'Add your employment (or tick "I am a fresher").'], ['projects', 'Add at least one project you built.']];
+  // Technical skills and projects are optional; a fresher has no employment to enter.
+  const lists = [['education', 'Add your education: degree, institution, year, specialization and CGPA / percentage.'],
+    ['work_experience', 'Add your employment (or tick "I am a fresher").'], ['projects', null]];
   for (const [list, message] of lists) {
     if (list === 'work_experience' && data.fresher) continue;
-    if (!data[list].length) return [message, list];
+    if (!data[list].length && message) return [message, list];
     for (const [index, row] of data[list].entries()) {
       for (const [name, label, , required] of LISTS[list]) {
         if (required && !(row[name] || '').trim()) return [`${NAMES[list]} ${index + 1}: enter ${label.toLowerCase()}.`, `${list}.${index}.${name}`];

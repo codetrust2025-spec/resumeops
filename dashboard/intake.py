@@ -130,8 +130,9 @@ def form_facts(form):
     missing. The details have the shape of the dashboard's own candidate form (automation.attested_profile).
 
     Mandatory: name, email, phone, city/location, target role; at least one education entry (degree, institution,
-    year); at least one job (employer, job title, start, end or Present, what you did) unless the candidate is a
-    fresher; technical skills; at least one project (name, technologies, what you built)."""
+    year, specialization, CGPA or percentage); at least one job (employer, job title, start, end or Present) unless
+    the candidate is a fresher. Optional: what was done in each job, technical skills and projects (a project that is
+    entered needs its name); the AI drafts what is missing for the operator's review."""
     from resume_bot.automation import CONSENT_VERSION
 
     if not isinstance(form, dict):
@@ -151,15 +152,15 @@ def form_facts(form):
     if not 7 <= len(re.sub(r'\D', '', candidate['phone'])) <= 15:
         raise IntakeError('Enter a valid phone number (7 to 15 digits).', 'phone')
     skills = [item.strip() for item in re.split(r'[,\n;]', form.get('skills') or '') if item.strip()] \
-        if isinstance(form.get('skills'), str) else []
-    if not skills:
-        raise IntakeError('List your technical skills, separated by commas.', 'skills')
+        if isinstance(form.get('skills'), str) else []  # optional
     education = _rows(form, 'education')
     if not education:
-        raise IntakeError('Add your education: degree, institution and year.', 'education')
+        raise IntakeError('Add your education: degree, institution, year, specialization and CGPA / percentage.',
+                          'education')
     for index, row in enumerate(education):
         for key, label in (('degree', 'the degree'), ('university', 'the institution'),
-                           ('graduation_year', 'the year of completion')):
+                           ('graduation_year', 'the year of completion'), ('specialization', 'the specialization'),
+                           ('cgpa', 'the CGPA / percentage')):
             if not (row.get(key) or '').strip():
                 raise IntakeError(f'Education {index + 1}: enter {label}.', f'education.{index}.{key}')
     fresher = form.get('fresher') is True
@@ -171,19 +172,11 @@ def form_facts(form):
                            ('end', 'the end date (or Present)')):
             if not (row.get(key) or '').strip():
                 raise IntakeError(f'Job {index + 1}: enter {label}.', f'work_experience.{index}.{key}')
-        if not _lines(row.get('responsibilities')):
-            raise IntakeError(f'Job {index + 1}: describe what you did, one point per line.',
-                              f'work_experience.{index}.responsibilities')
-    projects = _rows(form, 'projects')
-    if not projects:
-        raise IntakeError('Add at least one project you built.', 'projects')
+        # What you did is optional: a job without it gets AI-drafted lines for the operator's review.
+    projects = _rows(form, 'projects')  # optional; an entered project needs its name
     for index, row in enumerate(projects):
-        for key, label in (('name', 'the project name'), ('stack', 'the technologies used')):
-            if not (row.get(key) or '').strip():
-                raise IntakeError(f'Project {index + 1}: enter {label}.', f'projects.{index}.{key}')
-        if not _lines(row.get('description')):
-            raise IntakeError(f'Project {index + 1}: describe what you built, one point per line.',
-                              f'projects.{index}.description')
+        if not (row.get('name') or '').strip():
+            raise IntakeError(f'Project {index + 1}: enter the project name.', f'projects.{index}.name')
     platforms = _rows(form, 'coding_platforms')
     candidate.update(
         role=role, skills=', '.join(skills),
