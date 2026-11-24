@@ -100,6 +100,12 @@ def _content(line):
     return {stem(w) for w in words(line) if len(w) > 2} - stop
 
 
+def _same_task(line, others):
+    """The same kind of work with the same technology, in other words (generate._same_task)."""
+    from .generate import _same_task as same
+    return bool(others) and same(line, others)
+
+
 def repeats(line, others, threshold=0.6):
     """``line`` restates one of ``others`` (content-word overlap)."""
     mine = _content(line)
@@ -185,8 +191,8 @@ def write_experience(job, avoid, role_title, ai, on_progress=None):
             if reason:
                 problems.append(f'"{text[:70]}": {reason}')
                 continue
-            if repeats(text, lines):
-                problems.append(f'"{text[:70]}" repeats another line; merge them')
+            if repeats(text, lines) or _same_task(text, lines):
+                problems.append(f'"{text[:70]}" repeats the task of another line; merge them into one line')
                 continue
             if repeats(text, avoid):
                 problems.append(f'"{text[:70]}" repeats another section')
