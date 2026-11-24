@@ -241,8 +241,9 @@ function details(form, candidate) {
     box.append(part);
   };
   const rows = name => (Array.isArray(form[name]) ? form[name] : []).filter(item => item && typeof item === 'object');
-  section('Personal details', [['Full name', form.full_name], ['Email', form.email], ['Phone', form.phone],
-    ['City', form.location], ['LinkedIn', form.linkedin], ['GitHub', form.github], ['Portfolio', form.portfolio]]);
+  section('Personal details', [['Full name', form.full_name], ['Gmail ID', form.email], ['Phone', form.phone],
+    ['Current location', form.location], ['LinkedIn', form.linkedin], ['GitHub', form.github],
+    ['Portfolio', form.portfolio]]);
   // Details for recruiters only (never printed on the resume): photo, date of birth, locations and salary.
   if (form.has_photo && candidate) {
     const part = el('section');
@@ -256,8 +257,8 @@ function details(form, candidate) {
     part.append(photo);
     box.append(part);
   }
-  section('Recruiter details', [['Date of birth', form.dob], ['Current location', form.location],
-    ['Preferred location', form.preferred_location], ['Current salary', form.current_salary],
+  section('Recruiter details', [['Date of birth', form.dob], ['Preferred location', form.preferred_location],
+    ['Current salary', form.current_salary],
     ['Salary type', form.salary_type]]);
   section('Target role', [['Role', form.role], ['Total experience (years)', form.years_of_experience],
     ['Fresher', form.fresher ? 'Yes' : '']]);
