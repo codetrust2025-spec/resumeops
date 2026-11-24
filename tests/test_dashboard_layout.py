@@ -523,7 +523,7 @@ class DashboardLayoutTests(unittest.TestCase):
 
     def test_delete_one_and_delete_all_need_explicit_confirmation(self):
         from playwright.sync_api import expect
-        page = self.open(viewport={'width': 1366, 'height': 768})
+        page = self.open(viewport={'width': 1366, 'height': 768}, permissions=['clipboard-read', 'clipboard-write'])
         dialogs, answers = [], iter([False, True])
         page.on('dialog', lambda d: (dialogs.append(d.message), d.accept() if next(answers) else d.dismiss()))
         rows = page.locator('#auto-job-list > li')
@@ -570,7 +570,24 @@ class DashboardLayoutTests(unittest.TestCase):
         self.assertEqual(len(self.posts), 1, 'cancel sends nothing')
         page.get_by_role('button', name='Delete All', exact=True).click()
         expect(phrase).to_have_value('')
-        phrase.fill('DELETE ALL')
+        # The Copy button beside the phrase copies exactly "DELETE ALL" and says so, but never types it:
+        # the field stays empty and Delete stays disabled until the phrase is entered.
+        copy = dialog.get_by_role('button', name='Copy DELETE ALL')
+        expect(copy).to_be_visible()
+        copy_box, label_box = copy.bounding_box(), dialog.locator('.auto-delete-code').bounding_box()
+        self.assertLess(abs((copy_box['y'] + copy_box['height'] / 2) - (label_box['y'] + label_box['height'] / 2)), 12)
+        self.assertGreater(copy_box['x'], label_box['x'])
+        copy.click()
+        expect(dialog.locator('#auto-delete-copied')).to_have_text('Copied!')
+        self.assertEqual(page.evaluate('navigator.clipboard.readText()'), 'DELETE ALL')
+        expect(phrase).to_have_value('')
+        expect(confirm).to_be_disabled()
+        expect(dialog).to_be_visible()
+        self.assertEqual(len(self.posts), 1, 'copying sends nothing')
+        expect(dialog.locator('#auto-delete-copied')).to_have_text('', timeout=4000)
+        phrase.focus()
+        page.keyboard.press('Control+V')  # paste what the button copied
+        expect(phrase).to_have_value('DELETE ALL')
         expect(confirm).to_be_enabled()
         self.delete_failures.append('ResumeOps is building a resume right now. Nothing was deleted; try again in a minute.')
         confirm.click()

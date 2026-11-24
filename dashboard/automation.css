@@ -228,6 +228,15 @@ li[data-status=blocked] .auto-state strong{background:var(--a-red-bg);color:var(
 .auto-dialog p{margin:0;font-size:.9rem;color:var(--a-muted)}
 .auto-page .auto-dialog label{display:grid;gap:4px;margin:0;font-weight:600;font-size:.9rem}
 .auto-page .auto-dialog input{letter-spacing:.04em}
+.auto-delete-field{display:grid;gap:4px}
+.auto-delete-prompt{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px}
+.auto-delete-code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.04em;padding:1px 6px;border-radius:5px;background:#f1f4f9;color:var(--a-text)}
+.auto-page .auto-dialog .auto-copy{display:inline-grid;place-items:center;width:32px;height:32px;min-height:32px;padding:0;border:1px solid var(--a-field);border-radius:7px;background:#fff;color:var(--a-muted);cursor:pointer}
+.auto-page .auto-dialog .auto-copy:hover,.auto-page .auto-dialog .auto-copy:focus-visible{color:var(--a-text);border-color:var(--a-muted)}
+.auto-page .auto-copy .ic{width:16px;height:16px}
+.auto-copied{font-size:.84rem;font-weight:600;color:var(--ok)}
+.auto-copied.auto-copied-failed{color:var(--bad)}
+.auto-copy-scratch{position:fixed;top:0;left:0;width:1px;height:1px;opacity:0}
 .auto-dialog p.auto-dialog-error{color:var(--bad)}
 .auto-dialog-error:empty{display:none}
 .auto-dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}

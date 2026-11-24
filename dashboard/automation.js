@@ -1017,7 +1017,33 @@ function openDeleteAll() {
   byId('auto-delete-phrase').value = '';
   byId('auto-delete-error').textContent = '';
   byId('auto-delete-confirm').disabled = true;
+  byId('auto-delete-copied').textContent = '';
   dialog.showModal();
+  byId('auto-delete-phrase').focus();
+}
+
+// Copies the confirmation phrase only. The field stays empty, so the exact-phrase check still guards the delete.
+let copiedTimer = 0;
+async function copyDeletePhrase() {
+  const note = byId('auto-delete-copied');
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText('DELETE ALL');
+    copied = true;
+  } catch {
+    const scratch = element('textarea');
+    scratch.value = 'DELETE ALL';
+    scratch.setAttribute('readonly', '');
+    scratch.className = 'auto-copy-scratch';
+    byId('auto-delete-form').append(scratch);  // inside the modal dialog, so it can take the selection
+    scratch.select();
+    try { copied = document.execCommand('copy'); } catch { copied = false; }
+    scratch.remove();
+  }
+  note.textContent = copied ? 'Copied!' : 'Copy failed. Type DELETE ALL instead.';
+  note.classList.toggle('auto-copied-failed', !copied);
+  clearTimeout(copiedTimer);
+  copiedTimer = setTimeout(() => { note.textContent = ''; }, 2000);
   byId('auto-delete-phrase').focus();
 }
 
@@ -1356,6 +1382,7 @@ async function init() {
   byId('auto-delete-phrase').addEventListener('input', event => {
     byId('auto-delete-confirm').disabled = event.target.value !== 'DELETE ALL';
   });
+  byId('auto-delete-copy').addEventListener('click', copyDeletePhrase);
   byId('auto-delete-cancel').addEventListener('click', () => byId('auto-delete-dialog').close());
   byId('auto-delete-form').addEventListener('submit', confirmDeleteAll);
   byId('auto-basics').append(...required.map(field => input(field, true)));
