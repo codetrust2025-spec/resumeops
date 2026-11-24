@@ -1426,6 +1426,28 @@ class AutomationJobs:
                     have = {s.casefold() for s in holder.get('skills', [])}
                     holder['skills'] = [*holder.get('skills', []), *(s for s in extra if s.casefold() not in have)]
                 profile['skill_groups'] = skill_groups(profile['skills'], ROLES.get(intelligence['role'], {}))
+            # Ollama writes every section of the role resume from these verified facts: the Career Objective, the
+            # Technical Skills categories, each job's lines (rewritten, duplicates merged), the project points and
+            # the education wording. Python accepts a section only when it adds no fact, loses none and repeats
+            # nothing; otherwise that section keeps its verified text (resume_bot.ai_sections). The watcher re-checks
+            # the rewrite against these sources without AI (approval v7).
+            from resume_bot.ai_sections import objective_brief, write_sections
+            sources = {**shown_facts, 'skills': list(profile.get('skills') or []),
+                       'experience': [dict(job, bullets=list(job['bullets'])) for job in profile['experience']],
+                       **({'projects': list(profile['projects'])} if profile.get('projects') else {}),
+                       'education': [dict(entry) for entry in profile['education']]}
+            written = checkpoints.get('ai_sections')
+            if written is None:
+                progress(58, 'AI resume writing: every section with Ollama')
+                written = checkpoint('ai_sections', list(write_sections(
+                    profile, ROLES.get(intelligence['role'], {}), label, model,
+                    objective=objective_brief(profile, label),
+                    on_progress=lambda part, metrics: progress(60, f'AI resume writing: {part}'))))
+            profile, writing = written
+            shown_facts = {**sources, 'skills': list(profile.get('skills') or []),
+                           'experience': [dict(job) for job in profile['experience']],
+                           **({'projects': list(profile['projects'])} if profile.get('projects') else {}),
+                           'education': [dict(entry) for entry in profile['education']]}
             problems = content_problems(profile, label)
             if problems:
                 # Never marked verified: the candidate sees exactly what failed.
@@ -1440,12 +1462,14 @@ class AutomationJobs:
             approval = {'operation': job['id'], 'approved_by': job['owner'], 'claims': claims,
                         'project_names': [split_project(p)[0] for p in packet['profile'].get('projects', [])],
                         'market_sources': intelligence['sources'],
-                        'automation': {'v': 6, 'consent': request['consent'], 'submission_sha256': job['id'],
+                        'automation': {'v': 7, 'consent': request['consent'], 'submission_sha256': job['id'],
                                        'source_kind': source_kind,
                                        'source_sha256': hashlib.sha256(
                                            (source if isinstance(source, str) else
                                             json.dumps(source, sort_keys=True)).encode()).hexdigest(),
-                                       'facts': shown_facts, 'summary': how, 'confirmed_projects': confirmed}}
+                                       'facts': shown_facts, 'sources': sources, 'writing': writing,
+                                       'summary': 'ai' if writing['sections'].get('summary', {}).get('by') == 'ollama'
+                                       else how, 'confirmed_projects': confirmed}}
             packet['target']['automation_owner'] = job['owner']
             packet['target']['automation_id'] = job['id']
             packet['target']['complete_sections'] = True
