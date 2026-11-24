@@ -32,6 +32,9 @@ from resume_bot.ingest import find_phone  # noqa: E402
 from resume_bot.prefill import document_text, quick_prefill  # noqa: E402
 
 
+PHOTO = 'data:image/png;base64,' + base64.b64encode(b'\x89PNG\r\n\x1a\n' + b'\x00' * 64).decode()
+
+
 def key():
     return base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip('=')
 
@@ -49,13 +52,17 @@ def form(n=0, **extra):
             'projects': [{'name': f'Order Service {n}', 'stack': 'Java, Spring Boot, MySQL',
                           'description': 'Built order endpoints with Spring Boot and MySQL.\n'
                                          'Wrote JUnit tests for the order endpoints.'}],
-            'certifications': '', 'achievements': ''}
+            'certifications': '', 'achievements': '',
+            'photo': PHOTO, 'dob': '1997-03-21', 'preferred_location': 'Bengaluru',
+            'current_salary': '6.5 LPA', 'salary_type': 'Fixed'}
     data.update(extra)
     return data
 
 
 def account_payload(n):
-    candidate = {k: v for k, v in form(n).items() if k != 'consent'}
+    # Recruiter-only details are never part of a resume request.
+    candidate = {k: v for k, v in form(n).items()
+                 if k not in ('consent', 'photo', 'dob', 'preferred_location', 'current_salary', 'salary_type')}
     candidate.update(background='Built Java APIs at Example Labs.', education=[], work_experience=[], projects=[])
     return {'consent': 'resumeops-auto-1', 'role': 'Java Backend Developer', 'candidate': candidate}
 
@@ -105,6 +112,24 @@ class ValidationTests(unittest.TestCase):
             intake_request(broken)
         self.assertEqual(caught.exception.field, 'projects.0.name')
 
+    def test_recruiter_details_are_mandatory_and_never_reach_the_resume(self):
+        cases = [({'photo': ''}, 'photo'), ({'photo': 'data:image/gif;base64,R0lGODlh'}, 'photo'),
+                 ({'photo': 'data:image/png;base64,' + base64.b64encode(b'not a png').decode()}, 'photo'),
+                 ({'dob': ''}, 'dob'), ({'dob': '21-03-1997'}, 'dob'), ({'dob': '2020-01-01'}, 'dob'),
+                 ({'preferred_location': ' '}, 'preferred_location'), ({'current_salary': ''}, 'current_salary'),
+                 ({'salary_type': 'Sometimes'}, 'salary_type')]
+        for change, field in cases:
+            with self.subTest(field=field, value=list(change.values())[0][:20]), \
+                    self.assertRaises(IntakeError) as caught:
+                intake_request(form(**change))
+            self.assertEqual(caught.exception.field, field)
+        # A fresher has no current salary.
+        intake_request(form(work_experience=[], fresher=True, current_salary='', salary_type=''))
+        request, _ = intake_request(form())
+        printed = json.dumps(request)
+        for value in ('1997-03-21', '6.5 LPA', 'Bengaluru', PHOTO[:40]):
+            self.assertNotIn(value, printed)
+
     def test_what_you_did_skills_and_projects_are_optional(self):
         data = form(skills='', projects=[])
         data['work_experience'][0]['responsibilities'] = ''
@@ -152,6 +177,18 @@ def started_job(d, candidate):
 class DeskTests(unittest.TestCase):
     def setUp(self):
         self.d = Desk(self)
+
+    def test_the_photo_is_served_on_its_own_and_kept_on_corrections(self):
+        secret = key()
+        made = self.d.desk.submit(form(), secret)
+        listed = next(c for c in self.d.desk.candidates() if c['candidate'] == made['candidate'])
+        self.assertNotIn('photo', listed['form'])
+        self.assertTrue(listed['form']['has_photo'])
+        self.assertEqual(listed['form']['current_salary'], '6.5 LPA')
+        self.assertEqual(self.d.desk.photo(made['candidate'])[0], 'image/png')
+        self.d.desk.submit(form(location='Mumbai', photo=''), secret, made['candidate'])  # reopened without it
+        self.assertEqual(self.d.desk.photo(made['candidate'])[0], 'image/png')
+        self.assertIsNone(self.d.desk.photo('RO-NOTEXIST00'))
 
     def test_a_submission_is_saved_and_waits_and_a_retry_is_the_same_application(self):
         secret = key()
