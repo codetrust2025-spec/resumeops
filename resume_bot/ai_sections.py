@@ -26,6 +26,7 @@ from .polish import INFLATING, NEUTRAL, numbers, stem, tokens, words
 VERSION = 'ollama-sections-1'
 MAX_LINE = 240
 PROJECT_POINTS = (4, 5)
+MAX_GROUPS = 12
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -327,6 +328,12 @@ def write_skill_groups(skills, categories, role_title, ai, on_progress=None):
                     existing['items'].extend(items)
                 else:
                     out.append({'name': group['name'], 'items': items})
+        if len(out) > MAX_GROUPS:  # the Technical Skills section stays compact: the rest go under Other Skills
+            named = [g for g in out if g['name'] != 'Other Skills']
+            rest = [item for g in out if g['name'] == 'Other Skills' for item in g['items']]
+            rest = [item for g in named[MAX_GROUPS - 1:] for item in g['items']] + rest
+            out = named[:MAX_GROUPS - 1]
+            out.append({'name': 'Other Skills', 'items': rest})
         left = [skill for key, skill in by_key.items() if key not in seen]
         if left:
             problems.append('use every skill: missing ' + ', '.join(left))
@@ -463,7 +470,8 @@ def rewrite_problems(sources, facts, project_count=None):
     problems = []
     if len(sources['experience']) != len(facts['experience']):
         return ['the number of jobs changed']
-    project_points = [p for project in facts.get('projects') or [] for p in split_project(project)[2]]
+    project_points = [p for holder in (sources, facts) for project in holder.get('projects') or []
+                      for p in split_project(project)[2]]
     for index, (before, after) in enumerate(zip(sources['experience'], facts['experience'])):
         if {k: v for k, v in before.items() if k != 'bullets'} != {k: v for k, v in after.items() if k != 'bullets'}:
             problems.append(f'job {index}: employer, title, dates or location changed')
@@ -510,3 +518,35 @@ def rewrite_problems(sources, facts, project_count=None):
         if sources.get(key) != facts.get(key):
             problems.append(f'{key} changed')
     return problems
+
+
+def objective_brief(profile, role_title, voice='first'):
+    """(rules, check_text) for the Career Objective: the writing brief Ollama gets, built from the validator's own
+    data (opening words, role focus, allowed priorities, forbidden words), and the validator itself."""
+    from . import generate as g
+
+    try:
+        identity = g._objective_identity(profile, role_title, voice)
+        check = lambda text: g.objective_problems(text, profile, role_title, voice)
+    except TypeError:  # a validator without voices writes the third person
+        voice = 'third'
+        identity = g._objective_identity(profile, role_title)
+        check = lambda text: g.objective_problems(text, profile, role_title)
+    focus = g._objective_focus(role_title)
+    strengths = ', '.join(g._objective_strengths(role_title))
+    if voice == 'first':
+        follow = ('Sentence 2 begins with "I aim to" or "I seek to" and names two of these priorities in lowercase: '
+                  f'{strengths}. Sentence 3 begins with "I value" and says how you want to work with a team. ')
+        person = 'Write in the first person ("I"); never "candidate", "aims", "seeks", "values", he, she or they. '
+    else:
+        follow = ('Sentence 2 begins with "Aims to" or "Seeks to" and names two of these priorities in lowercase: '
+                  f'{strengths}. Sentence 3 begins with "Values" and says how the person wants to work with a team. ')
+        person = 'No pronouns (I, my, he, she, they, their) and never "the candidate". '
+    rules = (f'Exactly three sentences, 40-55 words in total. Sentence 1 must begin with the exact words "{identity} '
+             f'focused on {focus}" and end with "and {g.OBJECTIVE_EMPHASIS[0]}." ' + follow + person +
+             'After the opening words use only plain lowercase everyday words. Never mention tools, technologies, '
+             'data pipelines, employers, colleges, projects, years, degrees, certifications or numbers. Never claim '
+             'work done or qualities: avoid built, developed, designed, delivered, maintained, experience, expertise, '
+             'skilled, proven, hands-on, reliable, reliability, scalable, robust, efficient, innovative, passionate, '
+             'leverage. No semicolons, colons, exclamation or question marks.')
+    return rules, check

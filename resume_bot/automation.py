@@ -594,7 +594,12 @@ def _verified_role_resume(profile, target, evidence, version):
 
     title, years = role_name(target), target.get('experience_years')
     summary = profile.get('summary', '')
-    if version == 6:  # first-person Career Objective
+    if version == 7:  # written by Ollama; checked by the same rules, never matched to a template
+        problems = objective_problems(summary, evidence, title, 'first')
+        fallback = broad_objective_problems(summary, evidence, title, 'first')
+        if problems and not fallback:
+            problems = []  # the verified fallback objective, kept when Ollama's drafts all failed
+    elif version == 6:  # first-person Career Objective
         problems = broad_objective_problems(summary, evidence, title, 'first')
     elif version == 5:
         problems = broad_objective_problems(summary, evidence, title)
@@ -635,7 +640,16 @@ def verified_automation(profile, target, approval):
         evidence = validate_profile(proof['facts'])
     except (KeyError, ValueError):
         return False
-    if proof.get('v') in (3, 4, 5, 6):
+    if proof.get('v') == 7:
+        # Ollama-written sections: every rewritten line must add nothing to, and lose nothing of, its sources.
+        from .ai_sections import rewrite_problems
+        try:
+            sources = validate_profile(proof['sources'])
+        except (KeyError, ValueError):
+            return False
+        if rewrite_problems(sources, evidence):
+            return False
+    if proof.get('v') in (3, 4, 5, 6, 7):
         return _verified_role_resume(profile, target, evidence, proof['v'])
     # A separate watcher process checks that the submitted profile is exactly the
     # evidence, allowing only ranking and deterministic career-objective framing.
