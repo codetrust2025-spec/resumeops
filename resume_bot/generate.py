@@ -486,6 +486,10 @@ def _category(skill, source):
     return None
 
 
+# The most Technical Skills groups a resume shows (resume_bot.profile accepts no more).
+MAX_SKILL_GROUPS = 12
+
+
 def skill_groups(skills, role):
     """[{name, items}] covering every skill exactly once, role areas first, then 'Other skills'. A catalog role
     groups by its recruiter-style Technical Skills categories (resumeGroups: "Frontend Technologies",
@@ -513,6 +517,17 @@ def skill_groups(skills, role):
             groups.append({'name': 'Architecture & Practices' if name == 'Concepts' else name, 'items': items})
             placed.update(items)
     rest = [s for s in skills if s not in placed]
+    if len(groups) + bool(rest) > MAX_SKILL_GROUPS:
+        # A broad skill list spans more categories than a resume (and the profile schema) allows: the role's own
+        # categories and the fullest others stay, and the smaller ones fold into 'Other skills'. Every skill is
+        # still listed exactly once.
+        own_names = {'Architecture & Practices' if n == 'Concepts' else n for n in order}
+        ranked = sorted(range(len(groups)),
+                        key=lambda i: (groups[i]['name'] not in own_names, -len(groups[i]['items']), i))
+        keep = set(ranked[:MAX_SKILL_GROUPS - 1])
+        folded = {s for i, g in enumerate(groups) if i not in keep for s in g['items']}
+        groups = [g for i, g in enumerate(groups) if i in keep]
+        rest = [s for s in skills if s in folded or s in rest]
     if rest:
         groups.append({'name': 'Other skills' if groups else 'Skills', 'items': rest})
     return groups

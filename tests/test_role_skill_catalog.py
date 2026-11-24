@@ -13,7 +13,7 @@ All candidates are fictional."""
 import re
 import unittest
 
-from resume_bot.generate import (SKILL_BREADTH, TITLE_SKILLS, catalog_skill_suggestions, resume_title, skill_groups,
+from resume_bot.generate import (MAX_SKILL_GROUPS, SKILL_BREADTH, TITLE_SKILLS, catalog_skill_suggestions, resume_title, skill_groups,
                                  title_problems)
 from resume_bot.latex import render
 from resume_bot.profile import validate_profile
@@ -114,6 +114,24 @@ class SkillsSectionTests(unittest.TestCase):
         self.assertIn('SQL', groups['Programming Languages'])
         java = {g['name']: g['items'] for g in skill_groups(['Java', 'JavaScript'], ROLES['java-fullstack-developer'])}
         self.assertEqual(java['Programming Languages'], ['Java', 'JavaScript'])
+
+    def test_a_broad_skill_list_keeps_every_skill_within_twelve_groups(self):
+        # A tester listing every tool they know (seen live: 73 skills spread over 24 categories from other roles'
+        # catalogs) failed profile validation ("skill_groups: expected up to 12"). The role's own categories stay,
+        # the rest fold into 'Other skills', and no skill is dropped.
+        role = ROLES['software-tester']
+        skills = list(dict.fromkeys(i for r in ROLES.values() for items in r['resumeGroups'].values() for i in items[:1]))
+        skills = [*role['resumeGroups'][next(iter(role['resumeGroups']))][:2], *skills]
+        skills = list({s.casefold(): s for s in reversed(skills)}.values())[::-1]
+        groups = skill_groups(skills, role)
+        self.assertLessEqual(len(groups), MAX_SKILL_GROUPS)
+        self.assertEqual(groups[-1]['name'], 'Other skills')
+        self.assertEqual(sorted(i for g in groups for i in g['items']), sorted(skills))
+        self.assertIn(next(iter(role['resumeGroups'])), [g['name'] for g in groups])
+        profile = {'full_name': 'Asha Example', 'email': 'asha@example.com', 'headline': 'Software Tester',
+                   'summary': 'Tester.', 'skills': skills, 'skill_groups': groups,
+                   'education': [{'institution': 'Example College', 'degree': 'B.Tech'}]}
+        self.assertEqual(validate_profile(profile)['skill_groups'], groups)
 
     def test_every_role_groups_its_own_catalog_without_leftovers(self):
         for role_id, role in ROLES.items():
