@@ -27,7 +27,6 @@ import time
 from contextlib import closing
 
 from automation_jobs import AutomationCapacity, INTAKE_SOURCE, submission
-from resume_bot.facts_quality import is_placeholder
 
 ID_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'  # no 0/O, 1/I/L: read aloud or typed from a screenshot
 KEY_PATTERN = re.compile(r'[A-Za-z0-9_-]{43,128}')  # at least 256 random bits, base64url
@@ -120,6 +119,7 @@ def _lines(value):
 
 
 def _rows(form, key):
+    from resume_bot.facts_quality import is_placeholder  # resume_bot is importable once the dashboard set its path
     rows = form.get(key) or []
     if not isinstance(rows, list) or len(rows) > 20:
         raise IntakeError('Too many entries.', key)
