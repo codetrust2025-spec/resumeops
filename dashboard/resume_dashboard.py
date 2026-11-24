@@ -650,6 +650,14 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                     if job.get('id') in linked:
                         job['application'] = linked[job['id']]
                 return self.send_json({'jobs': jobs, 'ready': workspace.automation_ready()})
+            if url.path == '/api/intake/photo':
+                # A candidate's passport photo, for the operator only (recruiter details; never on a resume).
+                if not self.is_operator(request_origin):
+                    return self.send_json({'error': 'An operator account is required for this route.'}, 404)
+                photo = intake.photo(query.get('candidate', [''])[0])
+                if not photo:
+                    return self.send_json({'error': 'No photo.'}, 404)
+                return self.send_content(photo[1], photo[0])
             if url.path in ('/api/intake/candidates', '/api/intake/summary'):
                 if not self.is_operator(request_origin):
                     return self.send_json({'error': 'An operator account is required for this route.'}, 404)

@@ -21,10 +21,10 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.45 syst
 .ap-field { display: grid; gap: 6px; font-weight: 600; font-size: .95rem; min-width: 0; }
 .ap-field.ap-wide { grid-column: 1 / -1; }
 #ap-skills .ap-field, #ap-more .ap-field { margin-bottom: 10px; }
-input, textarea { width: 100%; font: inherit; font-weight: 400; color: var(--text); background: #fff; border: 1px solid var(--field);
+input, textarea, select { width: 100%; font: inherit; font-weight: 400; color: var(--text); background: #fff; border: 1px solid var(--field);
   border-radius: 10px; padding: 11px 12px; min-height: 46px; }
 textarea { resize: vertical; min-height: 96px; }
-input:focus, textarea:focus { outline: 3px solid rgba(31,85,181,.25); border-color: var(--blue); }
+input:focus, textarea:focus, select:focus { outline: 3px solid rgba(31,85,181,.25); border-color: var(--blue); }
 [aria-invalid="true"] { border-color: var(--red); background: #fffafa; }
 .ap-field-error { color: var(--red); font-weight: 600; min-height: 0; }
 .ap-field-error:empty { display: none; }
@@ -67,3 +67,4 @@ input:focus, textarea:focus { outline: 3px solid rgba(31,85,181,.25); border-col
 .st-secondary { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 14px;
   border: 1px solid var(--field); border-radius: 10px; background: #fff; color: var(--blue); font: inherit;
   font-weight: 600; text-decoration: none; cursor: pointer; }
+#ap-photo-status:empty { display: none; }

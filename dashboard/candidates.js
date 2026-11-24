@@ -192,13 +192,13 @@ function row(entry) {
   const extra = el('tr', null, 'cd-details-row');
   const cell = el('td');
   cell.colSpan = 5;
-  cell.append(details(entry.form));
+  cell.append(details(entry.form, entry.candidate));
   extra.append(cell);
   return [tr, extra];
 }
 
 // Everything the candidate entered, as submitted (text only: nothing is interpreted as markup).
-function details(form) {
+function details(form, candidate) {
   const box = el('div', null, 'cd-details');
   const lines = value => String(value || '').split('\n').map(line => line.trim()).filter(Boolean);
   const section = (title, pairs) => {
@@ -243,6 +243,22 @@ function details(form) {
   const rows = name => (Array.isArray(form[name]) ? form[name] : []).filter(item => item && typeof item === 'object');
   section('Personal details', [['Full name', form.full_name], ['Email', form.email], ['Phone', form.phone],
     ['City', form.location], ['LinkedIn', form.linkedin], ['GitHub', form.github], ['Portfolio', form.portfolio]]);
+  // Details for recruiters only (never printed on the resume): photo, date of birth, locations and salary.
+  if (form.has_photo && candidate) {
+    const part = el('section');
+    part.className = 'cand-photo';
+    part.append(el('h3', 'Passport photo'));
+    const photo = el('img');
+    photo.src = '/api/intake/photo?' + new URLSearchParams({candidate});
+    photo.alt = 'Passport photo of ' + (form.full_name || 'the candidate');
+    photo.width = 120;
+    photo.loading = 'lazy';
+    part.append(photo);
+    box.append(part);
+  }
+  section('Recruiter details', [['Date of birth', form.dob], ['Current location', form.location],
+    ['Preferred location', form.preferred_location], ['Current salary', form.current_salary],
+    ['Salary type', form.salary_type]]);
   section('Target role', [['Role', form.role], ['Total experience (years)', form.years_of_experience],
     ['Fresher', form.fresher ? 'Yes' : '']]);
   section('Skills', [['Skills', form.skills]]);

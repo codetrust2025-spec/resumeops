@@ -44,6 +44,17 @@ Education Passing Year
 """
 
 
+def png(width=60, height=80):
+    """A small solid-colour PNG: the fictional candidate's passport photo."""
+    import struct
+    import zlib
+    rows = b''.join(b'\x00' + b'\x9c\xb4\xd8' * width for _ in range(height))
+    chunk = lambda kind, data: (struct.pack('>I', len(data)) + kind + data  # noqa: E731
+                                + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff))
+    return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+            + chunk(b'IDAT', zlib.compress(rows)) + chunk(b'IEND', b''))
+
+
 def docx(text):
     body = ''.join(f'<w:p><w:r><w:t xml:space="preserve">{escape(line)}</w:t></w:r></w:p>' for line in text.splitlines())
     data = io.BytesIO()
@@ -110,8 +121,21 @@ def main():
                 field('projects.0.name').fill('Clinic Booking API')
                 field('projects.0.stack').fill('Java, Spring Boot, MySQL')
                 field('projects.0.description').fill('Built booking endpoints with Spring Boot and MySQL.')
+                # Details for recruiters (never on the resume): all mandatory; the photo is scaled in the browser.
+                page.locator('#ap-consent').check()
+                page.locator('#ap-submit').click()
+                expect(page.locator('#ap-error')).to_contain_text('date of birth')
+                field('dob').fill('1996-04-12')
+                field('preferred_location').fill('Bengaluru, Pune')
+                field('current_salary').fill('7.5 LPA')
+                field('salary_type').select_option('Fixed + variable')
+                page.locator('#ap-submit').click()
+                expect(page.locator('#ap-error')).to_contain_text('passport size photo')
+                page.set_input_files('#ap-photo', files=[{'name': 'photo.png', 'mimeType': 'image/png', 'buffer': png()}])
+                expect(page.locator('#ap-photo-status')).to_contain_text('Photo added')
                 page.reload()  # the draft survives a reload
                 expect(field('projects.0.name')).to_have_value('Clinic Booking API')
+                expect(page.locator('#ap-photo-status')).to_contain_text('Photo added')  # the photo is in the draft
                 page.locator('#ap-consent').check()
                 page.locator('#ap-submit').click()
                 expect(page.locator('#ap-done')).to_be_visible(timeout=20000)
@@ -177,6 +201,13 @@ def main():
                 expect(details).to_contain_text('Clinic Booking API')
                 expect(details).to_contain_text('Year of completion: 2015')
                 expect(details).to_contain_text('Pune')
+                expect(details).to_contain_text('Date of birth: 1996-04-12')
+                expect(details).to_contain_text('Preferred location: Bengaluru, Pune')
+                expect(details).to_contain_text('Current salary: 7.5 LPA')
+                expect(details).to_contain_text('Salary type: Fixed + variable')
+                photo = details.locator('.cand-photo img')
+                expect(photo).to_be_visible()
+                operator.wait_for_function('img => img.complete && img.naturalWidth > 0', arg=photo.element_handle())
                 operator.get_by_role('button', name='Start processing').click()
                 expect(operator.locator('#cd-message')).to_contain_text('Processing started', timeout=15000)
                 operator.wait_for_timeout(6000)  # past a list refresh (every 5 s): seen in CI, it erased the message

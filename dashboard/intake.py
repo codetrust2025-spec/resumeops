@@ -16,6 +16,7 @@ How it fits ResumeOps:
 """
 import base64
 import binascii
+import datetime
 import hashlib
 import json
 import os
@@ -30,7 +31,12 @@ from automation_jobs import AutomationCapacity, INTAKE_SOURCE, submission
 ID_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'  # no 0/O, 1/I/L: read aloud or typed from a screenshot
 KEY_PATTERN = re.compile(r'[A-Za-z0-9_-]{43,128}')  # at least 256 random bits, base64url
 ID_PATTERN = re.compile(r'RO-[' + ID_ALPHABET + r']{10}')
-FORM_LIMIT = 256 * 1024  # a complete form is a few kilobytes; uploads go to the prefill endpoint
+FORM_LIMIT = 512 * 1024  # a complete form is a few kilobytes plus the scaled passport photo; uploads go to prefill
+PHOTO_LIMIT = 150 * 1024  # the passport photo, decoded (the form scales it to a few dozen kilobytes)
+PHOTO_TYPES = {b'\xff\xd8\xff': 'image/jpeg', b'\x89PNG\r\n\x1a\n': 'image/png'}
+SALARY_TYPES = ('Fixed', 'Fixed + variable', 'Variable')
+# Details for recruiters only: stored with the application for the operator, never sent to the resume workflow.
+RECRUITER_FIELDS = ('photo', 'dob', 'preferred_location', 'current_salary', 'salary_type')
 TEXT_LIMITS = {'full_name': 120, 'email': 254, 'phone': 32, 'location': 120, 'linkedin': 300, 'github': 300,
                'portfolio': 300, 'current_company': 160}
 
@@ -125,6 +131,46 @@ def _rows(form, key):
     return kept
 
 
+def photo_bytes(value):
+    """(mime, bytes) of a passport photo data URL from the form, or None when it is not a JPG or PNG up to
+    PHOTO_LIMIT."""
+    match = re.fullmatch(r'data:image/(?:jpeg|png);base64,([A-Za-z0-9+/=]+)', value or '') \
+        if isinstance(value, str) else None
+    if not match or len(match.group(1)) > PHOTO_LIMIT * 4 // 3 + 4:
+        return None
+    try:
+        data = base64.b64decode(match.group(1), validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    mime = next((kind for magic, kind in PHOTO_TYPES.items() if data.startswith(magic)), None)
+    return (mime, data) if mime and len(data) <= PHOTO_LIMIT else None
+
+
+def recruiter_details(form, fresher):
+    """The recruiter-only details, checked (IntakeError with the field otherwise): a passport photo, the date of birth,
+    the preferred location and, unless a fresher, the current salary and whether it is fixed or variable."""
+    if photo_bytes(form.get('photo')) is None:
+        raise IntakeError('Add a passport size photo (JPG or PNG, up to 150 KB after scaling).', 'photo')
+    dob = _text(form, 'dob', 'your date of birth', limit=10)
+    try:
+        born = datetime.date.fromisoformat(dob)
+    except ValueError:
+        raise IntakeError('Enter your date of birth.', 'dob') from None
+    today = datetime.date.today()
+    if not 14 <= (today - born).days / 365.25 <= 80:
+        raise IntakeError('Enter a valid date of birth.', 'dob')
+    details = {'photo': form['photo'], 'dob': dob,
+               'preferred_location': _text(form, 'preferred_location', 'your preferred location', limit=200),
+               'current_salary': '', 'salary_type': ''}
+    if not fresher:
+        details['current_salary'] = _text(form, 'current_salary', 'your current salary', limit=60)
+        kind = form.get('salary_type')
+        if kind not in SALARY_TYPES:
+            raise IntakeError('Choose whether your current salary is fixed or variable.', 'salary_type')
+        details['salary_type'] = kind
+    return details
+
+
 def form_facts(form):
     """(target role, candidate details) from the public form, checked; IntakeError (with the field) for anything
     missing. The details have the shape of the dashboard's own candidate form (automation.attested_profile).
@@ -177,6 +223,7 @@ def form_facts(form):
     for index, row in enumerate(projects):
         if not (row.get('name') or '').strip():
             raise IntakeError(f'Project {index + 1}: enter the project name.', f'projects.{index}.name')
+    recruiter_details(form, fresher)  # stored with the form for the operator; never part of the resume
     platforms = _rows(form, 'coding_platforms')
     candidate.update(
         role=role, skills=', '.join(skills),
@@ -215,6 +262,16 @@ def intake_request(form):
     summary = {'name': candidate['full_name'], 'email': candidate['email'], 'phone': candidate['phone'],
                'role': request['role']}
     return request, summary
+
+
+def without_photo(form):
+    """The stored form for listings: the photo is served on its own (IntakeDesk.photo), so a list of a thousand
+    applications stays small; ``has_photo`` says whether there is one."""
+    if not isinstance(form, dict):
+        return form
+    photo = form.pop('photo', None)
+    form['has_photo'] = bool(photo)
+    return form
 
 
 class RateLimiter:
@@ -293,6 +350,14 @@ class IntakeDesk:
         candidate (a retried request). ``client`` is the sender's network tag (client_tag)."""
         if not isinstance(key, str) or not KEY_PATTERN.fullmatch(key):
             raise IntakeError('The page could not create a private key. Reload the page and submit again.')
+        if candidate is not None and isinstance(form, dict) and not form.get('photo'):
+            # A correction keeps the photo already on file (the form is reopened without it).
+            with closing(self.automation.connection()) as db:
+                row = db.execute('SELECT form FROM intake WHERE candidate=? AND key_hash=? AND scrubbed IS NULL',
+                                 (candidate, key_digest(key))).fetchone()
+            kept = json.loads(row['form'] or '{}').get('photo') if row else None
+            if kept:
+                form = {**form, 'photo': kept}
         request, summary = intake_request(form)
         digest, now = self.digest(request), time.time()
         stored = json.dumps(form, ensure_ascii=False)
@@ -358,7 +423,16 @@ class IntakeDesk:
         if not row:
             return None
         return {'candidate': row['candidate'], 'name': row['name'], 'role': row['role'], 'created': row['created'],
-                'form': json.loads(row['form'] or '{}')}
+                'form': without_photo(json.loads(row['form'] or '{}'))}
+
+    def photo(self, candidate):
+        """(mime, bytes) of a candidate's passport photo, or None."""
+        with closing(self.automation.connection()) as db:
+            row = db.execute('SELECT form FROM intake WHERE candidate=? AND scrubbed IS NULL', (candidate,)).fetchone()
+        try:
+            return photo_bytes((json.loads(row['form'] or '{}') or {}).get('photo')) if row else None
+        except ValueError:
+            return None
 
     def runs(self, candidate):
         with closing(self.automation.connection()) as db:
@@ -522,7 +596,7 @@ class IntakeDesk:
         for person in people:
             entry = {key: person[key] for key in ('candidate', 'created', 'updated', 'name', 'email', 'phone', 'role')}
             entry['deleted'] = bool(person['scrubbed'])
-            entry['form'] = json.loads(person['form']) if person['form'] else None
+            entry['form'] = without_photo(json.loads(person['form'])) if person['form'] else None
             run = mine.get(person['candidate']) or latest.get(person['candidate'])
             entry['started'] = run['started'] if run else None
             if run is not None:

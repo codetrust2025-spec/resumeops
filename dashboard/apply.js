@@ -20,8 +20,8 @@ function randomKey(bytes = 32) {
 const session = store.get(SESSION) || randomKey(24);
 store.set(SESSION, session);
 
-const PERSONAL = [['full_name', 'Full name', 'text', true, 'name'], ['email', 'Email', 'email', true, 'email'],
-  ['phone', 'Phone', 'tel', true, 'tel'], ['location', 'City', 'text', true, 'address-level2'],
+const PERSONAL = [['full_name', 'Full name', 'text', true, 'name'], ['email', 'Gmail ID', 'email', true, 'email'],
+  ['phone', 'Phone', 'tel', true, 'tel'], ['location', 'Current location', 'text', true, 'address-level2'],
   ['linkedin', 'LinkedIn URL', 'url'], ['github', 'GitHub URL', 'url'], ['portfolio', 'Portfolio URL', 'url']];
 const LISTS = {
   education: [['degree', 'Degree', 'text', true, 'e.g. B.Tech'], ['university', 'Institution', 'text', true],
@@ -36,6 +36,14 @@ const LISTS = {
     ['description', 'What you built (one point per line)', 'textarea']],
 };
 const NAMES = {education: 'Education', work_experience: 'Job', projects: 'Project'};
+// For recruiters only (the operator's Candidates page): never part of the resume.
+const SALARY_TYPES = ['', 'Fixed', 'Fixed + variable', 'Variable'];
+const RECRUITER = [['dob', 'Date of birth', 'date', true], ['preferred_location', 'Preferred location', 'text', true,
+  'e.g. Bengaluru, Pune'], ['current_salary', 'Current salary (CTC)', 'text', true, 'e.g. 6.5 LPA'],
+  ['salary_type', 'Is the current salary fixed or variable?', 'select', true, SALARY_TYPES]];
+const SALARY = ['current_salary', 'salary_type'];  // a fresher has no current salary
+const PHOTO_EDGE = 480;          // the passport photo is scaled down in the browser before it is sent
+const PHOTO_BYTES = 150 * 1024;  // the server accepts up to this (decoded)
 
 function field([name, label, type = 'text', required = false, hint = ''], path = name) {
   const wrap = document.createElement('label');
@@ -48,13 +56,17 @@ function field([name, label, type = 'text', required = false, hint = ''], path =
     star.textContent = ' *';
     text.append(star);
   }
-  const control = document.createElement(type === 'textarea' ? 'textarea' : 'input');
-  if (type === 'textarea') control.rows = 4; else control.type = type;
+  const control = document.createElement(type === 'textarea' ? 'textarea' : type === 'select' ? 'select' : 'input');
+  if (type === 'textarea') control.rows = 4;
+  else if (type === 'select') {
+    for (const option of hint) control.append(new Option(option || 'Select', option));
+  } else control.type = type;
   control.name = name;
   control.dataset.field = path;
   control.required = required;
-  control.maxLength = type === 'textarea' ? 3000 : 300;
-  if (hint && type !== 'textarea' && !['name', 'email', 'tel', 'address-level2'].includes(hint)) control.placeholder = hint;
+  if (type !== 'select') control.maxLength = type === 'textarea' ? 3000 : 300;
+  if (type === 'date') control.max = new Date().toISOString().slice(0, 10);
+  if (hint && !['textarea', 'select'].includes(type) && !['name', 'email', 'tel', 'address-level2'].includes(hint)) control.placeholder = hint;
   if (['name', 'email', 'tel', 'address-level2'].includes(hint)) control.autocomplete = hint;
   const error = document.createElement('small');
   error.className = 'ap-field-error';
@@ -107,7 +119,9 @@ function value(name) { return form.querySelector(`[data-field="${name}"]`)?.valu
 function collect() {
   const data = {consent: $('ap-consent').checked, fresher: $('ap-fresher').checked, website: form.elements.website.value};
   for (const [name] of PERSONAL) data[name] = value(name);
-  for (const name of ['role', 'years_of_experience', 'skills', 'certifications', 'achievements']) data[name] = value(name);
+  for (const name of ['role', 'years_of_experience', 'skills', 'certifications', 'achievements', 'photo']) data[name] = value(name);
+  for (const [name] of RECRUITER) data[name] = value(name);
+  if (data.fresher) for (const name of SALARY) data[name] = '';
   for (const list of Object.keys(LISTS)) data[list] = rowsOf(list);
   if (data.fresher) data.work_experience = [];
   return data;
@@ -121,6 +135,7 @@ function fill(data, onlyEmpty = false) {
     if (control && val && (!onlyEmpty || !control.value.trim())) control.value = val;
   }
   if (typeof data.fresher === 'boolean' && !onlyEmpty) $('ap-fresher').checked = data.fresher;
+  photoShown();
   for (const list of Object.keys(LISTS)) {
     const incoming = Array.isArray(data[list]) ? data[list] : [];
     if (!incoming.length) continue;
@@ -166,6 +181,44 @@ function fresherChanged() {
   $('ap-work').hidden = fresher;
   form.querySelector('[data-add="work_experience"]').hidden = fresher;
   for (const control of $('ap-work').querySelectorAll('[data-field]')) control.disabled = fresher;
+  for (const name of SALARY) {
+    const control = form.querySelector(`[data-field="${name}"]`);
+    if (!control) continue;
+    control.disabled = fresher;
+    control.closest('label').hidden = fresher;
+  }
+}
+
+// The passport photo: scaled to at most PHOTO_EDGE pixels and re-encoded as JPEG in the browser (a phone photo of
+// several megabytes becomes a few dozen kilobytes), kept in a hidden field so the saved draft keeps it too.
+let photoOnFile = false;
+function photoShown() {
+  const kept = value('photo');
+  $('ap-photo-status').textContent = kept ? `Photo added (${Math.round(kept.length * 0.75 / 1024)} KB).`
+    : photoOnFile ? 'Your photo is on file. Choose another to replace it.' : '';
+}
+
+async function photoPicked(file) {
+  const status = $('ap-photo-status');
+  if (!/^image\/(jpeg|png)$/.test(file.type)) { status.textContent = 'Choose a JPG or PNG photo.'; return; }
+  try {
+    const image = await createImageBitmap(file);
+    const scale = Math.min(1, PHOTO_EDGE / Math.max(image.width, image.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(image.width * scale);
+    canvas.height = Math.round(image.height * scale);
+    canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+    let quality = 0.85, data = canvas.toDataURL('image/jpeg', quality);
+    while (data.length * 0.75 > PHOTO_BYTES && quality > 0.4) data = canvas.toDataURL('image/jpeg', quality -= 0.15);
+    if (data.length * 0.75 > PHOTO_BYTES) { status.textContent = 'This photo is too large. Choose a smaller photo.'; return; }
+    form.querySelector('[data-field="photo"]').value = data;
+    const slot = $('ap-photo').closest('label').querySelector('.ap-field-error');
+    if (slot) slot.textContent = '';
+    photoShown();
+    saveDraft();
+  } catch {
+    status.textContent = 'This photo could not be read. Choose a JPG or PNG photo.';
+  }
 }
 
 function clearErrors() {
@@ -180,6 +233,7 @@ function showError(message, path) {
     control = form.querySelector(`[data-list="${path}"] [data-field]`) || form.querySelector(`[data-add="${path}"]`);
   }
   if (path === 'consent') control = $('ap-consent');
+  if (path === 'photo') control = $('ap-photo');
   $('ap-error').textContent = message;
   if (control) {
     const slot = control.closest('label')?.querySelector('.ap-field-error');
@@ -194,7 +248,11 @@ function showError(message, path) {
 function check(data) {
   const need = [['full_name', 'Enter your full name.'], ['email', 'Enter your email address.'],
     ['phone', 'Enter your phone number.'], ['location', 'Enter your city.'], ['role', 'Enter the target role.']];
+  need.push(['dob', 'Enter your date of birth.'], ['preferred_location', 'Enter your preferred location.']);
+  if (!data.fresher) need.push(['current_salary', 'Enter your current salary.'],
+    ['salary_type', 'Choose whether your current salary is fixed or variable.']);
   for (const [name, message] of need) if (!data[name].trim()) return [message, name];
+  if (!data.photo && !photoOnFile) return ['Add a passport size photo (JPG or PNG).', 'photo'];
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email.trim())) return ['Enter a valid email address.', 'email'];
   const digits = data.phone.replace(/\D/g, '').length;
   if (digits < 7 || digits > 15) return ['Enter a valid phone number (7 to 15 digits).', 'phone'];
@@ -453,6 +511,7 @@ async function editMode() {
       headers: {'X-Candidate-Id': candidate, 'X-Candidate-Key': key}});
     if (!response.ok) throw new Error();
     const data = await response.json();
+    photoOnFile = Boolean(data.form?.has_photo);  // kept on the server unless a new photo is chosen
     fill(data.form || {});
     $('ap-consent').checked = false;
   } catch {
@@ -467,7 +526,19 @@ async function init() {
   $('ap-role-fields').append(field(['role', 'Target role', 'text', true, 'e.g. Java Backend Developer']));
   $('ap-role-fields').querySelector('input').setAttribute('list', 'ap-roles');
   $('ap-years').append(field(['years_of_experience', 'Total experience in years (optional)', 'number']));
-  $('ap-skills').append(field(['skills', 'Skills (comma separated)', 'textarea', true]));
+  $('ap-skills').append(field(['skills', 'Skills (comma separated)', 'textarea']));
+  const photo = field(['photo_file', 'Passport size photo (JPG or PNG)', 'file', true]);
+  const picker = photo.querySelector('input');
+  picker.id = 'ap-photo';
+  picker.accept = 'image/jpeg,image/png';
+  delete picker.dataset.field;  // the scaled photo travels in the hidden field below
+  const kept = Object.assign(document.createElement('input'), {type: 'hidden', name: 'photo'});
+  kept.dataset.field = 'photo';
+  const note = Object.assign(document.createElement('small'), {id: 'ap-photo-status', className: 'ap-status'});
+  note.setAttribute('role', 'status');
+  photo.append(kept, note);
+  $('ap-recruiter').append(photo, ...RECRUITER.map(spec => field(spec)));
+  picker.addEventListener('change', () => { if (picker.files[0]) photoPicked(picker.files[0]); });
   $('ap-more').append(field(['certifications', 'Certifications you have completed (one per line)', 'textarea']),
     field(['achievements', 'Achievements (one per line)', 'textarea']));
   for (const list of Object.keys(LISTS)) addRow(list);
