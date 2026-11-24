@@ -125,11 +125,14 @@ class Education(unittest.TestCase):
 
 class Objective(unittest.TestCase):
     def test_validator_decides_and_word_count_is_fed_back(self):
-        ai = Scripted({'objective': 'Too short.'}, {'objective': 'Good text.'})
-        check = lambda text: [] if text == 'Good text.' else ['use 40-55 words']
-        text, problems = write_objective({}, 'Data Engineer', 'rules', check, ai)
-        self.assertEqual((text, problems), ('Good text.', []))
-        self.assertIn('yours has 2 words', ai.prompts[1])
+        ai = Scripted({'aim': 'i aim to help.', 'commitment': 'I am committed to ai.', 'value': 'I value teams.'},
+                      {'aim': 'I aim to bring care.', 'commitment': 'I am committed to ai', 'value': 'I value trust.'})
+        brief = {'opening': 'I am X focused on Y.', 'aim': 'I aim to', 'value': 'I value', 'strengths': 'a, b',
+                 'commitment': 'I am committed to',
+                 'rules': '', 'check': lambda text: [] if 'care' in text else ['use 40-55 words']}
+        text, problems = write_objective({}, 'Data Engineer', brief, ai)
+        self.assertEqual((text, problems), ('I am X focused on Y. I aim to bring care. I am committed to ai. I value trust.', []))
+        self.assertIn('your three sentences have 12 words', ai.prompts[1])
 
 
 class WholeResume(unittest.TestCase):

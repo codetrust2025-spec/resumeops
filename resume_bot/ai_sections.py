@@ -42,7 +42,8 @@ TITLE_WORDS = {stem(w) for w in 'engineer developer analyst consultant manager a
 
 # Connective words that state no fact, beside polish.NEUTRAL.
 EXTRA_NEUTRAL = set('during after before between under over throughout process processes stage stages phase '
-                    'activities activity end-to-end efficiently accurately consistently executed performed handled'.split())
+                    'activities activity end-to-end efficiently accurately consistently executed performed handled enabled '
+                    'added included featured'.split())
 
 
 def _singular(key):
@@ -433,22 +434,36 @@ def write_education(education, ai, on_progress=None):
     return _ask(ai, prompt, schema, on_progress, check)
 
 
-def write_objective(profile, role_title, rules, check_text, ai, on_progress=None):
-    """The Career Objective written by Ollama. ``rules`` says what the objective must say (from the validator's
-    own data); ``check_text(text)`` returns the validator's problems. Returns (text, problems)."""
-    schema = {'type': 'object', 'additionalProperties': False, 'required': ['objective'],
-              'properties': {'objective': {'type': 'string'}}}
+def write_objective(profile, role_title, brief, ai, on_progress=None):
+    """The Career Objective written by Ollama: three sentences about aim, commitment and way of working, after the
+    opening the validator requires (role, focus and one priority). ``brief`` comes from ``objective_brief``.
+    Returns (text, problems); the text is accepted only when the validator passes it."""
+    opening, check_text = brief['opening'], brief['check']
+    room = (max(18, 40 - len(opening.split())), 55 - len(opening.split()))
+    keys = ('aim', 'commitment', 'value')
+    starts = dict(zip(keys, (brief['aim'], brief['commitment'], brief['value'])))
+    schema = {'type': 'object', 'additionalProperties': False, 'required': list(keys),
+              'properties': {key: {'type': 'string'} for key in keys}}
     prompt = (
-        f'Write the Career Objective of a {role_title} resume: one plain-text paragraph. ' + rules +
-        ' Write naturally and specifically for this role; no clichés, no buzzword lists. '
-        'Return JSON {"objective": string}.')
+        f'Write the rest of the Career Objective of a {role_title} resume. It already opens with: "{opening}" '
+        f'Write three more sentences of about 10-13 words each ({room[0]}-{room[1]} words together). '
+        f'"aim" begins with "{starts["aim"]}" and names two of these priorities: {brief["strengths"]}. '
+        f'"commitment" begins with "{starts["commitment"]}" and says what you want your work to achieve for users '
+        f'or the business. "value" begins with "{starts["value"]}" and says how you want to work with a team. '
+        + brief['rules'] + ' Return JSON {"aim": string, "commitment": string, "value": string}.')
 
     def check(answer):
-        text = _clean(answer.get('objective')) if isinstance(answer, dict) else ''
-        problems = check_text(text) if text else ['return the objective text']
-        count = len(text.split())
-        problems = [f'{problem} (yours has {count} words)' if 'words' in problem and 'such as' not in problem
-                    else problem for problem in problems]
+        if not isinstance(answer, dict):
+            return '', ['return {"aim": string, "commitment": string, "value": string}']
+        parts = [_clean(answer.get(key)) for key in keys]
+        # Formatting only: a capital first letter and the pronoun "I" ("i aim to" -> "I aim to").
+        parts = [re.sub(r"\bi\b", 'I', part[0].upper() + part[1:]) for part in parts if part]
+        parts = [part if part.endswith('.') else part + '.' for part in parts]
+        text = ' '.join([opening, *parts])
+        problems = check_text(text) if len(parts) == 3 else ['write all three sentences']
+        count = len(' '.join(parts).split())
+        problems = [f'{problem}: your three sentences have {count} words; write {room[0]}-{room[1]}'
+                    if problem.startswith('use 40-55 words') else problem for problem in problems]
         return text, problems
 
     return _ask(ai, prompt, schema, on_progress, check, attempts=3)
@@ -501,8 +516,7 @@ def write_sections(profile, role, role_title, ai, *, objective=None, on_progress
     note('education', problems, bool(out.get('education')))
 
     if objective:
-        rules, check_text = objective
-        text, problems = write_objective(out, role_title, rules, check_text, ai, step('career objective'))
+        text, problems = write_objective(out, role_title, objective, ai, step('career objective'))
         if text and not problems:
             out['summary'] = text
         note('summary', problems)
@@ -567,32 +581,26 @@ def rewrite_problems(sources, facts, project_count=None):
 
 
 def objective_brief(profile, role_title, voice='first'):
-    """(rules, check_text) for the Career Objective: the writing brief Ollama gets, built from the validator's own
-    data (opening words, role focus, allowed priorities, forbidden words), and the validator itself."""
+    """What the Career Objective must say, from the validator's own data: the opening it requires (role, focus and
+    a priority), how the next sentences begin, the allowed priorities and the forbidden words; and the validator."""
     from . import generate as g
 
     try:
         identity = g._objective_identity(profile, role_title, voice)
-        check = lambda text: g.objective_problems(text, profile, role_title, voice)
+        check = lambda text: g.objective_problems(text, profile, role_title, voice)  # noqa: E731
     except TypeError:  # a validator without voices writes the third person
         voice = 'third'
         identity = g._objective_identity(profile, role_title)
-        check = lambda text: g.objective_problems(text, profile, role_title)
-    focus = g._objective_focus(role_title)
-    strengths = ', '.join(g._objective_strengths(role_title))
-    if voice == 'first':
-        follow = ('Sentence 2 begins with "I aim to" or "I seek to" and names two of these priorities in lowercase: '
-                  f'{strengths}. Sentence 3 begins with "I value" and says how you want to work with a team. ')
-        person = 'Write in the first person ("I"); never "candidate", "aims", "seeks", "values", he, she or they. '
-    else:
-        follow = ('Sentence 2 begins with "Aims to" or "Seeks to" and names two of these priorities in lowercase: '
-                  f'{strengths}. Sentence 3 begins with "Values" and says how the person wants to work with a team. ')
-        person = 'No pronouns (I, my, he, she, they, their) and never "the candidate". '
-    rules = (f'Exactly three sentences, 40-55 words in total. Sentence 1 must begin with the exact words "{identity} '
-             f'focused on {focus}" and end with "and {g.OBJECTIVE_EMPHASIS[0]}." ' + follow + person +
-             'After the opening words use only plain lowercase everyday words. Never mention tools, technologies, '
-             'data pipelines, employers, colleges, projects, years, degrees, certifications or numbers. Never claim '
-             'work done or qualities: avoid built, developed, designed, delivered, maintained, experience, expertise, '
-             'skilled, proven, hands-on, reliable, reliability, scalable, robust, efficient, innovative, passionate, '
-             'leverage. No semicolons, colons, exclamation or question marks.')
-    return rules, check
+        check = lambda text: g.objective_problems(text, profile, role_title)  # noqa: E731
+    first = voice == 'first'
+    rules = (('Write in the first person; never "candidate", "aims", "seeks", "values", he, she or they. ' if first
+              else 'No pronouns (I, my, he, she, they, their) and never "the candidate". ') +
+             'Use plain everyday words (lowercase except "I" and sentence starts). Never mention tools, technologies, data pipelines, employers, '
+             'colleges, projects, years, degrees, certifications or numbers. Never claim work done or qualities: '
+             'avoid built, developed, designed, delivered, maintained, experience, expertise, skilled, proven, '
+             'hands-on, reliable, reliability, scalable, robust, efficient, innovative, passionate, leverage, '
+             'seamless. No semicolons, colons, exclamation or question marks.')
+    return {'opening': f'{identity} focused on {g._objective_focus(role_title)} and {g.OBJECTIVE_EMPHASIS[0]}.',
+            'aim': 'I aim to' if first else 'Aims to', 'value': 'I value' if first else 'Values',
+            'commitment': 'I am committed to' if first else 'Committed to',
+            'strengths': ', '.join(g._objective_strengths(role_title)), 'rules': rules, 'check': check}
