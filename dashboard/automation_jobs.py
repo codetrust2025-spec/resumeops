@@ -516,7 +516,8 @@ class AutomationJobs:
             waiting = json.loads(job.pop('waiting') or '{}')  # only the questions and proposals leave the server
             if job['status'] == 'needs_input':
                 job['questions'] = [{key: question.get(key) for key in ('id', 'field', 'label', 'explanation', 'value',
-                                                                        'drafted', 'suggestions')}
+                                                                        'drafted', 'suggestions',
+                                                                        'suggestion_groups')}
                                     for question in waiting.get('questions', [])]
                 job['proposals'] = waiting.get('proposals', [])
                 job['certifications'] = waiting.get('certification_options', [])
@@ -1096,7 +1097,8 @@ class AutomationJobs:
                                          lacks_role_core, present_for_role, propose_projects, role_projects,
                                          role_vocabulary, same_field, skill_fits_role, skill_groups, split_project,
                                          technical_job, without_note, work_skills, named_tools, catalog_terms, draft_lines,
-                                         other_field_tools)
+                                         other_field_tools, catalog_skill_suggestions, SKILL_BREADTH,
+                                         SKILL_SUGGESTIONS)
         from resume_bot.workflow import ROLES
         from resume_bot.workflow import matched_terms
         from resume_bot.ollama import Ollama, OllamaError
@@ -1276,8 +1278,14 @@ class AutomationJobs:
             # suggestions) until at least one the candidate has used is confirmed.
             need_skills = not role_skills or (lacks_role_core(role_skills, target)
                                               and checkpoints.get('skills_reviewed') != label)
+            # A short skills list for the role (fewer than SKILL_BREADTH) is reviewed once against the role's
+            # Technical Skills catalog, its recruiter-style categories, so the section can cover what the role's job
+            # descriptions ask for. Each catalog skill arrives unticked: only the ones the candidate ticks are listed.
+            catalog = catalog_skill_suggestions(target, role_skills)
+            breadth = (not need_skills and not grounded and len(role_skills) < SKILL_BREADTH and bool(catalog)
+                       and checkpoints.get('skills_reviewed') != label)
             questions = []
-            if missing or need_skills:
+            if missing or need_skills or breadth:
                 progress(28, f'AI drafting {label} content for your review')
                 work, skills = draft_role_content(facts, target, label, years, missing, need_skills, model,
                                                   draft_progress, grounded=True)
@@ -1287,20 +1295,25 @@ class AutomationJobs:
                                                   [line for line in facts['experience'][index]['bullets']
                                                    if other_field_tools(line, tools, target)])
                              for index in missing if not facts['experience'][index]['bullets'] or work.get(index)]
-                if need_skills:
+                if need_skills or breadth:
                     # The box holds only the candidate's own skills. AI suggestions arrive unticked beside it and
-                    # reach the resume only when ticked: pre-filled suggestions were confirmed with one click.
+                    # reach the resume only when ticked: pre-filled suggestions were confirmed with one click. The
+                    # role's catalog skills follow the AI's, grouped by Technical Skills category.
                     have = {s.casefold() for s in role_skills}
+                    offered = list(dict.fromkeys([*(s for s in skills if s.casefold() not in have),
+                                                  *catalog_skill_suggestions(target, [*role_skills, *skills])]))
+                    offered = offered[:SKILL_SUGGESTIONS]
                     questions.append({
                         'id': 'skills', 'section': 'profile', 'entry': None, 'field': 'skills', 'drafted': bool(skills),
-                        'label': f'Skills for {label}' + (' (with AI suggestions)' if skills else ''),
+                        'label': f'Skills for {label}' + (' (with AI suggestions)' if offered else ''),
                         'explanation': (('None of the skills you confirmed is used for ' + label + '. '
                                          if checkpoints.get('skills_reviewed') == label else '')
-                                        + (f'Your skills that fit {label}. Tick a suggestion only if you have used it; '
-                                           'add or remove any.' if skills else
+                                        + (f'Your skills that fit {label}. Tick every suggestion you have used, so the '
+                                           'Technical Skills section covers the role; add or remove any.' if offered else
                                            'List the tools and technologies you have used, separated by commas.')),
                         'value': ', '.join(role_skills),
-                        'suggestions': [s for s in skills if s.casefold() not in have],
+                        'suggestions': offered,
+                        'suggestion_groups': skill_groups(offered, ROLES.get(intelligence['role'], {})) if offered else [],
                         # Skills for other fields stay in the candidate's facts, off this role's resume.
                         'carry': [s for s in facts['skills'] if s not in role_skills]})
                     checkpoints['skills_review_role'] = label

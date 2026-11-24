@@ -631,6 +631,21 @@ function atsDetails(ats) {
     }
     box.append(table);
   }
+  // The resume generation standards for the role: each one met, or what needs the candidate's attention.
+  const standards = ats.standards;
+  if (standards && (standards.checks || []).length) {
+    box.append(element('h4', 'Resume standards: ' + standards.met + ' of ' + standards.applicable + ' met'));
+    const list = element('ul');
+    list.className = 'auto-standards';
+    for (const check of standards.checks) {
+      if (check.ok === null) continue;
+      const item = element('li');
+      item.className = check.ok ? 'auto-standard-ok' : 'auto-standard-todo';
+      item.append(icon(check.ok ? 'check' : 'alert'), element('strong', check.label + ': '), check.detail);
+      list.append(item);
+    }
+    box.append(list);
+  }
   const lists = [['Recommendations', ats.recommendations || ats.suggestions || []],
     ['Your skills that match the role', ats.role_relevant_skills || ats.matched || []],
     ['Suggested keywords (add only if you have used them)', ats.suggested_skills || ats.missing || []],
@@ -682,10 +697,23 @@ function skillSuggestions(question, field) {
   const box = element('fieldset');
   box.className = 'auto-picks';
   box.append(element('legend', 'AI suggestions (tick only tools you have used)'));
-  for (const name of question.suggestions) {
+  const pick = name => {
     const option = element('label'); const tick = element('input');
     tick.type = 'checkbox'; tick.value = name; tick.name = 'skill_suggestion';
-    option.append(tick, ' ' + name); box.append(option);
+    option.append(tick, ' ' + name);
+    return option;
+  };
+  // Grouped by the role's Technical Skills categories when the server sends them (Frontend Technologies, Testing...).
+  const groups = (question.suggestion_groups || []).filter(group => (group.items || []).length);
+  if (groups.length) {
+    for (const group of groups) {
+      const part = element('div');
+      part.className = 'auto-pick-group';
+      part.append(element('span', group.name), ...group.items.map(pick));
+      box.append(part);
+    }
+  } else {
+    box.append(...question.suggestions.map(pick));
   }
   box.target = field;
   return box;
@@ -1124,6 +1152,14 @@ function jobItem(job) {
       score.className = 'auto-score';
       score.title = 'ATS readiness out of 100';
       state.append(separator, score);
+      const standards = job.ats.standards;
+      if (standards && standards.applicable) {
+        const met = element('span', 'Standards ' + standards.met + '/' + standards.applicable);
+        met.className = 'auto-score' + (standards.verified ? '' : ' auto-score-todo');
+        met.title = standards.verified ? 'Meets every resume standard for the role'
+          : 'Some resume standards need your attention (see Details)';
+        state.append(met);
+      }
     }
   } else {
     const bar = element('progress');

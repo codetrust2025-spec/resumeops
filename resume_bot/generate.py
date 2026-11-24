@@ -472,16 +472,35 @@ def role_focus(profile, keywords):
     return [s for s in skills if matched_terms(keywords, s)] or skills
 
 
+def _category(skill, source):
+    """The category of ``source`` ({name: items}) that lists ``skill``: an exact entry first ("SQL" under
+    Programming Languages, not "Spark SQL" under Big Data), then an entry the skill names ("React.js components"),
+    then an entry naming the skill ("JavaScript" for "JavaScript (ES6+)", "Java" for "Java 8/11/17")."""
+    wanted = ' '.join(str(skill).split()).casefold()
+    for test in (lambda items: any(item.casefold() == wanted for item in items),
+                 lambda items: bool(matched_terms(items, skill)),
+                 lambda items: any(matched_terms([skill], item) for item in items)):
+        name = next((group for group, items in source.items() if test(items)), None)
+        if name:
+            return name
+    return None
+
+
 def skill_groups(skills, role):
-    """[{name, items}] covering every skill exactly once, role areas first, then 'Other skills'."""
+    """[{name, items}] covering every skill exactly once, role areas first, then 'Other skills'. A catalog role
+    groups by its recruiter-style Technical Skills categories (resumeGroups: "Frontend Technologies",
+    "State Management", "Build Tools & Package Managers"), in the role's order; a skill they do not list falls
+    back to the role's broad areas, then to any other role's categories."""
     load_roles()
     groups, placed = [], set()
-    sources = [role.get('groups') or {}] + [r['groups'] for r in ROLES.values() if r.get('groups')]
-    order = list((role.get('groups') or {}).keys())
+    own = role.get('resumeGroups') or {}
+    sources = [own, role.get('groups') or {}] + [r['resumeGroups'] for r in ROLES.values() if r.get('resumeGroups')] \
+        + [r['groups'] for r in ROLES.values() if r.get('groups')]
+    order = list(own.keys()) + list((role.get('groups') or {}).keys())
     assignment = {}
     for skill in skills:
         for source in sources:
-            name = next((group for group, items in source.items() if matched_terms(items, skill)), None)
+            name = _category(skill, source)
             if name:
                 assignment[skill] = name
                 break
@@ -497,6 +516,78 @@ def skill_groups(skills, role):
     if rest:
         groups.append({'name': 'Other skills' if groups else 'Skills', 'items': rest})
     return groups
+
+
+# The resume title (headline) as recruiters search for the role on Naukri and LinkedIn: the selected role, then up
+# to three of the candidate's confirmed technologies the role's job descriptions lead with ("Frontend Developer |
+# React.js | Next.js | TypeScript"). Only listed skills are named, so the title never claims a skill.
+TITLE_SKILLS = 3
+
+
+def resume_title(title, skills, target):
+    """The headline for ``title``: the role, then up to TITLE_SKILLS of ``skills`` that are the role's leading
+    technologies (in the catalog's order), never one the title already names."""
+    role = role_entry(target)
+    # The role's first Technical Skills categories lead (React.js and Next.js before JavaScript for a Frontend
+    # Developer), then its catalog keywords.
+    leading = [*(item for items in list((role.get('resumeGroups') or {}).values())[:2] for item in items),
+               *(role.get('keywords') or target.get('keywords') or [])[:16]]
+    picked = []
+    for term in dict.fromkeys(leading):
+        if term.casefold() in FUNDAMENTALS or matched_terms([term], title) or matched_terms([title], term):
+            continue
+        skill = next((s for s in skills if s.casefold() == term.casefold()
+                      or (matched_terms([term], s) and len(s) <= len(term) + 12) or matched_terms([s], term)), None)
+        if skill and ' | ' not in skill and not matched_terms([skill], title)                 and skill.casefold() not in FUNDAMENTALS and not matched_terms(UNIVERSAL_TOOLS, skill) \
+                and not any(matched_terms([skill], p) or matched_terms([p], skill) for p in picked):
+            picked.append(skill)
+        if len(picked) == TITLE_SKILLS:
+            break
+    return ' | '.join([title, *picked])
+
+
+def title_problems(headline, title, skills):
+    """Why ``headline`` is not a resume title for ``title`` from ``skills`` ([] when it is): the selected role,
+    optionally followed by up to TITLE_SKILLS listed skills, each after ' | '."""
+    parts = [part.strip() for part in str(headline or '').split(' | ')]
+    if parts[0] != title:
+        return ['the resume title names the selected role first']
+    listed = {s.casefold() for s in skills or []}
+    if len(parts) > 1 + TITLE_SKILLS or any(part.casefold() not in listed for part in parts[1:]):
+        return ['the resume title names only listed skills']
+    return []
+
+
+# A role's skills list shorter than this is reviewed once against the role's catalog (catalog_skill_suggestions),
+# with at most SKILL_SUGGESTIONS unticked suggestions.
+SKILL_BREADTH = 10
+SKILL_SUGGESTIONS = 36
+SUPPORT_CATEGORY = re.compile(r'\b(?:version control|collaboration|development tools|ai-powered)\b', re.IGNORECASE)
+
+
+def catalog_skill_suggestions(target, have, limit=30):
+    """The role's Technical Skills catalog (its recruiter-style categories) minus what the candidate has listed:
+    offered unticked in the skills review, so the candidate can tick every skill they have used and the skills
+    section covers what the role's job descriptions ask for. Never added on their own."""
+    role = role_entry(target)
+    owned = [' '.join(str(h).split()) for h in have]
+    taken, out = set(), []
+    # The role's technical categories first, round-robin, so a short list still spans the whole role (not only its
+    # first areas); working tools (version control, editors, AI assistants) after them.
+    groups = role.get('resumeGroups') or {}
+    support = [name for name in groups if SUPPORT_CATEGORY.search(name)]
+    for categories in ([groups[name] for name in groups if name not in support], [groups[name] for name in support]):
+        for depth in range(max((len(items) for items in categories), default=0)):
+            for items in categories:
+                if depth >= len(items):
+                    continue
+                term = items[depth]
+                if term.casefold() in taken or any(h.casefold() == term.casefold() or matched_terms([term], h)
+                                                   or matched_terms([h], term) for h in owned):
+                    continue
+                taken.add(term.casefold())
+                out.append(term)
+    return out[:limit]
 
 
 def _years_text(years):
@@ -1344,7 +1435,8 @@ def role_vocabulary(target):
     """The target role's technologies: its curated keywords and area items (a custom role: its market terms)."""
     role = role_entry(target)
     items = [*target.get('keywords', []), *role.get('keywords', []),
-             *(item for group in (role.get('groups') or {}).values() for item in group)]
+             *(item for group in (role.get('groups') or {}).values() for item in group),
+             *(item for group in (role.get('resumeGroups') or {}).values() for item in group)]
     return list(dict.fromkeys(' '.join(str(item).split()) for item in items if str(item).strip()))
 
 

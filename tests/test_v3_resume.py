@@ -18,7 +18,7 @@ from resume_bot import workflow
 from resume_bot.ai_review import role_intelligence
 from resume_bot.automation import CONSENT_VERSION, verified_automation, verified_request
 from resume_bot.generate import (clean_bullet, composed_summary, confirmed_project, propose_projects, skill_groups,
-                                 objective_problems, split_project, summary_problems, write_summary)
+                                 objective_problems, split_project, summary_problems, title_problems, write_summary)
 from resume_bot.latex import render
 from resume_bot.profile import validate_profile
 from resume_bot.workflow import ROLES, analyze, load_roles, matched_terms, validate_catalog
@@ -164,7 +164,7 @@ class SummaryTests(unittest.TestCase):
                 self.assertEqual(summary_problems(summary, profile, name, 3), [])
                 groups = skill_groups(profile['skills'], role)
                 self.assertEqual(sorted(i for g in groups for i in g['items']), sorted(profile['skills']))
-                self.assertIn(groups[0]['name'], role['groups'])
+                self.assertIn(groups[0]['name'], role['resumeGroups'])  # the role's recruiter-style categories
                 profile.update(headline=name, summary=summary, skill_groups=groups)
                 report = analyze(validate_profile(profile), {'role': role['id'], 'template': 'standard', 'keywords': [],
                                                              'experience_years': 3, 'automation_owner': 'a' * 64})
@@ -224,7 +224,7 @@ class RenderTests(unittest.TestCase):
         tex = render(validate_profile(profile), years=3)
         self.assertNotIn(r'\item - ', tex)
         tex = render(self.v3_profile(), years=3)
-        self.assertIn(r'\textbf{Frameworks:} Spring Boot', tex)
+        self.assertIn(r'\textbf{Backend Frameworks:} Spring Boot', tex)
         # The technologies sit beside the project title; bullets highlight them; the six-section headings.
         self.assertIn(r'\textbf{Order Service} \textbar{} {\small\color{ink}Java 17, Spring Boot}', tex)
         self.assertIn(r'\item Wrote \textbf{JUnit 5} tests.', tex)
@@ -316,7 +316,8 @@ class WorkflowTests(unittest.TestCase):
         projects = packet['profile']['projects']
         self.assertEqual([split_project(p)[0] for p in projects], ['Order Service'])
         self.assertNotIn('Inventory Service', json.dumps(packet))
-        self.assertEqual(packet['profile']['headline'], 'Java Backend Developer')
+        self.assertEqual(title_problems(packet['profile']['headline'], 'Java Backend Developer',
+                                        packet['profile']['skills']), [])
         self.assertTrue(all(not b.startswith('- ') for job in packet['profile']['experience'] for b in job['bullets']))
         self.assertEqual(self.row()['percent'], 65)
         notes = self.jobs.list('a' * 64)[0]['notice']
@@ -338,7 +339,8 @@ class WorkflowTests(unittest.TestCase):
             new_id = self.jobs.regenerate('a' * 64, self.id, 'Java Full Stack Developer')
         self.prepare(new_id, proposals=[])
         packet, _ = self.enqueued[-1]
-        self.assertEqual(packet['profile']['headline'], 'Java Full Stack Developer')
+        self.assertEqual(title_problems(packet['profile']['headline'], 'Java Full Stack Developer',
+                                        packet['profile']['skills']), [])
         self.assertEqual([j['company'] for j in packet['profile']['experience']], [j['company'] for j in facts_before['experience']])
         self.assertEqual(sorted(packet['profile']['skills']), sorted(facts_before['skills']))
         with patch.object(self.jobs, 'start'):

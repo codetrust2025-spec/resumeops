@@ -175,6 +175,7 @@ li[data-status=needs_input] .auto-state strong{background:var(--a-amber-bg);colo
 li[data-status=blocked] .auto-state strong{background:var(--a-red-bg);color:var(--a-red)}
 .auto-score{padding:6px 14px;border-radius:999px;background:var(--a-tint);color:var(--a-ink);font-size:.95rem;font-weight:700;
   white-space:nowrap;font-variant-numeric:tabular-nums}
+.auto-score.auto-score-todo{background:var(--a-amber-bg);color:var(--a-amber)}
 .auto-actions{flex:none;display:flex;align-items:center;gap:10px;margin-left:auto}
 .auto-page .auto-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:0 14px;
   border:1px solid var(--a-field);border-radius:8px;background:#fff;color:var(--a-text);font-size:.93rem;font-weight:600;
@@ -264,6 +265,12 @@ li[data-status=blocked] .auto-state strong{background:var(--a-red-bg);color:var(
 .auto-ats td{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 .auto-ats h4{margin:6px 0 2px;font-size:.9rem}
 .auto-ats ul{margin:0 0 6px;padding-left:1.2em;font-size:.86rem}
+.auto-ats ul.auto-standards{list-style:none;padding-left:0}
+.auto-standards li{padding:2px 0 2px 21px;text-indent:-21px}
+.auto-standards li .ic{width:15px;height:15px;margin-right:6px;vertical-align:-3px}
+.auto-standards li strong{font-weight:600}
+.auto-standard-ok .ic{color:var(--a-green)}
+.auto-standard-todo .ic{color:var(--a-amber)}
 .auto-proposal{border:1px solid var(--a-line)!important;border-radius:8px;padding:10px!important;display:grid;gap:6px;margin:0;min-width:0}
 .auto-proposal legend{font-weight:600;padding:0 4px}
 .auto-proposal dl{margin:4px 0 0;display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:.86rem}
@@ -285,6 +292,8 @@ li[data-status=blocked] .auto-state strong{background:var(--a-red-bg);color:var(
 .auto-picks legend{font-weight:600;padding:0 4px;font-size:.88rem}
 .auto-page .auto-picks label{display:flex;align-items:center;gap:6px;font-size:.86rem;font-weight:500;min-height:32px}
 .auto-picks input[type=checkbox]{margin:0!important;flex:none}
+.auto-pick-group{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;width:100%}
+.auto-pick-group>span{width:100%;font-size:.8rem;font-weight:600;color:var(--a-muted);margin-top:4px}
 .auto-regenerate{display:flex;flex-wrap:wrap;gap:8px;align-items:end}
 .auto-page .auto-regenerate label{flex:1 1 220px;display:grid;gap:4px;margin:0;font-size:.88rem}
 .auto-page .auto-regenerate button{min-height:42px;border-radius:8px}

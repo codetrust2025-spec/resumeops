@@ -544,7 +544,7 @@ def framing(profile, title, terms):
 def tailor_role(facts, title, years, intelligence, ai, ranking_progress=None, summary_progress=None):
     """V3 role tailoring of verified facts: evidence ranking, the role title as headline, a checked
     summary, and the candidate's own skills ordered and grouped for the role. Returns (profile, how)."""
-    from .generate import relevant_skills, skill_groups, write_summary
+    from .generate import relevant_skills, resume_title, skill_groups, write_summary
     from .workflow import ROLES
 
     profile = tailor_facts(facts, title, years, intelligence, ai, ranking_progress)
@@ -555,6 +555,9 @@ def tailor_role(facts, title, years, intelligence, ai, ranking_progress=None, su
     profile['skills'] = relevant_skills(profile, intelligence['terms'])
     if profile['skills']:
         profile['skill_groups'] = skill_groups(profile['skills'], ROLES.get(intelligence['role'], {}))
+    # The resume title recruiters search for: the role, then the candidate's leading listed technologies for it.
+    profile['headline'] = resume_title(title, profile['skills'],
+                                       {'role': intelligence['role'], 'keywords': intelligence['terms']})
     return profile, how
 
 
@@ -563,7 +566,7 @@ def _verified_role_resume(profile, target, evidence, version):
     from .generate import broad_objective_problems, objective_problems, summary_problems
     from .workflow import role_name
 
-    from .generate import content_problems
+    from .generate import content_problems, title_problems
 
     title, years = role_name(target), target.get('experience_years')
     summary = profile.get('summary', '')
@@ -573,7 +576,7 @@ def _verified_role_resume(profile, target, evidence, version):
         problems = objective_problems(summary, evidence, title)
     else:
         problems = summary_problems(summary, evidence, title, years)
-    if profile.get('headline') != title or problems:
+    if title_problems(profile.get('headline'), title, profile.get('skills')) or problems:
         return False
     if content_problems(profile, title):  # e.g. a job title listed as a skill: never verified
         return False

@@ -320,6 +320,10 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
                 'output':str(folder),'pdf_checks':audit['pdf_checks'],
                 'notes':['Source facts are not independently employer-verified; only traceable to candidate input.']}
         if ats is not None:
+            # The resume generation standards for the selected role (resume_bot.standards): what this resume meets
+            # and what needs the candidate's attention. Reported with the ATS readiness; never changes the resume.
+            from .standards import standards_report
+            ats['standards'] = standards_report(profile, target, years, ats, audit['pdf_checks'])
             report['ats'] = ats
         if audit.get('layout_fit'):
             report['layout_fit'] = audit['layout_fit']

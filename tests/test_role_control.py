@@ -264,8 +264,11 @@ class RegenerationTests(unittest.TestCase):
         # No AI suggestion is pre-filled: the box holds the candidate's own role skills (none here) and the
         # suggestions start unticked beside it.
         self.assertEqual(job['questions'][0]['value'], '')
-        self.assertEqual(job['questions'][0]['suggestions'],
+        # The AI's suggestions first, then the role's catalog skills (unticked, grouped by category).
+        self.assertEqual(job['questions'][0]['suggestions'][:6],
                          ['Python', 'SQL', 'BigQuery', 'Dataflow', 'Pub/Sub', 'Cloud Storage'])
+        self.assertIn('Apache Spark', job['questions'][0]['suggestions'])
+        self.assertIn('GCP Data Services', [g['name'] for g in job['questions'][0]['suggestion_groups']])
         self.assertNotIn('Data Analyst', job['questions'][0]['suggestions'])
         self.assertEqual(job['error'], 'AI drafted skill suggestions for GCP Data Engineer. Keep only what is true for '
                                        'you and edit anything. Then confirm once.', 'only what was drafted is named')
@@ -279,7 +282,8 @@ class RegenerationTests(unittest.TestCase):
         # The confirmed skills, plus the role tools the resume's own project uses (its stack names Dataflow and
         # Pub/Sub): Technical Skills and Projects tell one story.
         self.assertEqual(profile['skills'], ['Python', 'SQL', 'BigQuery', 'Dataflow', 'Pub/Sub'])
-        self.assertEqual(profile['headline'], 'GCP Data Engineer')
+        from resume_bot.generate import title_problems
+        self.assertEqual(title_problems(profile['headline'], 'GCP Data Engineer', profile['skills']), [])
         self.assertEqual(profile['experience'][0]['bullets'], [])
         self.assertEqual(profile['experience'][1]['bullets'],
                          ['Reconciled customer payments against open invoices every month.'])
