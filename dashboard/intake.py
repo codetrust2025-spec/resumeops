@@ -175,14 +175,18 @@ def recruiter_details(form, fresher):
     return details
 
 
-def form_facts(form):
+def form_facts(form, stored=False):
     """(target role, candidate details) from the public form, checked; IntakeError (with the field) for anything
     missing. The details have the shape of the dashboard's own candidate form (automation.attested_profile).
 
     Mandatory: name, email, phone, city/location, target role; at least one education entry (degree, institution,
     year, specialization, CGPA or percentage); at least one job (employer, job title, start, end or Present) unless
     the candidate is a fresher. Optional: what was done in each job, technical skills and projects (a project that is
-    entered needs its name); the AI drafts what is missing for the operator's review."""
+    entered needs its name); the AI drafts what is missing for the operator's review.
+
+    ``stored``: an application already accepted is processed under the rules it was submitted with. Specialization,
+    CGPA and the recruiter details became mandatory on 24 Nov 2026; seen live: Process again on an earlier application
+    failed with "Education 2: enter the specialization." and every earlier application lacked the photo."""
     from resume_bot.automation import CONSENT_VERSION
 
     if not isinstance(form, dict):
@@ -207,10 +211,11 @@ def form_facts(form):
     if not education:
         raise IntakeError('Add your education: degree, institution, year, specialization and CGPA / percentage.',
                           'education')
+    required = (('degree', 'the degree'), ('university', 'the institution'), ('graduation_year', 'the year of completion'))
+    if not stored:
+        required += (('specialization', 'the specialization'), ('cgpa', 'the CGPA / percentage'))
     for index, row in enumerate(education):
-        for key, label in (('degree', 'the degree'), ('university', 'the institution'),
-                           ('graduation_year', 'the year of completion'), ('specialization', 'the specialization'),
-                           ('cgpa', 'the CGPA / percentage')):
+        for key, label in required:
             if not (row.get(key) or '').strip():
                 raise IntakeError(f'Education {index + 1}: enter {label}.', f'education.{index}.{key}')
     fresher = form.get('fresher') is True
@@ -227,7 +232,8 @@ def form_facts(form):
     for index, row in enumerate(projects):
         if not (row.get('name') or '').strip():
             raise IntakeError(f'Project {index + 1}: enter the project name.', f'projects.{index}.name')
-    recruiter_details(form, fresher)  # stored with the form for the operator; never part of the resume
+    if not stored:
+        recruiter_details(form, fresher)  # stored with the form for the operator; never part of the resume
     platforms = _rows(form, 'coding_platforms')
     candidate.update(
         role=role, skills=', '.join(skills),
@@ -498,7 +504,7 @@ class IntakeDesk:
         if not row or row['scrubbed'] or not row['form']:
             raise IntakeError('Application not found.', None, 404)
         form = json.loads(row['form'])
-        role, details = form_facts(form)
+        role, details = form_facts(form, stored=True)
         # The dashboard's own "Create a verified resume" request with the details filled in, exactly as the candidate
         # typed them (the workflow keeps them as stated facts). Seen live: a Word resume made from the form and read
         # back lost structure (every line of Projects became a separate project; a year of completion was dropped).

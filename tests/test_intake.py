@@ -523,6 +523,34 @@ class DeskTests(unittest.TestCase):
         self.assertTrue(entry['job']['candidates_own'])
 
 
+    def test_an_application_saved_before_the_newer_mandatory_fields_can_still_be_processed(self):
+        # Specialization, CGPA and the recruiter details became mandatory on 24 Nov 2026. Seen live: Process again on
+        # an application saved before then failed with "Education 2: enter the specialization." It is processed
+        # under the rules it was submitted with; a new submission still needs every field.
+        first = self.d.desk.submit(form(), key())
+        older = form()
+        older['education'].append({'degree': 'B.Tech (Mechanical Engineering)', 'university': 'Example College',
+                                   'graduation_year': '2020', 'specialization': '', 'cgpa': ''})
+        older['education'][0]['cgpa'] = ''
+        for field in ('photo', 'dob', 'preferred_location', 'current_salary', 'salary_type'):
+            older.pop(field)
+        with closing(self.d.jobs.connection()) as db, db:  # how the earlier form saved it
+            db.execute('UPDATE intake SET form=? WHERE candidate=?', (json.dumps(older), first['candidate']))
+        with self.assertRaises(IntakeError) as caught:
+            intake_request(older)
+        self.assertEqual(caught.exception.field, 'education.0.cgpa')
+        started = self.d.desk.start(first['candidate'], OPERATOR)
+        self.assertTrue(started['created'])
+        [job] = self.d.desk.candidate_jobs(first['candidate'])
+        self.assertEqual(job['status'], 'queued')
+        missing_year = json.loads(json.dumps(older))
+        missing_year['education'][1]['graduation_year'] = ''  # required when it was submitted, too
+        with closing(self.d.jobs.connection()) as db, db:
+            db.execute('UPDATE intake SET form=? WHERE candidate=?', (json.dumps(missing_year), first['candidate']))
+        with self.assertRaises(IntakeError) as caught:
+            self.d.desk.start(first['candidate'], OPERATOR, again=True)
+        self.assertEqual(caught.exception.field, 'education.1.graduation_year')
+
 class GpuGateTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
