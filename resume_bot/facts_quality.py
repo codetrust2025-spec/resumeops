@@ -15,8 +15,10 @@ import re
 from .workflow import ALIASES, ROLES, load_roles, matched_terms, term_pattern
 
 # Technologies the catalog does not list as role skills but candidates name (cloud migration and infrastructure).
+# Product names only: a practice such as "Networking" is an ordinary word in a sentence ("Set up networking
+# configurations"), never recased there (it is still a skill, from the role catalog).
 EXTRA_SKILLS = ['Azure Migrate', 'Azure Site Recovery', 'Azure Virtual Machines', 'Azure Backup', 'Azure Monitor',
-                'Azure Active Directory', 'Microsoft Entra ID', 'Azure Kubernetes Service', 'Networking', 'VMware',
+                'Azure Active Directory', 'Microsoft Entra ID', 'Azure Kubernetes Service', 'VMware',
                 'Windows Server', 'Active Directory', 'PowerShell', 'Shell Scripting', 'Unix', 'Jenkins', 'Ansible',
                 'Terraform', 'Docker', 'Kubernetes', 'Linux', 'Python', 'SQL', 'Excel', 'Tableau', 'Power BI']
 PLACEHOLDER = re.compile(r'^\s*(?:n\.?\s*a\.?|n/a|na|nil|none|null|nothing|not applicable|-+|\.+)\s*$', re.IGNORECASE)
