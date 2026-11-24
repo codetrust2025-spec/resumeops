@@ -226,7 +226,9 @@ class EmployerDateOnlyTests(unittest.TestCase):
             profile = packet['profile']
             [approval] = records_for(workspace.root / 'approvals', queued[0].name)
             self.assertTrue(verified_automation(profile, packet['target'], approval), profile['summary'])
-            self.assertEqual(profile['headline'], 'GCP Cloud Engineer')
+            # The resume title: the selected role first, then only skills the resume lists.
+            from resume_bot.generate import title_problems
+            self.assertEqual(title_problems(profile['headline'], 'GCP Cloud Engineer', profile['skills']), [])
             self.assertEqual(len(profile['experience']), 4)
             self.assertTrue(all(not job['position'] for job in profile['experience']), 'no job title is invented')
             self.assertTrue(all(job['bullets'] for job in profile['experience']), 'every job describes the work')

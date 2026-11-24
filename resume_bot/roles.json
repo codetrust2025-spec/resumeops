@@ -213,6 +213,103 @@
      "UI Performance Optimization"
     ]
    },
+   "resumeGroups": {
+    "UI Technologies": [
+     "HTML5",
+     "CSS3",
+     "JavaScript (ES6+)",
+     "TypeScript",
+     "React.js",
+     "Angular",
+     "jQuery"
+    ],
+    "UI Frameworks & Styling": [
+     "Bootstrap",
+     "Tailwind CSS",
+     "Material UI",
+     "SASS",
+     "SCSS",
+     "Styled Components"
+    ],
+    "Design Systems & UX": [
+     "Figma",
+     "Adobe XD",
+     "Design Tokens",
+     "Component Libraries",
+     "Storybook"
+    ],
+    "Responsive & Accessibility": [
+     "Flexbox",
+     "CSS Grid",
+     "Media Queries",
+     "Mobile-First Design",
+     "PWA",
+     "Accessibility",
+     "Cross-Browser Compatibility"
+    ],
+    "API Integration & Data Fetching": [
+     "REST APIs",
+     "GraphQL",
+     "Axios",
+     "Fetch API",
+     "React Query"
+    ],
+    "Testing": [
+     "Jest",
+     "React Testing Library",
+     "Cypress",
+     "Playwright",
+     "Unit Testing",
+     "Integration Testing"
+    ],
+    "Performance Optimization": [
+     "Code Splitting",
+     "Lazy Loading",
+     "Memoization",
+     "Debouncing",
+     "Throttling",
+     "SSR",
+     "SSG",
+     "Caching",
+     "CDN",
+     "SEO",
+     "Bundle Optimization",
+     "Tree Shaking",
+     "Web Vitals"
+    ],
+    "Build Tools & Package Managers": [
+     "Webpack",
+     "Vite",
+     "Parcel",
+     "Babel",
+     "npm",
+     "Yarn"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "Development Tools": [
+     "VS Code",
+     "Chrome DevTools",
+     "Postman",
+     "Figma",
+     "ESLint",
+     "Prettier",
+     "SonarQube"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
+    ]
+   },
    "projectThemes": [
     "Responsive admin dashboard consuming REST APIs",
     "Accessible component library with design tokens",
@@ -262,6 +359,109 @@
      "GraphQL",
      "Accessibility",
      "Web Performance"
+    ]
+   },
+   "resumeGroups": {
+    "Frontend Technologies": [
+     "React.js",
+     "Next.js",
+     "JavaScript (ES6+)",
+     "TypeScript",
+     "HTML5",
+     "CSS3",
+     "jQuery"
+    ],
+    "UI Frameworks & Styling": [
+     "Material UI",
+     "Tailwind CSS",
+     "Bootstrap",
+     "Ant Design",
+     "Styled Components",
+     "SASS",
+     "SCSS"
+    ],
+    "State Management": [
+     "Redux",
+     "Redux Toolkit",
+     "Zustand",
+     "Context API"
+    ],
+    "Responsive & Accessibility": [
+     "Flexbox",
+     "CSS Grid",
+     "Media Queries",
+     "Mobile-First Design",
+     "PWA",
+     "Accessibility",
+     "Cross-Browser Compatibility"
+    ],
+    "API Integration & Data Fetching": [
+     "REST APIs",
+     "GraphQL",
+     "Axios",
+     "Fetch API",
+     "React Query"
+    ],
+    "Testing": [
+     "Jest",
+     "React Testing Library",
+     "Cypress",
+     "Playwright",
+     "Unit Testing",
+     "Integration Testing"
+    ],
+    "Performance Optimization": [
+     "Code Splitting",
+     "Lazy Loading",
+     "Memoization",
+     "Debouncing",
+     "Throttling",
+     "SSR",
+     "SSG",
+     "Caching",
+     "CDN",
+     "SEO",
+     "Bundle Optimization",
+     "Tree Shaking",
+     "Web Vitals"
+    ],
+    "Build Tools & Package Managers": [
+     "Webpack",
+     "Vite",
+     "Parcel",
+     "Babel",
+     "npm",
+     "Yarn"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "Deployment & CI/CD": [
+     "Vercel",
+     "Netlify",
+     "Firebase",
+     "GitHub Actions"
+    ],
+    "Development Tools": [
+     "VS Code",
+     "Chrome DevTools",
+     "Postman",
+     "Figma",
+     "ESLint",
+     "Prettier",
+     "SonarQube"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
     ]
    },
    "projectThemes": [
@@ -315,6 +515,109 @@
      "Code Splitting"
     ]
    },
+   "resumeGroups": {
+    "Frontend Technologies": [
+     "React.js",
+     "Next.js",
+     "JavaScript (ES6+)",
+     "TypeScript",
+     "HTML5",
+     "CSS3",
+     "React Hooks",
+     "React Router"
+    ],
+    "UI Frameworks & Styling": [
+     "Material UI",
+     "Tailwind CSS",
+     "Bootstrap",
+     "Ant Design",
+     "Styled Components",
+     "SASS"
+    ],
+    "State Management": [
+     "Redux",
+     "Redux Toolkit",
+     "Zustand",
+     "Context API"
+    ],
+    "Responsive & Accessibility": [
+     "Flexbox",
+     "CSS Grid",
+     "Media Queries",
+     "Mobile-First Design",
+     "PWA",
+     "Accessibility",
+     "Cross-Browser Compatibility"
+    ],
+    "API Integration & Data Fetching": [
+     "REST APIs",
+     "GraphQL",
+     "Axios",
+     "Fetch API",
+     "React Query"
+    ],
+    "Testing": [
+     "Jest",
+     "React Testing Library",
+     "Cypress",
+     "Playwright",
+     "Unit Testing",
+     "Integration Testing"
+    ],
+    "Performance Optimization": [
+     "Code Splitting",
+     "Lazy Loading",
+     "Memoization",
+     "Debouncing",
+     "Throttling",
+     "SSR",
+     "SSG",
+     "Caching",
+     "CDN",
+     "SEO",
+     "Bundle Optimization",
+     "Tree Shaking",
+     "Web Vitals"
+    ],
+    "Build Tools & Package Managers": [
+     "Webpack",
+     "Vite",
+     "Parcel",
+     "Babel",
+     "npm",
+     "Yarn"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "Deployment & CI/CD": [
+     "Vercel",
+     "Netlify",
+     "Firebase",
+     "GitHub Actions"
+    ],
+    "Development Tools": [
+     "VS Code",
+     "Chrome DevTools",
+     "Postman",
+     "Figma",
+     "ESLint",
+     "Prettier",
+     "SonarQube"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
+    ]
+   },
    "projectThemes": [
     "Task board with drag-and-drop and Redux Toolkit",
     "Analytics dashboard with React Query and charts",
@@ -360,6 +663,89 @@
      "REST APIs",
      "Responsive Design",
      "Dependency Injection"
+    ]
+   },
+   "resumeGroups": {
+    "Frontend Technologies": [
+     "Angular",
+     "TypeScript",
+     "JavaScript (ES6+)",
+     "HTML5",
+     "CSS3"
+    ],
+    "Angular Ecosystem": [
+     "RxJS",
+     "NgRx",
+     "Angular CLI",
+     "Angular Router",
+     "Reactive Forms",
+     "Dependency Injection",
+     "Lazy Loading"
+    ],
+    "UI Frameworks & Styling": [
+     "Angular Material",
+     "PrimeNG",
+     "Bootstrap",
+     "Tailwind CSS",
+     "SASS",
+     "SCSS"
+    ],
+    "API Integration": [
+     "REST APIs",
+     "HttpClient",
+     "Interceptors",
+     "GraphQL"
+    ],
+    "Responsive & Accessibility": [
+     "Flexbox",
+     "CSS Grid",
+     "Media Queries",
+     "Mobile-First Design",
+     "PWA",
+     "Accessibility",
+     "Cross-Browser Compatibility"
+    ],
+    "Testing": [
+     "Jasmine",
+     "Karma",
+     "Jest",
+     "Cypress",
+     "Unit Testing"
+    ],
+    "Performance Optimization": [
+     "Change Detection (OnPush)",
+     "Lazy Loading",
+     "AOT Compilation",
+     "Server-Side Rendering",
+     "Bundle Optimization",
+     "Web Vitals"
+    ],
+    "Build Tools & Package Managers": [
+     "Angular CLI",
+     "Webpack",
+     "npm"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "Development Tools": [
+     "VS Code",
+     "Chrome DevTools",
+     "Postman",
+     "ESLint",
+     "SonarQube"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
     ]
    },
    "projectThemes": [
@@ -424,6 +810,87 @@
      "Exception Handling"
     ]
    },
+   "resumeGroups": {
+    "Programming Languages": [
+     "Java 8/11/17",
+     "SQL"
+    ],
+    "Backend Frameworks": [
+     "Spring Boot",
+     "Spring MVC",
+     "Spring Data JPA",
+     "Spring Security",
+     "Hibernate",
+     "Spring Cloud"
+    ],
+    "Microservices & APIs": [
+     "REST APIs",
+     "Microservices",
+     "API Gateway",
+     "Eureka",
+     "Resilience4j",
+     "Swagger/OpenAPI"
+    ],
+    "Security": [
+     "JWT",
+     "OAuth 2.0",
+     "Role-Based Access Control"
+    ],
+    "Databases": [
+     "MySQL",
+     "PostgreSQL",
+     "Oracle",
+     "MongoDB",
+     "Redis"
+    ],
+    "Messaging & Streaming": [
+     "Apache Kafka",
+     "RabbitMQ"
+    ],
+    "Testing": [
+     "JUnit 5",
+     "Mockito",
+     "Postman",
+     "Unit Testing",
+     "Integration Testing"
+    ],
+    "Cloud & DevOps": [
+     "Docker",
+     "Kubernetes",
+     "Jenkins",
+     "Amazon Web Services",
+     "CI/CD"
+    ],
+    "Build Tools & IDEs": [
+     "Maven",
+     "Gradle",
+     "IntelliJ IDEA",
+     "Eclipse"
+    ],
+    "Core Concepts": [
+     "OOP",
+     "Design Patterns",
+     "Multithreading",
+     "Collections Framework",
+     "Exception Handling",
+     "SOLID Principles"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
+    ]
+   },
    "projectThemes": [
     "Order management REST service with Spring Boot and PostgreSQL",
     "Inventory microservice with Spring Data JPA and Kafka events",
@@ -485,6 +952,81 @@
      "Unit Testing"
     ]
    },
+   "resumeGroups": {
+    "Programming Languages": [
+     "Python",
+     "SQL"
+    ],
+    "Backend Frameworks": [
+     "Django",
+     "Django REST Framework",
+     "FastAPI",
+     "Flask"
+    ],
+    "APIs & Architecture": [
+     "REST APIs",
+     "Microservices",
+     "GraphQL",
+     "Swagger/OpenAPI",
+     "Asynchronous Programming"
+    ],
+    "Databases & ORM": [
+     "PostgreSQL",
+     "MySQL",
+     "MongoDB",
+     "Redis",
+     "SQLAlchemy",
+     "Django ORM"
+    ],
+    "Task Queues & Messaging": [
+     "Celery",
+     "RabbitMQ",
+     "Apache Kafka"
+    ],
+    "Security": [
+     "JWT",
+     "OAuth 2.0",
+     "Role-Based Access Control"
+    ],
+    "Testing": [
+     "pytest",
+     "unittest",
+     "Postman",
+     "Unit Testing",
+     "Integration Testing"
+    ],
+    "Cloud & DevOps": [
+     "Docker",
+     "Kubernetes",
+     "Amazon Web Services",
+     "CI/CD",
+     "GitHub Actions",
+     "Nginx",
+     "Gunicorn"
+    ],
+    "Development Tools": [
+     "VS Code",
+     "PyCharm",
+     "Linux",
+     "Poetry",
+     "pip"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
+    ]
+   },
    "projectThemes": [
     "Booking API with FastAPI, PostgreSQL and background jobs",
     "Django REST Framework service with token authentication",
@@ -542,6 +1084,84 @@
      "Microservices",
      "JWT Authentication",
      "Event-driven Architecture"
+    ]
+   },
+   "resumeGroups": {
+    "Programming Languages": [
+     "JavaScript (ES6+)",
+     "TypeScript",
+     "SQL"
+    ],
+    "Backend Frameworks": [
+     "Node.js",
+     "Express.js",
+     "NestJS"
+    ],
+    "APIs & Architecture": [
+     "REST APIs",
+     "GraphQL",
+     "Microservices",
+     "WebSockets",
+     "Socket.IO",
+     "Swagger/OpenAPI"
+    ],
+    "Databases & ORM": [
+     "MongoDB",
+     "Mongoose",
+     "PostgreSQL",
+     "MySQL",
+     "Redis",
+     "Sequelize",
+     "Prisma"
+    ],
+    "Messaging & Queues": [
+     "RabbitMQ",
+     "Apache Kafka",
+     "BullMQ"
+    ],
+    "Security": [
+     "JWT",
+     "OAuth 2.0",
+     "bcrypt",
+     "Role-Based Access Control"
+    ],
+    "Testing": [
+     "Jest",
+     "Mocha",
+     "Chai",
+     "Supertest",
+     "Postman",
+     "Unit Testing"
+    ],
+    "Cloud & DevOps": [
+     "Docker",
+     "Kubernetes",
+     "Amazon Web Services",
+     "CI/CD",
+     "GitHub Actions",
+     "Nginx",
+     "PM2"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "Development Tools": [
+     "VS Code",
+     "Postman",
+     "ESLint",
+     "npm"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
     ]
    },
    "projectThemes": [
@@ -603,6 +1223,85 @@
      "Unit Testing"
     ]
    },
+   "resumeGroups": {
+    "Programming Languages": [
+     "Java 8/11/17",
+     "JavaScript (ES6+)",
+     "TypeScript",
+     "SQL"
+    ],
+    "Frontend Technologies": [
+     "React.js",
+     "Angular",
+     "HTML5",
+     "CSS3",
+     "Redux",
+     "Bootstrap",
+     "Material UI"
+    ],
+    "Backend Frameworks": [
+     "Spring Boot",
+     "Spring MVC",
+     "Spring Data JPA",
+     "Spring Security",
+     "Hibernate"
+    ],
+    "Microservices & APIs": [
+     "REST APIs",
+     "Microservices",
+     "API Gateway",
+     "Swagger/OpenAPI",
+     "JWT",
+     "OAuth 2.0"
+    ],
+    "Databases": [
+     "MySQL",
+     "PostgreSQL",
+     "Oracle",
+     "MongoDB",
+     "Redis"
+    ],
+    "Messaging": [
+     "Apache Kafka",
+     "RabbitMQ"
+    ],
+    "Testing": [
+     "JUnit 5",
+     "Mockito",
+     "Jest",
+     "React Testing Library",
+     "Postman"
+    ],
+    "Cloud & DevOps": [
+     "Docker",
+     "Kubernetes",
+     "Jenkins",
+     "Amazon Web Services",
+     "CI/CD"
+    ],
+    "Build Tools & IDEs": [
+     "Maven",
+     "Gradle",
+     "npm",
+     "IntelliJ IDEA",
+     "VS Code"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
+    ]
+   },
    "projectThemes": [
     "Employee leave management app with Spring Boot and React",
     "Product catalogue with Angular front end and Spring REST APIs",
@@ -656,6 +1355,85 @@
      "JWT Authentication",
      "Responsive Design",
      "State Management"
+    ]
+   },
+   "resumeGroups": {
+    "Programming Languages": [
+     "JavaScript (ES6+)",
+     "TypeScript"
+    ],
+    "Frontend Technologies": [
+     "React.js",
+     "Next.js",
+     "HTML5",
+     "CSS3",
+     "Redux Toolkit",
+     "Tailwind CSS",
+     "Material UI"
+    ],
+    "Backend Technologies": [
+     "Node.js",
+     "Express.js",
+     "REST APIs",
+     "GraphQL",
+     "WebSockets",
+     "Socket.IO"
+    ],
+    "Databases": [
+     "MongoDB",
+     "Mongoose",
+     "Redis",
+     "MongoDB Atlas"
+    ],
+    "Authentication & Security": [
+     "JWT",
+     "OAuth 2.0",
+     "bcrypt",
+     "Role-Based Access Control"
+    ],
+    "Testing": [
+     "Jest",
+     "React Testing Library",
+     "Supertest",
+     "Postman"
+    ],
+    "Performance Optimization": [
+     "Code Splitting",
+     "Lazy Loading",
+     "Memoization",
+     "Caching",
+     "Pagination",
+     "Indexing"
+    ],
+    "Cloud & Deployment": [
+     "Docker",
+     "Amazon Web Services",
+     "Vercel",
+     "Render",
+     "CI/CD",
+     "GitHub Actions"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "Development Tools": [
+     "VS Code",
+     "Postman",
+     "ESLint",
+     "npm",
+     "Chrome DevTools"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
     ]
    },
    "projectThemes": [
@@ -712,6 +1490,83 @@
      "Unit Testing"
     ]
    },
+   "resumeGroups": {
+    "Programming Languages": [
+     "C#",
+     "SQL",
+     "JavaScript (ES6+)",
+     "TypeScript"
+    ],
+    "Frameworks": [
+     ".NET 6/8",
+     "ASP.NET Core",
+     "ASP.NET MVC",
+     "ASP.NET Core Web API",
+     "Entity Framework Core",
+     "LINQ"
+    ],
+    "Frontend": [
+     "Angular",
+     "React.js",
+     "Razor Pages",
+     "Blazor",
+     "HTML5",
+     "CSS3"
+    ],
+    "APIs & Architecture": [
+     "REST APIs",
+     "Microservices",
+     "Clean Architecture",
+     "Dependency Injection",
+     "Swagger/OpenAPI"
+    ],
+    "Databases": [
+     "SQL Server",
+     "PostgreSQL",
+     "Redis",
+     "Stored Procedures"
+    ],
+    "Security": [
+     "JWT",
+     "OAuth 2.0",
+     "ASP.NET Identity",
+     "Role-Based Access Control"
+    ],
+    "Testing": [
+     "xUnit",
+     "NUnit",
+     "Moq",
+     "Unit Testing"
+    ],
+    "Cloud & DevOps": [
+     "Microsoft Azure",
+     "Azure App Service",
+     "Azure DevOps",
+     "Docker",
+     "CI/CD"
+    ],
+    "Development Tools": [
+     "Visual Studio",
+     "VS Code",
+     "Postman",
+     "SSMS"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
+    ]
+   },
    "projectThemes": [
     "Appointment scheduling Web API with ASP.NET Core and EF Core",
     "Invoice service with SQL Server and background processing",
@@ -761,6 +1616,81 @@
      "Containerization",
      "Monitoring",
      "Release Management"
+    ]
+   },
+   "resumeGroups": {
+    "Cloud Platforms": [
+     "Amazon Web Services",
+     "Microsoft Azure",
+     "Google Cloud"
+    ],
+    "Containers & Orchestration": [
+     "Docker",
+     "Kubernetes",
+     "Helm",
+     "Amazon EKS",
+     "Docker Compose"
+    ],
+    "CI/CD": [
+     "Jenkins",
+     "GitHub Actions",
+     "GitLab CI/CD",
+     "Azure DevOps",
+     "Argo CD"
+    ],
+    "Infrastructure as Code": [
+     "Terraform",
+     "Ansible",
+     "AWS CloudFormation"
+    ],
+    "Monitoring & Logging": [
+     "Prometheus",
+     "Grafana",
+     "ELK Stack",
+     "Amazon CloudWatch",
+     "Datadog"
+    ],
+    "Scripting & Languages": [
+     "Bash",
+     "Python",
+     "YAML",
+     "Groovy"
+    ],
+    "Operating Systems & Networking": [
+     "Linux",
+     "Nginx",
+     "DNS",
+     "Load Balancing",
+     "VPC",
+     "TCP/IP"
+    ],
+    "Security & DevSecOps": [
+     "IAM",
+     "SonarQube",
+     "Trivy",
+     "HashiCorp Vault",
+     "Secrets Management"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "Practices": [
+     "GitOps",
+     "Blue-Green Deployment",
+     "Canary Releases",
+     "Site Reliability Engineering"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
     ]
    },
    "projectThemes": [
@@ -814,6 +1744,80 @@
      "Cloud Security"
     ]
    },
+   "resumeGroups": {
+    "AWS Compute": [
+     "Amazon EC2",
+     "AWS Lambda",
+     "Amazon ECS",
+     "Amazon EKS",
+     "Auto Scaling",
+     "Elastic Beanstalk"
+    ],
+    "AWS Storage & Databases": [
+     "Amazon S3",
+     "Amazon RDS",
+     "Amazon DynamoDB",
+     "Amazon EBS",
+     "Amazon EFS"
+    ],
+    "AWS Networking": [
+     "Amazon VPC",
+     "Route 53",
+     "Elastic Load Balancing",
+     "Amazon CloudFront",
+     "API Gateway"
+    ],
+    "Security & Identity": [
+     "AWS IAM",
+     "AWS KMS",
+     "AWS Secrets Manager",
+     "Security Groups",
+     "AWS WAF"
+    ],
+    "Infrastructure as Code": [
+     "Terraform",
+     "AWS CloudFormation",
+     "AWS CDK"
+    ],
+    "Containers & CI/CD": [
+     "Docker",
+     "Kubernetes",
+     "Jenkins",
+     "AWS CodePipeline",
+     "GitHub Actions"
+    ],
+    "Monitoring & Logging": [
+     "Amazon CloudWatch",
+     "AWS CloudTrail",
+     "AWS X-Ray",
+     "Grafana"
+    ],
+    "Scripting": [
+     "Python",
+     "Bash",
+     "AWS CLI",
+     "Boto3"
+    ],
+    "Operating Systems": [
+     "Linux",
+     "Windows Server"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
+    ]
+   },
    "projectThemes": [
     "Serverless image-processing pipeline with Lambda and S3",
     "Multi-AZ web tier with Auto Scaling and RDS",
@@ -863,6 +1867,72 @@
      "Cloud Security"
     ]
    },
+   "resumeGroups": {
+    "Azure Compute": [
+     "Azure Virtual Machines",
+     "Azure App Service",
+     "Azure Functions",
+     "Azure Kubernetes Service",
+     "VM Scale Sets"
+    ],
+    "Azure Storage & Databases": [
+     "Azure Blob Storage",
+     "Azure SQL Database",
+     "Azure Cosmos DB",
+     "Azure Files"
+    ],
+    "Azure Networking": [
+     "Azure Virtual Network",
+     "Azure Load Balancer",
+     "Application Gateway",
+     "Azure DNS",
+     "Azure Front Door"
+    ],
+    "Identity & Security": [
+     "Microsoft Entra ID",
+     "Azure RBAC",
+     "Azure Key Vault",
+     "Network Security Groups",
+     "Azure Policy"
+    ],
+    "Infrastructure as Code": [
+     "Terraform",
+     "ARM Templates",
+     "Bicep"
+    ],
+    "CI/CD & Containers": [
+     "Azure DevOps",
+     "GitHub Actions",
+     "Docker",
+     "Kubernetes"
+    ],
+    "Monitoring": [
+     "Azure Monitor",
+     "Log Analytics",
+     "Application Insights"
+    ],
+    "Scripting": [
+     "PowerShell",
+     "Azure CLI",
+     "Bash",
+     "Python"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
+    ]
+   },
    "projectThemes": [
     "App Service deployment pipeline with Azure DevOps",
     "Bicep templates for a hub-and-spoke network",
@@ -909,6 +1979,72 @@
      "Networking",
      "Cloud Security",
      "High Availability"
+    ]
+   },
+   "resumeGroups": {
+    "GCP Compute": [
+     "Compute Engine",
+     "Google Kubernetes Engine",
+     "Cloud Run",
+     "Cloud Functions",
+     "App Engine"
+    ],
+    "GCP Storage & Databases": [
+     "Cloud Storage",
+     "Cloud SQL",
+     "BigQuery",
+     "Firestore",
+     "Cloud Spanner"
+    ],
+    "GCP Networking": [
+     "VPC",
+     "Cloud Load Balancing",
+     "Cloud DNS",
+     "Cloud NAT",
+     "Cloud CDN"
+    ],
+    "Identity & Security": [
+     "Cloud IAM",
+     "Secret Manager",
+     "Cloud KMS",
+     "Service Accounts"
+    ],
+    "Infrastructure as Code": [
+     "Terraform",
+     "Deployment Manager"
+    ],
+    "CI/CD & Containers": [
+     "Cloud Build",
+     "Artifact Registry",
+     "Docker",
+     "Kubernetes",
+     "GitHub Actions"
+    ],
+    "Monitoring & Logging": [
+     "Cloud Monitoring",
+     "Cloud Logging",
+     "Prometheus",
+     "Grafana"
+    ],
+    "Scripting": [
+     "gcloud CLI",
+     "Python",
+     "Bash"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
     ]
    },
    "projectThemes": [
@@ -961,6 +2097,84 @@
      "Data Quality"
     ]
    },
+   "resumeGroups": {
+    "Programming Languages": [
+     "Python",
+     "SQL",
+     "Scala",
+     "PySpark"
+    ],
+    "Big Data Technologies": [
+     "Apache Spark",
+     "Spark SQL",
+     "Hadoop",
+     "Hive",
+     "Apache Kafka",
+     "Spark Streaming"
+    ],
+    "Data Warehousing": [
+     "Snowflake",
+     "Amazon Redshift",
+     "BigQuery",
+     "Azure Synapse Analytics",
+     "Data Modeling",
+     "Star Schema"
+    ],
+    "ETL/ELT & Orchestration": [
+     "Apache Airflow",
+     "dbt",
+     "AWS Glue",
+     "Azure Data Factory",
+     "ETL",
+     "ELT"
+    ],
+    "Lakehouse & Storage": [
+     "Databricks",
+     "Delta Lake",
+     "Amazon S3",
+     "Parquet",
+     "Data Lake"
+    ],
+    "Databases": [
+     "PostgreSQL",
+     "MySQL",
+     "MongoDB",
+     "Cassandra"
+    ],
+    "Cloud Platforms": [
+     "Amazon Web Services",
+     "Microsoft Azure",
+     "Google Cloud"
+    ],
+    "DevOps & Tools": [
+     "Docker",
+     "Git",
+     "CI/CD",
+     "Terraform",
+     "Linux"
+    ],
+    "Data Quality & Governance": [
+     "Data Validation",
+     "Great Expectations",
+     "Data Lineage",
+     "Unity Catalog"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
+    ]
+   },
    "projectThemes": [
     "Batch ETL pipeline from CSV and API sources into a data warehouse with Airflow",
     "Streaming events through Kafka into Spark for daily aggregates",
@@ -1006,6 +2220,71 @@
      "Data Modeling",
      "Data Warehousing",
      "Data Quality"
+    ]
+   },
+   "resumeGroups": {
+    "Programming Languages": [
+     "Python",
+     "PySpark",
+     "SQL",
+     "Spark SQL"
+    ],
+    "Azure Data Services": [
+     "Azure Data Factory",
+     "Azure Databricks",
+     "Azure Synapse Analytics",
+     "Azure Data Lake Storage Gen2",
+     "Microsoft Fabric",
+     "Azure SQL Database"
+    ],
+    "Streaming & Messaging": [
+     "Azure Event Hubs",
+     "Azure Stream Analytics",
+     "Spark Structured Streaming"
+    ],
+    "Lakehouse & Modeling": [
+     "Delta Lake",
+     "Medallion Architecture",
+     "Data Modeling",
+     "Star Schema",
+     "Slowly Changing Dimensions"
+    ],
+    "Orchestration & ETL": [
+     "ETL",
+     "ELT",
+     "Incremental Loading",
+     "Change Data Capture",
+     "Apache Airflow"
+    ],
+    "Governance & Security": [
+     "Unity Catalog",
+     "Microsoft Purview",
+     "Azure Key Vault",
+     "Azure RBAC"
+    ],
+    "Reporting": [
+     "Power BI"
+    ],
+    "DevOps & CI/CD": [
+     "Azure DevOps",
+     "Git",
+     "CI/CD",
+     "Terraform"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
     ]
    },
    "projectThemes": [
@@ -1054,6 +2333,80 @@
      "Streaming"
     ]
    },
+   "resumeGroups": {
+    "Programming Languages": [
+     "Python",
+     "SQL",
+     "PySpark",
+     "Apache Beam"
+    ],
+    "GCP Data Services": [
+     "BigQuery",
+     "Dataflow",
+     "Dataproc",
+     "Cloud Composer",
+     "Pub/Sub",
+     "Cloud Storage",
+     "Dataform"
+    ],
+    "Big Data & Streaming": [
+     "Apache Spark",
+     "Apache Kafka",
+     "Apache Airflow",
+     "Streaming Pipelines"
+    ],
+    "Data Warehousing & Modeling": [
+     "Data Modeling",
+     "Star Schema",
+     "Partitioning",
+     "Clustering",
+     "Slowly Changing Dimensions"
+    ],
+    "ETL/ELT": [
+     "ETL",
+     "ELT",
+     "dbt",
+     "Change Data Capture",
+     "Data Validation"
+    ],
+    "Databases": [
+     "Cloud SQL",
+     "PostgreSQL",
+     "Bigtable",
+     "Firestore"
+    ],
+    "Governance & Security": [
+     "Cloud IAM",
+     "Dataplex",
+     "Data Catalog"
+    ],
+    "DevOps & CI/CD": [
+     "Terraform",
+     "Cloud Build",
+     "Docker",
+     "Git",
+     "CI/CD"
+    ],
+    "Reporting": [
+     "Looker Studio",
+     "Looker"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
+    ]
+   },
    "projectThemes": [
     "Streaming events into BigQuery with Pub/Sub and Dataflow",
     "Airflow-orchestrated batch pipeline on Cloud Composer",
@@ -1089,6 +2442,64 @@
      "Statistics",
      "Exploratory Data Analysis",
      "KPI Reporting"
+    ]
+   },
+   "resumeGroups": {
+    "Programming & Querying": [
+     "SQL",
+     "Python",
+     "R"
+    ],
+    "Data Analysis Libraries": [
+     "Pandas",
+     "NumPy",
+     "Matplotlib",
+     "Seaborn"
+    ],
+    "BI & Visualization": [
+     "Power BI",
+     "Tableau",
+     "Looker Studio",
+     "DAX",
+     "Power Query"
+    ],
+    "Spreadsheets": [
+     "Advanced Excel",
+     "Pivot Tables",
+     "VLOOKUP/XLOOKUP",
+     "Google Sheets"
+    ],
+    "Databases": [
+     "MySQL",
+     "PostgreSQL",
+     "SQL Server",
+     "BigQuery",
+     "Snowflake"
+    ],
+    "Analytics Techniques": [
+     "Data Cleaning",
+     "Exploratory Data Analysis",
+     "Statistical Analysis",
+     "A/B Testing",
+     "KPI Reporting",
+     "Data Modeling"
+    ],
+    "ETL & Data Preparation": [
+     "ETL",
+     "Data Wrangling",
+     "Data Validation"
+    ],
+    "Collaboration Tools": [
+     "Git",
+     "Jira",
+     "Confluence",
+     "Agile"
+    ],
+    "AI-Powered Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Microsoft Copilot"
     ]
    },
    "projectThemes": [
@@ -1133,6 +2544,71 @@
      "Model Evaluation",
      "Exploratory Data Analysis",
      "A/B Testing"
+    ]
+   },
+   "resumeGroups": {
+    "Programming Languages": [
+     "Python",
+     "SQL",
+     "R"
+    ],
+    "Machine Learning": [
+     "scikit-learn",
+     "XGBoost",
+     "LightGBM",
+     "Regression",
+     "Classification",
+     "Clustering",
+     "Time Series Forecasting"
+    ],
+    "Deep Learning": [
+     "TensorFlow",
+     "PyTorch",
+     "Keras"
+    ],
+    "NLP & Generative AI": [
+     "NLP",
+     "Hugging Face Transformers",
+     "Large Language Models",
+     "LangChain"
+    ],
+    "Data Analysis & Visualization": [
+     "Pandas",
+     "NumPy",
+     "Matplotlib",
+     "Seaborn",
+     "Plotly",
+     "Power BI",
+     "Tableau"
+    ],
+    "Statistics": [
+     "Statistical Analysis",
+     "Hypothesis Testing",
+     "A/B Testing",
+     "Feature Engineering"
+    ],
+    "MLOps & Deployment": [
+     "MLflow",
+     "Docker",
+     "FastAPI",
+     "Model Monitoring"
+    ],
+    "Big Data & Cloud": [
+     "Apache Spark",
+     "Databricks",
+     "Amazon Web Services",
+     "Amazon SageMaker"
+    ],
+    "Tools": [
+     "Jupyter Notebook",
+     "Git",
+     "VS Code"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
     ]
    },
    "projectThemes": [
@@ -1183,6 +2659,73 @@
      "Model Monitoring"
     ]
    },
+   "resumeGroups": {
+    "Programming Languages": [
+     "Python",
+     "SQL",
+     "C++"
+    ],
+    "ML & Deep Learning": [
+     "scikit-learn",
+     "TensorFlow",
+     "PyTorch",
+     "Keras",
+     "XGBoost"
+    ],
+    "Computer Vision & NLP": [
+     "OpenCV",
+     "NLP",
+     "Hugging Face Transformers",
+     "Large Language Models"
+    ],
+    "MLOps": [
+     "MLflow",
+     "Kubeflow",
+     "DVC",
+     "Model Monitoring",
+     "Feature Store",
+     "Model Versioning"
+    ],
+    "Model Serving": [
+     "FastAPI",
+     "TensorFlow Serving",
+     "TorchServe",
+     "ONNX",
+     "REST APIs"
+    ],
+    "Data Processing": [
+     "Pandas",
+     "NumPy",
+     "Apache Spark",
+     "Apache Airflow"
+    ],
+    "Cloud ML Platforms": [
+     "Amazon SageMaker",
+     "Vertex AI",
+     "Azure Machine Learning"
+    ],
+    "Containers & CI/CD": [
+     "Docker",
+     "Kubernetes",
+     "CI/CD",
+     "GitHub Actions"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
+    ]
+   },
    "projectThemes": [
     "Model serving API with FastAPI and Docker",
     "Experiment tracking and model registry with MLflow",
@@ -1230,6 +2773,74 @@
      "LLM Evaluation"
     ]
    },
+   "resumeGroups": {
+    "Programming Languages": [
+     "Python",
+     "SQL",
+     "TypeScript"
+    ],
+    "LLM Frameworks": [
+     "LangChain",
+     "LlamaIndex",
+     "LangGraph",
+     "Hugging Face Transformers",
+     "OpenAI API"
+    ],
+    "LLMs & Models": [
+     "GPT-4",
+     "Llama",
+     "Mistral",
+     "Claude",
+     "Ollama"
+    ],
+    "RAG & Vector Databases": [
+     "Retrieval-Augmented Generation",
+     "Embeddings",
+     "Pinecone",
+     "FAISS",
+     "ChromaDB",
+     "pgvector",
+     "Semantic Search"
+    ],
+    "Prompt & Agent Engineering": [
+     "Prompt Engineering",
+     "AI Agents",
+     "Function Calling",
+     "Guardrails"
+    ],
+    "Fine-Tuning & Evaluation": [
+     "LoRA",
+     "PEFT",
+     "LLM Evaluation",
+     "RAGAS"
+    ],
+    "APIs & Deployment": [
+     "FastAPI",
+     "REST APIs",
+     "Docker",
+     "Kubernetes",
+     "Streamlit"
+    ],
+    "Cloud AI Platforms": [
+     "Azure OpenAI",
+     "Amazon Bedrock",
+     "Vertex AI"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Cursor AI"
+    ]
+   },
    "projectThemes": [
     "Document question-answering with retrieval-augmented generation",
     "Support-ticket summarizer with a local LLM",
@@ -1275,6 +2886,76 @@
      "Page Object Model",
      "BDD",
      "CI/CD"
+    ]
+   },
+   "resumeGroups": {
+    "Programming Languages": [
+     "Java",
+     "Python",
+     "JavaScript (ES6+)",
+     "TypeScript"
+    ],
+    "Automation Tools": [
+     "Selenium WebDriver",
+     "Playwright",
+     "Cypress",
+     "Appium"
+    ],
+    "Test Frameworks": [
+     "TestNG",
+     "JUnit",
+     "Cucumber",
+     "BDD",
+     "pytest",
+     "Page Object Model"
+    ],
+    "API Testing": [
+     "Postman",
+     "Rest Assured",
+     "REST APIs",
+     "Swagger"
+    ],
+    "Performance Testing": [
+     "JMeter",
+     "k6"
+    ],
+    "CI/CD & Build Tools": [
+     "Jenkins",
+     "GitHub Actions",
+     "Maven",
+     "Docker"
+    ],
+    "Test Management & Defect Tracking": [
+     "Jira",
+     "TestRail",
+     "Zephyr",
+     "Defect Tracking"
+    ],
+    "Testing Types": [
+     "Functional Testing",
+     "Regression Testing",
+     "Smoke Testing",
+     "Cross-Browser Testing",
+     "API Testing"
+    ],
+    "Databases": [
+     "SQL",
+     "MySQL"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
     ]
    },
    "projectThemes": [
@@ -1339,6 +3020,64 @@
      "STLC"
     ]
    },
+   "resumeGroups": {
+    "Testing Types": [
+     "Manual Testing",
+     "Functional Testing",
+     "Regression Testing",
+     "Smoke Testing",
+     "Sanity Testing",
+     "Integration Testing",
+     "System Testing",
+     "User Acceptance Testing"
+    ],
+    "Test Design": [
+     "Test Case Design",
+     "Test Scenarios",
+     "Test Plans",
+     "Boundary Value Analysis",
+     "Equivalence Partitioning",
+     "Requirement Traceability Matrix"
+    ],
+    "Defect Management": [
+     "Defect Tracking",
+     "Bug Life Cycle",
+     "Root Cause Analysis"
+    ],
+    "Test Management Tools": [
+     "Jira",
+     "TestRail",
+     "Zephyr",
+     "qTest"
+    ],
+    "API & Database Testing": [
+     "Postman",
+     "SQL",
+     "MySQL",
+     "REST APIs"
+    ],
+    "Automation Exposure": [
+     "Selenium WebDriver",
+     "Playwright",
+     "Cypress"
+    ],
+    "Methodologies": [
+     "SDLC",
+     "STLC",
+     "Agile",
+     "Scrum"
+    ],
+    "Collaboration Tools": [
+     "Confluence",
+     "Git",
+     "Microsoft Excel"
+    ],
+    "AI-Powered Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude"
+    ]
+   },
    "projectThemes": [
     "Manual and API test suite for an online booking application",
     "Regression test plan and defect tracking for a web store release",
@@ -1381,6 +3120,75 @@
      "Integration",
      "REST APIs",
      "Unit Testing"
+    ]
+   },
+   "resumeGroups": {
+    "Salesforce Development": [
+     "Apex",
+     "Lightning Web Components",
+     "Aura Components",
+     "Visualforce",
+     "SOQL",
+     "SOSL"
+    ],
+    "Automation": [
+     "Flows",
+     "Process Builder",
+     "Apex Triggers",
+     "Batch Apex",
+     "Queueable Apex",
+     "Scheduled Apex"
+    ],
+    "Salesforce Clouds": [
+     "Sales Cloud",
+     "Service Cloud",
+     "Experience Cloud"
+    ],
+    "Integration": [
+     "REST APIs",
+     "SOAP APIs",
+     "Named Credentials",
+     "Platform Events",
+     "MuleSoft"
+    ],
+    "Security & Data": [
+     "Profiles",
+     "Permission Sets",
+     "Sharing Rules",
+     "Data Loader",
+     "Governor Limits"
+    ],
+    "DevOps & Tools": [
+     "Salesforce DX",
+     "VS Code",
+     "Git",
+     "Copado",
+     "Gearset",
+     "Workbench"
+    ],
+    "Testing": [
+     "Apex Test Classes",
+     "Unit Testing",
+     "Jest"
+    ],
+    "Web Technologies": [
+     "JavaScript (ES6+)",
+     "HTML5",
+     "CSS3"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "AI-Powered Development Tools": [
+     "Einstein GPT",
+     "ChatGPT",
+     "GitHub Copilot"
     ]
    },
    "projectThemes": [
@@ -1430,6 +3238,79 @@
      "App Store Release"
     ]
    },
+   "resumeGroups": {
+    "Programming Languages": [
+     "Dart",
+     "JavaScript (ES6+)",
+     "TypeScript",
+     "Kotlin",
+     "Swift"
+    ],
+    "Cross-Platform Frameworks": [
+     "Flutter",
+     "React Native",
+     "Expo"
+    ],
+    "State Management": [
+     "Provider",
+     "Riverpod",
+     "BLoC",
+     "Redux"
+    ],
+    "Backend & APIs": [
+     "Firebase",
+     "REST APIs",
+     "GraphQL",
+     "WebSockets"
+    ],
+    "Storage & Offline": [
+     "SQLite",
+     "Hive",
+     "Async Storage",
+     "Offline Sync"
+    ],
+    "Mobile Features": [
+     "Push Notifications",
+     "Firebase Cloud Messaging",
+     "Deep Linking",
+     "Google Maps API",
+     "In-App Purchases"
+    ],
+    "Testing": [
+     "Jest",
+     "Flutter Test",
+     "Widget Testing",
+     "Detox"
+    ],
+    "Release & CI/CD": [
+     "App Store Release",
+     "Google Play Console",
+     "Fastlane",
+     "Codemagic",
+     "TestFlight"
+    ],
+    "Development Tools": [
+     "Android Studio",
+     "Xcode",
+     "VS Code",
+     "Postman"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
+    ]
+   },
    "projectThemes": [
     "Cross-platform expense tracker with offline sync",
     "Event check-in app with QR scanning",
@@ -1475,6 +3356,75 @@
      "Material Design"
     ]
    },
+   "resumeGroups": {
+    "Programming Languages": [
+     "Kotlin",
+     "Java"
+    ],
+    "Android Frameworks": [
+     "Jetpack Compose",
+     "Android Jetpack",
+     "Android SDK",
+     "XML Layouts",
+     "Material Design"
+    ],
+    "Architecture": [
+     "MVVM",
+     "Clean Architecture",
+     "Hilt",
+     "Dagger",
+     "Repository Pattern"
+    ],
+    "Asynchronous Programming": [
+     "Coroutines",
+     "Kotlin Flow",
+     "LiveData",
+     "RxJava"
+    ],
+    "Networking & Data": [
+     "Retrofit",
+     "OkHttp",
+     "REST APIs",
+     "Room",
+     "DataStore",
+     "Firebase"
+    ],
+    "Background & Notifications": [
+     "WorkManager",
+     "Firebase Cloud Messaging",
+     "Push Notifications"
+    ],
+    "Testing": [
+     "JUnit",
+     "Espresso",
+     "Mockito",
+     "Unit Testing"
+    ],
+    "Release & CI/CD": [
+     "Google Play Console",
+     "Gradle",
+     "Firebase Crashlytics",
+     "GitHub Actions"
+    ],
+    "Development Tools": [
+     "Android Studio",
+     "Postman"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "AI-Powered Development Tools": [
+     "Gemini in Android Studio",
+     "ChatGPT",
+     "GitHub Copilot"
+    ]
+   },
    "projectThemes": [
     "Notes app with Jetpack Compose and Room",
     "Weather app using Retrofit and MVVM",
@@ -1515,6 +3465,76 @@
      "REST APIs",
      "Auto Layout",
      "App Store Release"
+    ]
+   },
+   "resumeGroups": {
+    "Programming Languages": [
+     "Swift",
+     "Objective-C"
+    ],
+    "iOS Frameworks": [
+     "SwiftUI",
+     "UIKit",
+     "Combine",
+     "Core Data",
+     "Foundation"
+    ],
+    "Architecture": [
+     "MVVM",
+     "MVC",
+     "Clean Architecture",
+     "Coordinator Pattern"
+    ],
+    "Networking & Data": [
+     "URLSession",
+     "Alamofire",
+     "REST APIs",
+     "Codable",
+     "Firebase"
+    ],
+    "Concurrency": [
+     "Swift Concurrency",
+     "async/await",
+     "Grand Central Dispatch"
+    ],
+    "Apple Services": [
+     "Push Notifications",
+     "HealthKit",
+     "MapKit",
+     "Core Location",
+     "In-App Purchases"
+    ],
+    "Testing": [
+     "XCTest",
+     "XCUITest",
+     "Unit Testing"
+    ],
+    "Release & CI/CD": [
+     "App Store Release",
+     "TestFlight",
+     "Fastlane",
+     "Xcode Cloud"
+    ],
+    "Development Tools": [
+     "Xcode",
+     "Instruments",
+     "Swift Package Manager",
+     "CocoaPods"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
     ]
    },
    "projectThemes": [
@@ -1576,6 +3596,87 @@
      "Postman"
     ]
    },
+   "resumeGroups": {
+    "Programming Languages": [
+     "JavaScript (ES6+)",
+     "TypeScript",
+     "Java",
+     "Python",
+     "SQL"
+    ],
+    "Frontend Technologies": [
+     "React.js",
+     "Angular",
+     "Next.js",
+     "HTML5",
+     "CSS3",
+     "Redux",
+     "Tailwind CSS",
+     "Material UI"
+    ],
+    "Backend Technologies": [
+     "Node.js",
+     "Express.js",
+     "Spring Boot",
+     "Django",
+     "REST APIs",
+     "GraphQL",
+     "Microservices"
+    ],
+    "Databases": [
+     "MongoDB",
+     "PostgreSQL",
+     "MySQL",
+     "Redis"
+    ],
+    "Authentication & Security": [
+     "JWT",
+     "OAuth 2.0",
+     "Role-Based Access Control"
+    ],
+    "Testing": [
+     "Jest",
+     "React Testing Library",
+     "JUnit",
+     "Postman"
+    ],
+    "Cloud & DevOps": [
+     "Docker",
+     "Amazon Web Services",
+     "Microsoft Azure",
+     "CI/CD",
+     "GitHub Actions",
+     "Nginx"
+    ],
+    "Performance Optimization": [
+     "Caching",
+     "Lazy Loading",
+     "Code Splitting",
+     "Pagination",
+     "Query Optimization"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "Development Tools": [
+     "VS Code",
+     "Postman",
+     "Chrome DevTools",
+     "Figma"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
+    ]
+   },
    "projectThemes": [
     "Task tracker with React, Node.js and PostgreSQL",
     "Online store with React front end and REST APIs",
@@ -1627,6 +3728,74 @@
      "Unit Testing"
     ]
    },
+   "resumeGroups": {
+    "Programming Languages": [
+     "Java",
+     "Python",
+     "JavaScript (ES6+)",
+     "C++",
+     "SQL"
+    ],
+    "Frameworks": [
+     "Spring Boot",
+     "Django",
+     "React.js",
+     "Node.js"
+    ],
+    "APIs & Architecture": [
+     "REST APIs",
+     "Microservices",
+     "System Design",
+     "Design Patterns"
+    ],
+    "Databases": [
+     "MySQL",
+     "PostgreSQL",
+     "MongoDB",
+     "Redis"
+    ],
+    "Computer Science Fundamentals": [
+     "Data Structures",
+     "Algorithms",
+     "Object-Oriented Programming",
+     "DBMS",
+     "Operating Systems",
+     "Computer Networks"
+    ],
+    "Testing": [
+     "Unit Testing",
+     "JUnit",
+     "pytest",
+     "Integration Testing"
+    ],
+    "Cloud & DevOps": [
+     "Docker",
+     "Amazon Web Services",
+     "CI/CD",
+     "Jenkins",
+     "Linux"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "Development Tools": [
+     "VS Code",
+     "IntelliJ IDEA",
+     "Postman"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
+    ]
+   },
    "projectThemes": [
     "REST API with authentication and a relational database",
     "Web application with a React front end and a Spring Boot or Django back end",
@@ -1673,6 +3842,68 @@
      "Unit Testing"
     ]
    },
+   "resumeGroups": {
+    "Programming Languages": [
+     "Java",
+     "Python",
+     "JavaScript (ES6+)",
+     "SQL"
+    ],
+    "Backend Frameworks": [
+     "Spring Boot",
+     "Django",
+     "FastAPI",
+     "Node.js",
+     "Express.js"
+    ],
+    "APIs & Architecture": [
+     "REST APIs",
+     "Microservices",
+     "GraphQL",
+     "Swagger/OpenAPI"
+    ],
+    "Databases": [
+     "PostgreSQL",
+     "MySQL",
+     "MongoDB",
+     "Redis"
+    ],
+    "Messaging": [
+     "Apache Kafka",
+     "RabbitMQ"
+    ],
+    "Security": [
+     "JWT",
+     "OAuth 2.0",
+     "Role-Based Access Control"
+    ],
+    "Testing": [
+     "Unit Testing",
+     "Integration Testing",
+     "Postman"
+    ],
+    "Cloud & DevOps": [
+     "Docker",
+     "Kubernetes",
+     "Amazon Web Services",
+     "CI/CD"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
+    ]
+   },
    "projectThemes": [
     "REST API with authentication and a relational database"
    ]
@@ -1706,6 +3937,66 @@
      "Infrastructure as Code",
      "Networking",
      "Cloud Security"
+    ]
+   },
+   "resumeGroups": {
+    "Cloud Platforms": [
+     "Amazon Web Services",
+     "Microsoft Azure",
+     "Google Cloud"
+    ],
+    "Infrastructure as Code": [
+     "Terraform",
+     "Ansible",
+     "AWS CloudFormation"
+    ],
+    "Containers & Orchestration": [
+     "Docker",
+     "Kubernetes",
+     "Helm"
+    ],
+    "CI/CD": [
+     "Jenkins",
+     "GitHub Actions",
+     "Azure DevOps"
+    ],
+    "Networking & Security": [
+     "VPC",
+     "Load Balancing",
+     "DNS",
+     "IAM",
+     "Networking",
+     "Cloud Security"
+    ],
+    "Monitoring": [
+     "Prometheus",
+     "Grafana",
+     "Amazon CloudWatch",
+     "Azure Monitor"
+    ],
+    "Scripting": [
+     "Python",
+     "Bash",
+     "PowerShell"
+    ],
+    "Operating Systems": [
+     "Linux",
+     "Windows Server"
+    ],
+    "Version Control & Collaboration": [
+     "Git",
+     "GitHub",
+     "GitLab",
+     "Bitbucket",
+     "Jira",
+     "Agile",
+     "Scrum"
+    ],
+    "AI-Powered Development Tools": [
+     "ChatGPT",
+     "GitHub Copilot",
+     "Claude",
+     "Cursor AI"
     ]
    },
    "projectThemes": [

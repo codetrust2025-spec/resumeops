@@ -112,6 +112,22 @@ class _Doc:
             self.raw(r'{\small\color{ink}' + paragraph(extra) + r'}\par' + '\n', extra)
 
 
+def _practices(groups):
+    """Skills listed under a role's recruiter-style Technical Skills categories (resumeGroups, e.g.
+    "Microservices & APIs") that the catalog files as practices (a role's Concepts, Test Design or Methodologies:
+    REST APIs, Microservices, Unit Testing): practices are not highlighted as technologies. Only categories that
+    are not one of the earlier broad group names count, so resumes grouped before these categories render exactly
+    as they did."""
+    from .workflow import ROLES, load_roles
+    load_roles()
+    earlier = {name for role in ROLES.values() for name in role['groups']} | {'Architecture & Practices', 'Other skills',
+                                                                              'Skills'}
+    practice = {item.casefold() for role in ROLES.values() for name, items in role['groups'].items()
+                if name in ('Concepts', 'Testing Practices', 'Test Design', 'Methodologies') for item in items}
+    return {item for group in groups if group['name'] not in earlier for item in group['items']
+            if item.casefold() in practice}
+
+
 def _split_project(project):
     if ' - ' not in project:
         return project, [], []
@@ -138,6 +154,7 @@ def _build(profile, template='standard', years=None, *, complete_sections=False,
     concept_groups = {'concepts', 'architecture & practices', 'practices'}
     concepts = {item for group in profile.get('skill_groups') or [] if group['name'].casefold() in concept_groups
                 for item in group['items']}
+    concepts |= _practices(profile.get('skill_groups') or [])
     terms = [skill for skill in profile.get('skills') or [] if skill not in concepts]
 
     def summary():
@@ -146,6 +163,9 @@ def _build(profile, template='standard', years=None, *, complete_sections=False,
             lead = [profile['headline']] if profile.get('headline') else []
             if career_objective:
                 from .generate import OBJECTIVE_EMPHASIS
+                # The role leads the objective; a resume title's listed skills ("| React.js | Next.js") are not
+                # part of it (a role name never contains ' | ', so earlier resumes render exactly as before).
+                lead = [lead[0].split(' | ')[0]] if lead else []
                 tex = emphasized(profile['summary'], [*lead, *OBJECTIVE_EMPHASIS], 3)
             else:
                 # Existing revisions keep their original LaTeX when rebuilt or retried.

@@ -237,8 +237,11 @@ class ReviewOnceTests(unittest.TestCase):
         self.assertEqual((row['status'], row['stage']), ('needs_input', 'Review AI drafts for Frontend Developer'))
         self.assertIsNone(row['job'], 'nothing is published before the review')
         job = self.jobs.list(OWNER)[0]
-        self.assertEqual([q['id'] for q in job['questions']], ['experience.0.bullets', 'experience.1.bullets'])
-        self.assertFalse(any(q['drafted'] for q in job['questions']), 'drafts using unstated tools are discarded')
+        # Two stated skills: the role's skills catalog is offered too, unticked, in the same review.
+        self.assertEqual([q['id'] for q in job['questions']], ['experience.0.bullets', 'experience.1.bullets', 'skills'])
+        self.assertFalse(any(q['drafted'] for q in job['questions'][:2]), 'drafts using unstated tools are discarded')
+        self.assertEqual(job['questions'][2]['value'], 'React.js, TypeScript')
+        self.assertIn('Next.js', job['questions'][2]['suggestions'])
         self.assertEqual(job['questions'][0]['value'], '')
         self.assertEqual([p['name'] for p in job['proposals']], ['Practice Catalogue', 'Practice Planner'])
         self.assertIn('confirm once', job['error'])
@@ -249,7 +252,7 @@ class ReviewOnceTests(unittest.TestCase):
             self.jobs.answer(OWNER, self.id, {'experience.0.bullets': 'x', 'experience.1.bullets': '', 'skills': ''})
         self.jobs.answer(OWNER, self.id, {
             'experience.0.bullets': 'Built reusable React.js components with TypeScript for internal dashboards and forms.',
-            'experience.1.bullets': ''},
+            'experience.1.bullets': '', 'skills': 'React.js, TypeScript'},
             [{'include': True}, {'include': False}])
         checkpoints = json.loads(self.row()['checkpoints'])
         self.assertEqual(self.row()['status'], 'queued')
@@ -289,9 +292,9 @@ class ReviewOnceTests(unittest.TestCase):
         job = self.jobs.list(OWNER)[0]
         self.assertEqual(job['status'], 'needs_input')
         self.assertFalse(any(q['drafted'] for q in job['questions']))
-        self.assertEqual([q['value'] for q in job['questions']], ['', ''])
+        self.assertEqual([q['value'] for q in job['questions']], ['', '', 'React.js, TypeScript'])
         self.jobs.answer(OWNER, self.id, {'experience.0.bullets': 'Fixed Angular form defects.',
-                                          'experience.1.bullets': ''})
+                                          'experience.1.bullets': '', 'skills': 'React.js, TypeScript'})
         self.assertEqual(self.row()['status'], 'queued')
 
     def test_regenerating_a_finished_resume_drafts_work_for_the_new_role(self):

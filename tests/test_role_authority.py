@@ -149,7 +149,8 @@ class AcceptanceCases(unittest.TestCase):
         self.assertTrue(job['proposals'][0]['name'].startswith('Clickstream'))
 
         profile = packet['profile']
-        self.assertEqual(profile['headline'], 'GCP Data Engineer')
+        from resume_bot.generate import title_problems
+        self.assertEqual(title_problems(profile['headline'], 'GCP Data Engineer', profile['skills']), [])
         self.assertTrue(profile['summary'].startswith('GCP Data Engineer candidate focused on '), profile['summary'])
         self.assertNotIn('years', profile['summary'])
         self.assertNotIn('B.Tech', profile['summary'])

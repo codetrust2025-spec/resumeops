@@ -39,7 +39,7 @@ def validate_catalog(data):
     for index, role in enumerate(data['roles']):
         where = f'roles[{index}]'
         if not isinstance(role, dict) or set(role) - {'id', 'name', 'family', 'titleVariations', 'groups', 'keywords',
-                                                      'projectThemes', 'hidden'}:
+                                                      'projectThemes', 'hidden', 'resumeGroups'}:
             raise ValueError(f'{where}: unknown fields')
         identifier = role.get('id')
         if not isinstance(identifier, str) or not re.fullmatch(r'[a-z0-9][a-z0-9-]{1,59}', identifier) or identifier == 'custom':
@@ -48,6 +48,14 @@ def validate_catalog(data):
         if not isinstance(groups, dict) or len(groups) > 12:
             raise ValueError(f'{where}.groups: expected up to 12 named skill groups')
         clean_groups = {_text(name, f'{where}.groups', 40): _texts(items, f'{where}.groups.{name}') for name, items in groups.items()}
+        # resumeGroups: the role's Technical Skills categories as recruiters and job descriptions name them
+        # ("Frontend Technologies", "State Management", "Build Tools & Package Managers"). They group a candidate's
+        # confirmed skills on the resume and are the catalog behind the skills review; never resume content alone.
+        resume_groups = role.get('resumeGroups', {})
+        if not isinstance(resume_groups, dict) or len(resume_groups) > 12:
+            raise ValueError(f'{where}.resumeGroups: expected up to 12 named skill categories')
+        clean_resume_groups = {_text(name, f'{where}.resumeGroups', 40): _texts(items, f'{where}.resumeGroups.{name}')
+                               for name, items in resume_groups.items()}
         keywords = list(dict.fromkeys([*(term for items in clean_groups.values() for term in items),
                                        *_texts(role.get('keywords', []), f'{where}.keywords', maximum=80)]))
         if not keywords:
@@ -56,7 +64,7 @@ def validate_catalog(data):
             'id': identifier, 'name': _text(role.get('name'), f'{where}.name'),
             'family': _text(role.get('family', identifier), f'{where}.family', 60),
             'titleVariations': _texts(role.get('titleVariations', []), f'{where}.titleVariations', 100, 20),
-            'groups': clean_groups, 'keywords': keywords,
+            'groups': clean_groups, 'resumeGroups': clean_resume_groups, 'keywords': keywords,
             'projectThemes': _texts(role.get('projectThemes', []), f'{where}.projectThemes', 160, 10),
             'hidden': role.get('hidden') is True,
         }

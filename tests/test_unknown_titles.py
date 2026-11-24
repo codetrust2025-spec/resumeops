@@ -88,8 +88,10 @@ class UnknownTitleTests(unittest.TestCase):
         self.assertGreater(scores['keyword_coverage'], 10)
         self.assertEqual(scores['skills_alignment'], 15)
         groups = skill_groups(profile['skills'], ROLES['software-tester'])
-        self.assertEqual([g['name'] for g in groups],
-                         ['Tools', 'Databases', 'Testing Practices', 'Test Design', 'Methodologies'])
+        names = [g['name'] for g in groups]
+        self.assertEqual(names[:3], ['Testing Types', 'Test Design', 'Defect Management'])
+        role = ROLES['software-tester']
+        self.assertTrue(set(names) <= set(role['resumeGroups']) | set(role['groups']), names)
         self.assertNotIn('Other skills', [g['name'] for g in groups])
 
     def test_testing_practices_are_not_named_tools(self):
