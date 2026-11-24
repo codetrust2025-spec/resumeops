@@ -1106,6 +1106,7 @@ class AutomationJobs:
                                          SKILL_SUGGESTIONS)
         from resume_bot.workflow import ROLES
         from resume_bot.workflow import matched_terms
+        from resume_bot.facts_quality import normalize_facts
         from resume_bot.ollama import Ollama, OllamaError
 
         key = (job['owner'], job['id'])
@@ -1114,7 +1115,12 @@ class AutomationJobs:
         grounded = 'source' in job.keys() and job['source'] == INTAKE_SOURCE
         # Projects that make suggestions unnecessary: those about the role, or in an application every project the
         # candidate entered (all of them are printed, see present_for_role keep_own).
-        own_projects = lambda facts: (facts.get('projects') or []) if grounded else role_projects(facts, target)
+        all_projects = lambda facts: (facts.get('projects') or []) if grounded else role_projects(facts, target)
+        # Suggestions are offered (unticked, as drafts) until there are two complete projects: a name, its
+        # technologies and at least three points. One weak project used to block every suggestion (seen live: a
+        # resume printed one project with one line). Applications get them too, confirmed in the operator's review.
+        enough_projects = lambda facts: len([p for p in all_projects(facts)
+                                             if split_project(p)[1] and len(split_project(p)[2]) >= 3]) >= 2
         checkpoints = json.loads(job['checkpoints'])
         model = Ollama(model=self.workspace.model)
         request = json.loads(job['payload'])
@@ -1173,9 +1179,11 @@ class AutomationJobs:
 
         def offer_certifications(facts):
             """Certifications worth earning for the role, shown unticked in the review card (once per resume):
-            only those the candidate ticks as completed are printed."""
+            only those the candidate ticks as completed are printed. An application is reviewed by the operator, who
+            cannot know which courses the candidate completed: its certifications are only the ones the candidate
+            listed (seen live: a recommended certification ticked in review was printed as the candidate's)."""
             from resume_bot.certifications import recommended_certifications
-            if not checkpoints.get('certifications_reviewed'):
+            if not checkpoints.get('certifications_reviewed') and not grounded:
                 checkpoints['certification_options'] = recommended_certifications(
                     {'role': intelligence['role'], 'keywords': intelligence['terms'], 'role_title': intelligence['label']},
                     facts.get('certifications') or [])
@@ -1219,6 +1227,10 @@ class AutomationJobs:
                                                   attested=request.get('attested')))
             if request.get('attested'):
                 facts = merge_attested(facts, request['attested'])  # idempotent: safe after answers and retries
+            # The same facts, tidied: skills typed without commas split into their technologies with proper names,
+            # lower-case titles and institutions title-cased, a sentence typed as both work and project kept once
+            # (with the project), placeholders dropped. Only spelling and case change (resume_bot.facts_quality).
+            facts = normalize_facts(facts)
             with closing(self.connection()) as db, db:
                 db.execute('UPDATE automation SET candidate=? WHERE owner=? AND id=?', (facts.get('full_name'), *key))
             role = request['role']
@@ -1287,7 +1299,7 @@ class AutomationJobs:
             # Technical Skills catalog, its recruiter-style categories, so the section can cover what the role's job
             # descriptions ask for. Each catalog skill arrives unticked: only the ones the candidate ticks are listed.
             catalog = catalog_skill_suggestions(target, role_skills)
-            breadth = (not need_skills and not grounded and len(role_skills) < SKILL_BREADTH and bool(catalog)
+            breadth = (not need_skills and len(role_skills) < SKILL_BREADTH and bool(catalog)
                        and checkpoints.get('skills_reviewed') != label)
             questions = []
             if missing or need_skills or breadth:
@@ -1324,7 +1336,7 @@ class AutomationJobs:
                     checkpoints['skills_review_role'] = label
             if questions:
                 proposals = []
-                if not own_projects(facts) and not checkpoints.get('projects_reviewed'):
+                if not enough_projects(facts) and not checkpoints.get('projects_reviewed'):
                     proposals = checkpoints.get('proposals_made')
                     if proposals is None:
                         progress(29, 'Project selection: proposing role-specific projects')
@@ -1379,7 +1391,7 @@ class AutomationJobs:
                 tailored = checkpoint('broad_objective_tailored', [profile, how])
             profile, how = tailored
             progress(55, 'Role-based summary, skills and evidence order prepared')
-            if not own_projects(facts) and not checkpoints.get('projects_reviewed'):
+            if not enough_projects(facts) and not checkpoints.get('projects_reviewed'):
                 proposals = checkpoints.get('proposals_made')
                 if proposals is None:
                     progress(56, 'Project selection: proposing role-specific projects')
@@ -1428,7 +1440,7 @@ class AutomationJobs:
             approval = {'operation': job['id'], 'approved_by': job['owner'], 'claims': claims,
                         'project_names': [split_project(p)[0] for p in packet['profile'].get('projects', [])],
                         'market_sources': intelligence['sources'],
-                        'automation': {'v': 5, 'consent': request['consent'], 'submission_sha256': job['id'],
+                        'automation': {'v': 6, 'consent': request['consent'], 'submission_sha256': job['id'],
                                        'source_kind': source_kind,
                                        'source_sha256': hashlib.sha256(
                                            (source if isinstance(source, str) else

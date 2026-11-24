@@ -149,8 +149,10 @@ class ValidationTests(unittest.TestCase):
         data['education'][0]['cgpa'] = '78%'
         request, _ = intake_request(data)
         self.assertEqual(request['profile']['experience'], [])
-        self.assertEqual(request['profile']['education'][0]['details'], 'Computer Science | Percentage 78%')
-        self.assertEqual(intake_request(form())[0]['profile']['education'][0]['details'], 'Computer Science | CGPA 8.4')
+        # Degree and specialization print as one line ("B.Tech in Computer Science"); the grade keeps its scale.
+        self.assertEqual(request['profile']['education'][0]['degree'], 'B.Tech in Computer Science')
+        self.assertEqual(request['profile']['education'][0]['details'], 'Percentage 78%')
+        self.assertEqual(intake_request(form())[0]['profile']['education'][0]['details'], 'CGPA 8.4')
 
     def test_a_fresher_needs_no_employment_and_has_no_years(self):
         request, _ = intake_request(form(work_experience=[], fresher=True))
@@ -274,7 +276,7 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(projects[0][1], ['Selenium WebDriver', 'Java', 'TestNG'])
         self.assertEqual(len(projects[1][2]), 5, 'every description line stays with its project')
         self.assertEqual([(entry['degree'], entry['end']) for entry in profile['education']],
-                         [('Bachelor of engineering', '2018')])
+                         [('Bachelor of Engineering in Mechanical Engineering', '2018')])
         self.assertIn('Oracle Java SE 11 Developer', profile['certifications'])
         self.assertEqual(profile['linkedin'], 'https://www.linkedin.com/in/asha-example')
         again = self.d.desk.start(first['candidate'], OPERATOR)
@@ -285,7 +287,7 @@ class DeskTests(unittest.TestCase):
             self.d.desk.start(self.d.desk.submit(form(n), key())['candidate'], OPERATOR)
         self.assertEqual(len(self.d.rows('SELECT 1 FROM automation WHERE owner=?', OPERATOR)), 7)
 
-    def test_an_applicants_own_project_and_skills_reach_the_resume_without_suggestions(self):
+    def test_an_applicants_own_project_and_skills_reach_the_resume_with_unticked_suggestions(self):
         # Seen live: a Full Stack Developer applicant's only project (React.js on a Java and Spring Boot API) was left
         # off as "not about" the role, AI projects were suggested in its place, and half their skills were dropped.
         applicant = form(role='Full Stack Developer', skills='HTML, CSS, JavaScript, React.js, Java, Spring Boot, MySQL',
@@ -306,6 +308,18 @@ class DeskTests(unittest.TestCase):
         with patch('resume_bot.generate.generate', model), patch('resume_bot.automation.generate', return_value={}), \
                 patch.object(self.d.workspace, 'enqueue', return_value={'name': 'private-x.json'}) as enqueue:
             self.d.jobs._prepare(row)
+            # Seven skills: the operator's review offers the role's other skills, unticked, beside the applicant's
+            # own (kept as typed). No certification is offered: only the applicant's own are ever printed.
+            row = started_job(self.d, first['candidate'])
+            self.assertEqual(row['status'], 'needs_input', (row['stage'], row['error']))
+            [job] = [j for j in self.d.jobs.list(OPERATOR) if j['id'] == row['id']]
+            [question] = job['questions']
+            self.assertEqual(question['id'], 'skills')
+            self.assertEqual(question['value'], 'HTML, CSS, JavaScript, React.js, Java, Spring Boot, MySQL')
+            self.assertTrue(question['suggestions'] and question['suggestion_groups'])
+            self.assertEqual(job['certifications'], [])
+            self.d.jobs.answer(OPERATOR, row['id'], {'skills': question['value']})  # nothing ticked
+            self.d.jobs._prepare(started_job(self.d, first['candidate']))
         row = started_job(self.d, first['candidate'])
         self.assertEqual(row['status'], 'handed_off', (row['stage'], row['error']))
         self.assertNotIn('proposals', json.loads(row['checkpoints'] or '{}'), 'no AI project in place of their own')

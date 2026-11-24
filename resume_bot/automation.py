@@ -28,6 +28,20 @@ def _form_lines(value, label, limit, commas=False):
     return list(dict.fromkeys(item for item in (clean_bullet(' '.join(p.split())) for p in parts) if item))
 
 
+def _degree(degree, specialization):
+    """The degree as printed: "B.Tech in Computer Science" (one line), from the form's degree and specialization."""
+    from .facts_quality import needs_title, smart_title
+    degree = ' '.join(str(degree or '').split())
+    if needs_title(degree):
+        degree = smart_title(degree)  # "Bachelor of engineering" -> "Bachelor of Engineering"
+    specialization = ' '.join(str(specialization or '').split())
+    if specialization and needs_title(specialization):
+        specialization = smart_title(specialization)
+    if not specialization or specialization.casefold() in degree.casefold():
+        return degree
+    return f'{degree} in {specialization}'
+
+
 def _grade(value):
     """The education grade as printed: "CGPA 8.4", or "Percentage 78%" for a percentage; a value that already names
     its scale ("CGPA 8.4/10") is kept as typed."""
@@ -64,8 +78,8 @@ def attested_profile(candidate, entries_required=True):
         'full_name', 'email', 'phone', 'location', 'current_company', 'linkedin', 'github', 'portfolio')}
     profile['experience'] = [{**entry, 'bullets': bullets} for entry, bullets in zip(candidate['work_experience'], duties)]
     profile['education'] = [
-        {'institution': item['university'], 'degree': item['degree'], 'end': item['graduation_year'],
-         'details': ' | '.join(filter(None, [item['specialization'], _grade(item['cgpa'])]))}
+        {'institution': item['university'], 'degree': _degree(item['degree'], item['specialization']),
+         'end': item['graduation_year'], 'details': _grade(item['cgpa'])}
         for item in candidate['education']]
     projects = []
     for item, (stack, lines) in zip(candidate['projects'], details):
@@ -580,7 +594,9 @@ def _verified_role_resume(profile, target, evidence, version):
 
     title, years = role_name(target), target.get('experience_years')
     summary = profile.get('summary', '')
-    if version == 5:
+    if version == 6:  # first-person Career Objective
+        problems = broad_objective_problems(summary, evidence, title, 'first')
+    elif version == 5:
         problems = broad_objective_problems(summary, evidence, title)
     elif version == 4:
         problems = objective_problems(summary, evidence, title)
@@ -619,7 +635,7 @@ def verified_automation(profile, target, approval):
         evidence = validate_profile(proof['facts'])
     except (KeyError, ValueError):
         return False
-    if proof.get('v') in (3, 4, 5):
+    if proof.get('v') in (3, 4, 5, 6):
         return _verified_role_resume(profile, target, evidence, proof['v'])
     # A separate watcher process checks that the submitted profile is exactly the
     # evidence, allowing only ranking and deterministic career-objective framing.

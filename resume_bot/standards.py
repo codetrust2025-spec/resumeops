@@ -4,7 +4,8 @@ The report lists each standard with whether this resume meets it and why. A resu
 only when every applicable check passes; otherwise the report names exactly what needs the candidate's attention
 (for example a certification to confirm, or more skills to tick). Nothing here changes the resume or adds content:
 facts the candidate has not confirmed are never added to make a check pass."""
-from .generate import (SKILL_BREADTH, TITLE_SKILLS, _near_duplicate, draft_lines, role_entry, skill_groups,
+from .facts_quality import weak_lines
+from .generate import (SKILL_BREADTH, TITLE_SKILLS, _near_duplicate, _same_task, draft_lines, role_entry, skill_groups,
                        split_project, technical_job, title_problems, work_skills)
 from .workflow import role_name
 
@@ -63,11 +64,18 @@ def standards_report(profile, target, years=None, ats=None, pdf_checks=None):
         if technical_job(job['position']) and len(job['bullets']) < min(7, draft_lines(rank, job['position'])):
             short.append(f"{job['company']} ({len(job['bullets'])} lines)")
         others = [line for other in experience if other is not job for line in other['bullets']]
-        repeated += [line for line in job['bullets'] if _near_duplicate(line, others)]
-    _check(checks, 'experience', 'Professional experience depth and variety', not short and not repeated,
-           'Every technical job has 7-8 distinct lines.' if not short and not repeated else
+        repeated += [line for line in job['bullets'] if _near_duplicate(line, others) or _same_task(line, others)]
+        # The same work said twice within one job ("Configured ADF pipelines to automate ingestion ..." and "Built
+        # automated ingestion pipelines using ADF ...").
+        repeated += [line for index, line in enumerate(job['bullets'])
+                     if _near_duplicate(line, job['bullets'][:index]) or _same_task(line, job['bullets'][:index])]
+    weak = weak_lines([line for job in experience for line in job['bullets']])
+    _check(checks, 'experience', 'Professional experience depth and variety', not short and not repeated and not weak,
+           'Every technical job has 7-8 distinct lines.' if not short and not repeated and not weak else
            ' '.join(filter(None, ['Fewer lines than the role needs: ' + ', '.join(short) + '.' if short else '',
-                                  f'{len(repeated)} line(s) repeat another job.' if repeated else ''])),
+                                  f'{len(repeated)} line(s) repeat other work.' if repeated else '',
+                                  f'{len(weak)} line(s) open weakly or name another job title ("Worked on", '
+                                  '"as an ... Engineer").' if weak else ''])),
            applies=bool(experience))
 
     work = [line for job in experience for line in job['bullets']]
@@ -80,8 +88,8 @@ def standards_report(profile, target, years=None, ats=None, pdf_checks=None):
            + (' Repeats work lines: ' + ', '.join(echoed) + '.' if echoed else ''), applies=bool(projects))
 
     _check(checks, 'certifications', 'Certifications', bool(profile.get('certifications')),
-           f"{len(profile.get('certifications') or [])} confirmed by the candidate." if profile.get('certifications')
-           else 'None confirmed. Tick a recommended certification only after completing it.')
+           f"{len(profile.get('certifications') or [])} listed." if profile.get('certifications')
+           else 'None listed. Add a certification only after completing it.')
 
     incomplete = [e.get('degree') or e.get('institution') or 'An entry' for e in profile.get('education') or []
                   if not (e.get('degree') and e.get('institution') and (e.get('end') or e.get('start')))]
@@ -95,8 +103,10 @@ def standards_report(profile, target, years=None, ats=None, pdf_checks=None):
            else 'Used but not listed: ' + ', '.join(missing) + '.')
 
     readiness = (ats or {}).get('ats_readiness')
-    _check(checks, 'ats', 'ATS compatibility', readiness is not None and readiness >= ATS_READY,
-           f'ATS readiness {readiness}/100.', applies=readiness is not None)
+    # Readiness alone passed a resume showing 16% of the role's keywords (seen live): both must be met.
+    _check(checks, 'ats', 'ATS compatibility', readiness is not None and readiness >= ATS_READY
+           and coverage is not None and coverage >= KEYWORD_COVERAGE,
+           f'ATS readiness {readiness}/100, keyword coverage {coverage}%.', applies=readiness is not None)
 
     document = pdf_checks or {}
     _check(checks, 'document', 'PDF, LaTeX and Overleaf output',

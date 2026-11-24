@@ -6,6 +6,7 @@ Acceptance cases, with fictional candidates and a faked model:
 * a GCP Data Engineer resume, Java Backend Developer selected: a Java Backend-focused resume.
 Designations, employers, dates and education are facts and always stay; the candidate's own lines about another
 field's work stay in the stored facts (for other roles) but are never printed on this role's resume."""
+import re
 import json
 import sys
 import tempfile
@@ -151,7 +152,7 @@ class AcceptanceCases(unittest.TestCase):
         profile = packet['profile']
         from resume_bot.generate import title_problems
         self.assertEqual(title_problems(profile['headline'], 'GCP Data Engineer', profile['skills']), [])
-        self.assertTrue(profile['summary'].startswith('GCP Data Engineer candidate focused on '), profile['summary'])
+        self.assertTrue(re.match(r'I am .*GCP Data Engineer.* focused on ', profile['summary']), profile['summary'])
         self.assertNotIn('years', profile['summary'])
         self.assertNotIn('B.Tech', profile['summary'])
         self.assertEqual(profile['experience'][0]['bullets'], GCP_DRAFTS[:5])
@@ -194,7 +195,7 @@ class AcceptanceCases(unittest.TestCase):
         self.assertEqual(work['value'].split('\n'), JAVA_DRAFTS[:5])
 
         profile = packet['profile']
-        self.assertTrue(profile['summary'].startswith('Java Backend Developer candidate focused on '), profile['summary'])
+        self.assertTrue(re.match(r'I am .*Java Backend Developer.* focused on ', profile['summary']), profile['summary'])
         self.assertEqual(profile['experience'][0]['bullets'], JAVA_DRAFTS[:5])
         narrative = self.printed(profile)
         for other in ('BigQuery', 'Dataflow', 'Pub/Sub', 'Cloud Composer', 'Airflow', 'Python', 'GCP', 'Sales Warehouse'):

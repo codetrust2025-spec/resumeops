@@ -1,6 +1,7 @@
 """Professional experience for the selected role: detailed, role-focused drafts (confirmed before they count),
 never one generic line beside a page of projects. The candidate is the fictional Arun Kumar test form: a Frontend
 Developer (July 2023 - Present) with React skills and no stated responsibilities, applying for GCP Data Engineer."""
+import re
 import json
 import sys
 import tempfile
@@ -224,7 +225,7 @@ class ReviewAndResumeTests(unittest.TestCase):
         self.assertEqual(profile['experience'][0]['start'], 'July 2023')
         project_lines = sum(len(p.split(' | ')) - 1 for p in profile.get('projects', []))
         self.assertLessEqual(project_lines, len(bullets), 'projects never outweigh the experience')
-        self.assertTrue(profile['summary'].startswith('GCP Data Engineer candidate focused on '), profile['summary'])
+        self.assertTrue(re.match(r'I am .*GCP Data Engineer.* focused on ', profile['summary']), profile['summary'])
         self.assertNotIn('Frontend', profile['summary'], 'the selected role leads; no previous title')
         self.assertNotIn('B.Tech', profile['summary'])
         printed = json.dumps({k: profile[k] for k in ('summary', 'skills', 'experience', 'projects')})

@@ -27,6 +27,7 @@ import time
 from contextlib import closing
 
 from automation_jobs import AutomationCapacity, INTAKE_SOURCE, submission
+from resume_bot.facts_quality import is_placeholder
 
 ID_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'  # no 0/O, 1/I/L: read aloud or typed from a screenshot
 KEY_PATTERN = re.compile(r'[A-Za-z0-9_-]{43,128}')  # at least 256 random bits, base64url
@@ -127,7 +128,10 @@ def _rows(form, key):
         if not isinstance(row, dict):
             raise IntakeError('Invalid entry.', key)
         if any(isinstance(value, str) and value.strip() for value in row.values()):
-            kept.append({k: v if isinstance(v, str) else '' for k, v in row.items()})
+            # "NA", "N/A", "-" and "none" are not facts: a row of placeholders is no row at all.
+            row = {k: v if isinstance(v, str) and not is_placeholder(v) else '' for k, v in row.items()}
+            if any(value.strip() for value in row.values()):
+                kept.append(row)
     return kept
 
 

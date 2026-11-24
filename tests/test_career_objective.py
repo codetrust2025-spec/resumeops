@@ -8,7 +8,7 @@ from unittest.mock import patch
 from resume_bot.automation import _verified_role_resume
 from resume_bot.claim_audit import matches_pdf_text
 from resume_bot.compile import compile_latex
-from resume_bot.generate import (broad_objective_problems, objective_problems,
+from resume_bot.generate import (_objective_identity, broad_objective_problems, objective_problems,
                                  summary_problems, write_summary)
 from resume_bot.ingest import read_resume_text
 from resume_bot.latex import render
@@ -44,7 +44,8 @@ class CareerObjectiveTests(unittest.TestCase):
         for title, focus, role, experienced in groups:
             with self.subTest(role=title):
                 evidence = profile(title, experienced)
-                identity = title if experienced else title + ' candidate'
+                identity = _objective_identity(evidence, title, 'first')  # "I am a ...", "I am an aspiring ..."
+                self.assertTrue(identity.startswith('I am '))
                 with patch('resume_bot.generate.generate', return_value={'strengths': ['clear technical judgment', 'clear communication']}):
                     result, method = write_summary(evidence, title, 3 if experienced else 0, [], object())
                 self.assertEqual(method, 'ai')
@@ -55,8 +56,11 @@ class CareerObjectiveTests(unittest.TestCase):
 
                 approved = {**copy.deepcopy(evidence), 'headline': title, 'summary': result}
                 target = {'role': role, 'role_title': title, 'experience_years': 3 if experienced else 0}
-                self.assertTrue(_verified_role_resume(approved, target, evidence, 5))
-                self.assertFalse(_verified_role_resume({**approved, 'summary': 'Too short.'}, target, evidence, 5))
+                self.assertTrue(_verified_role_resume(approved, target, evidence, 6))
+                self.assertFalse(_verified_role_resume({**approved, 'summary': 'Too short.'}, target, evidence, 6))
+                # Third person is no longer the voice of a new objective, and the v5 check never accepts first person.
+                self.assertNotRegex(result, r'\b(?:candidate|Aims|Seeks|Values)\b')
+                self.assertFalse(_verified_role_resume(approved, target, evidence, 5))
                 self.assertEqual(approved['skills'], evidence['skills'])
                 self.assertEqual(approved['experience'], evidence['experience'])
                 tex = render(approved, complete_sections=True, career_objective=True)
@@ -73,12 +77,17 @@ class CareerObjectiveTests(unittest.TestCase):
         evidence = profile('Angular Developer', True)
         with patch('resume_bot.generate.generate', return_value={}):
             safe, _ = write_summary(evidence, 'Angular Developer', 3, [], object())
-        self.assertEqual(objective_problems(safe, evidence, 'Angular Developer'), [])
+        self.assertEqual(objective_problems(safe, evidence, 'Angular Developer', 'first'), [])
         for extra in ('Java', 'B.Tech', 'Example Employer', 'Sample Tracker', 'three years',
                       'built dashboards', 'improved performance', r'\textbf{business needs}', 'business\nneeds'):
             with self.subTest(extra=extra):
                 self.assertTrue(objective_problems(safe.replace('business priorities', extra),
-                                                   evidence, 'Angular Developer'))
+                                                   evidence, 'Angular Developer', 'first'))
+        # Third-person wording is rejected in a first-person objective.
+        for third in ('I aim to', 'I value'):
+            with self.subTest(third=third):
+                swapped = safe.replace(third, {'I aim to': 'Aims to', 'I value': 'Values'}[third])
+                self.assertTrue(objective_problems(swapped, evidence, 'Angular Developer', 'first'))
 
     def test_every_objective_passes_the_summary_fact_check(self):
         # Release 4911f58 was rolled back: the fallback objective said "solutions that teams can maintain", and a
@@ -94,8 +103,10 @@ class CareerObjectiveTests(unittest.TestCase):
                         with patch('resume_bot.generate.generate', return_value=draft):
                             text, mode = write_summary(evidence, title, 3 if experienced else 0, [], object())
                         self.assertEqual(mode, 'ai' if draft else 'composed')
-                        self.assertEqual(objective_problems(text, evidence, title), [])
-                        self.assertEqual(summary_problems(text, evidence, title, None), [])
+                        self.assertEqual(objective_problems(text, evidence, title, 'first'), [])
+                        self.assertEqual([p for p in summary_problems(text, evidence, title, None)
+                                          if p != 'do not use I, my or we'], [])
+                        self.assertTrue(text.startswith('I am '), text)
                         self.assertTrue(40 <= len(text.split()) <= 55, text)
                         self.assertNotRegex(text, r'(?i)\bmaintain\b')
 
@@ -116,11 +127,11 @@ class CareerObjectiveTests(unittest.TestCase):
         self.assertEqual(model.call_count, 2)
         self.assertNotIn('HRMS', model.call_args.args[1])
         self.assertNotIn('test cases', text)
-        self.assertEqual(broad_objective_problems(text, evidence, title), [])
+        self.assertEqual(broad_objective_problems(text, evidence, title, 'first'), [])
 
     def test_unavailable_model_uses_broad_wording(self):
         evidence = profile('Software Engineer', False)
         with patch('resume_bot.generate.generate', side_effect=RuntimeError('model offline')):
             text, mode = write_summary(evidence, 'Software Engineer', 0, [], object())
         self.assertEqual(mode, 'composed')
-        self.assertEqual(broad_objective_problems(text, evidence, 'Software Engineer'), [])
+        self.assertEqual(broad_objective_problems(text, evidence, 'Software Engineer', 'first'), [])

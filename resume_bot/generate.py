@@ -323,11 +323,54 @@ def _task_words(line):
     return words
 
 
+# Responsibility themes of a work line. Two lines with the same technology and the same theme describe the same work
+# in other words ("Configured Azure Data Factory pipelines to automate data ingestion ..." beside "Built automated data
+# ingestion pipelines using Azure Data Factory ..."), which plain word overlap missed (seen live).
+TASK_THEMES = {
+    'ingestion': r'ingest|data load|loading data|extract(?:ed|ing|ion)? data|on-?premises sources',
+    'transformation': r'transform|cleans|aggregat|enrich|process(?:ed|ing)? (?:\w+ )?(?:data|datasets|records)',
+    'quality': r'validat|data quality|integrity|reconcil|discrepanc|dedupl',
+    'monitoring': r'monitor|alert|observab|logging|health check',
+    'orchestration': r'orchestrat|schedul|trigger|workflow|dag',
+    'migration': r'migrat|cutover|replicat|lift and shift',
+    'deployment': r'deploy|release|ci/cd|provision',
+    'testing': r'\btest|unit tests?|integration tests?',
+    'security': r'secur|access control|rbac|role-based|encrypt|key vault|authenticat|authoriz',
+    'api': r'\bapis?\b|endpoint|rest\b|graphql',
+    'interface': r'\bcomponents?\b|\bscreens?\b|\bpages?\b|\bforms?\b|layout|responsive',
+    'reporting': r'report|dashboard|visuali',
+    'performance': r'optimi|performance|tun(?:e|ed|ing)\b|partition|index|cach',
+    'documentation': r'document(?:ed|ing|ation)|runbook',
+}
+_THEMES = {name: re.compile(pattern, re.IGNORECASE) for name, pattern in TASK_THEMES.items()}
+
+
+def task_themes(line):
+    return {name for name, pattern in _THEMES.items() if pattern.search(line)}
+
+
 def _same_task(line, kept):
     """A drafted line restating another's task in other words ("Configured Redux Toolkit with slices for managing
-    complex state" beside "Configured Redux Toolkit to manage complex state with slices")."""
+    complex state" beside "Configured Redux Toolkit to manage complex state with slices"), or doing the same kind of
+    work with the same technology (task_themes)."""
     words = _task_words(line)
-    return any(len(words & _task_words(other)) / max(1, len(words | _task_words(other))) >= 0.6 for other in kept)
+    if any(len(words & _task_words(other)) / max(1, len(words | _task_words(other))) >= 0.6 for other in kept):
+        return True
+    themes = task_themes(line)
+    if not themes:
+        return False
+    # Languages and fundamentals (TypeScript, Python, SQL) run through every kind of work: only a shared platform,
+    # framework or service (Azure Data Factory, Redux, Cloud Run) makes two lines of the same theme one task.
+    distinct = lambda text: {t.casefold() for t in matched_terms(named_tools(), text)  # noqa: E731
+                             if not matched_terms(GENERIC_TOOLS, t) and t.casefold() not in LANGUAGES
+                             and t.casefold() not in FUNDAMENTALS}
+    tools = distinct(line)
+    for other in kept:
+        shared = themes & task_themes(other)
+        if shared and tools & distinct(other) \
+                and len(words & _task_words(other)) / max(1, len(words | _task_words(other))) >= 0.3:
+            return True
+    return False
 
 
 def _same_start(line, kept, words=4):
@@ -955,6 +998,12 @@ OBJECTIVE_EMPHASIS = ('structured problem-solving', 'clear technical judgment',
 OBJECTIVE_FOLLOWUP = re.compile(
     r'^(?:aims? to|seeks? to|committed to|prioriti[sz]es|values|'
     r'places emphasis on)\b', re.I)
+# A first-person Career Objective (approval v6 and later): "I am an Azure Data Engineer focused on ...", then "I aim
+# to ...", "I value ...". Resumes approved earlier (v4, v5) keep their third-person wording and still verify.
+OBJECTIVE_FOLLOWUP_FIRST = re.compile(r'^I (?:aim to|seek to|am committed to|prioriti[sz]e|value|am eager to)\b')
+# Third-person wording a first-person objective never uses ("candidate", "Aims to", "Values", "their").
+THIRD_PERSON = re.compile(r'\b(?:candidate|aims|seeks|values|prioriti[sz]es|he|she|his|her|their|they)\b', re.I)
+VOICES = ('third', 'first')
 OBJECTIVE_PROHIBITED = re.compile(
     r'\b(?:years?|yrs?|months?|decades?|degrees?|universit(?:y|ies)|colleges?|graduates?|'
     r'bachelor\w*|master\w*|b\.?tech|m\.?tech|b\.?sc|m\.?sc|b\.e|mba|phd|diplomas?|certifi(?:ed|cations?)|'
@@ -967,9 +1016,16 @@ OBJECTIVE_PROHIBITED = re.compile(
     r'proven|track record|hands[- ]on|speciali[sz]\w*)\b', re.I)
 
 
-def _objective_identity(profile, role_title):
+def _objective_identity(profile, role_title, voice='third'):
     # A selected role is a career goal unless that designation appears in verified employment.
     held = any(job['position'].casefold() == role_title.casefold() for job in profile['experience'])
+    if voice == 'first':
+        if held:
+            return f'I am {article(role_title)} {role_title}'
+        # Experienced in other jobs: the role is the goal, never claimed as a title; a fresher aspires to it.
+        if profile['experience']:
+            return f'I am a professional seeking {article(role_title)} {role_title} role'
+        return f'I am an aspiring {role_title}'
     return role_title if held else f'{role_title} candidate'
 
 
@@ -979,12 +1035,14 @@ def _objective_focus(role_title):
                 'dependable solutions in this field')
 
 
-def objective_problems(text, profile, role_title):
-    """Validate the plain text that is approved and then rendered as LaTeX."""
+def objective_problems(text, profile, role_title, voice='third'):
+    """Validate the plain text that is approved and then rendered as LaTeX. ``voice``: 'first' for objectives
+    approved from v6 ("I am an Azure Data Engineer focused on ..."), 'third' for earlier ones."""
     if not isinstance(text, str):
         return ['return an objective paragraph']
     problems = []
-    identity = _objective_identity(profile, role_title)
+    first = voice == 'first'
+    identity = _objective_identity(profile, role_title, voice)
     prefix = identity + ' focused on '
     if not text.startswith(prefix):
         problems.append(f'open with "{prefix.strip()}"')
@@ -999,10 +1057,13 @@ def objective_problems(text, profile, role_title):
     if text != text.strip() or re.search(r'[\n\r\t{}\\%#$_*<>]', body) or body != plain(body):
         problems.append('return one plain-text paragraph without headings, markup or list items')
     sentences = re.split(r'(?<=[.!?]) +', body)
+    followup = OBJECTIVE_FOLLOWUP_FIRST if first else OBJECTIVE_FOLLOWUP
     if not 2 <= len(sentences) <= 4 or not body.endswith('.') or any(
-            not OBJECTIVE_FOLLOWUP.match(sentence) for sentence in sentences[1:]):
+            not followup.match(sentence) for sentence in sentences[1:]):
         problems.append('follow the opening with two to four sentences overall about approach and intended contribution')
-    found = [match.group(0) for pattern in (OBJECTIVE_PROHIBITED, re.compile(r'\d|[!?;:]'), CLICHES, FIRST_PERSON,
+    # First person ("I", "my") is the voice of a v6 objective; third-person wording is then the problem.
+    voice_pattern = THIRD_PERSON if first else FIRST_PERSON
+    found = [match.group(0) for pattern in (OBJECTIVE_PROHIBITED, re.compile(r'\d|[!?;:]'), CLICHES, voice_pattern,
                                             AI_TELLS) for match in [pattern.search(body)] if match]
     if found:
         # Naming the words lets the next draft remove them.
@@ -1025,7 +1086,7 @@ def objective_problems(text, profile, role_title):
     # The same fact check every summary passes: an objective may not claim a quality ("reliable") or a level of
     # responsibility ("maintain", "design") that the candidate's own facts do not state, even as an aim.
     problems.extend(problem for problem in summary_problems(text, profile, role_title, None)
-                    if problem not in problems)
+                    if problem not in problems and not (first and problem == 'do not use I, my or we'))
     return problems
 
 
@@ -1049,6 +1110,14 @@ OBJECTIVE_VALUES = (
     'Values sound decisions that help teams sustain quality as requirements and expectations evolve.',
     'Values collaboration that helps teams agree on priorities and produce work others can trust.',
 )
+OBJECTIVE_AIMS_FIRST = (
+    'I aim to bring {first} and {second} to decisions that balance business priorities with the needs of users.',
+    'I seek to balance business priorities and user needs through {first} and {second}.',
+)
+OBJECTIVE_VALUES_FIRST = (
+    'I value sound decisions that help teams sustain quality as requirements and expectations evolve.',
+    'I value collaboration that helps teams agree on priorities and produce work others can trust.',
+)
 
 
 def _objective_strengths(role_title):
@@ -1057,26 +1126,28 @@ def _objective_strengths(role_title):
                 OBJECTIVE_DEFAULT_STRENGTHS)
 
 
-def _broad_objectives(profile, role_title, strengths):
-    opening = (f'{_objective_identity(profile, role_title)} focused on {_objective_focus(role_title)} '
+def _broad_objectives(profile, role_title, strengths, voice='third'):
+    opening = (f'{_objective_identity(profile, role_title, voice)} focused on {_objective_focus(role_title)} '
                'and structured problem-solving.')
-    for aim in OBJECTIVE_AIMS:
-        for value in OBJECTIVE_VALUES:
+    aims, values = (OBJECTIVE_AIMS_FIRST, OBJECTIVE_VALUES_FIRST) if voice == 'first' else (OBJECTIVE_AIMS,
+                                                                                         OBJECTIVE_VALUES)
+    for aim in aims:
+        for value in values:
             yield f'{opening} {aim.format(first=strengths[0], second=strengths[1])} {value}'
 
 
-def broad_objective_problems(text, profile, role_title):
+def broad_objective_problems(text, profile, role_title, voice='third'):
     """New builds allow only role-wide wording, including in the independent watcher."""
     from itertools import permutations
 
-    problems = objective_problems(text, profile, role_title)
-    if not any(text in _broad_objectives(profile, role_title, pair)
+    problems = objective_problems(text, profile, role_title, voice)
+    if not any(text in _broad_objectives(profile, role_title, pair, voice)
                for pair in permutations(_objective_strengths(role_title), 2)):
         problems.append('omit project, business-area and task details from the Career Objective')
     return problems
 
 
-def write_summary(profile, role_title, years, keywords, ai, on_progress=None, emphasis=None):
+def write_summary(profile, role_title, years, keywords, ai, on_progress=None, emphasis=None, voice='first'):
     """Use Ollama to select two role-wide priorities, then render checked prose. ``emphasis``: the priorities a job
     description asks for (AI Edit, tailored to a JD), in its order; when two of them are the role's, they are used."""
     from itertools import permutations
@@ -1084,8 +1155,8 @@ def write_summary(profile, role_title, years, keywords, ai, on_progress=None, em
     allowed = _objective_strengths(role_title)
     wanted = [item for item in dict.fromkeys(emphasis or []) if item in allowed]
     if len(wanted) >= 2:
-        for text in _broad_objectives(profile, role_title, wanted[:2]):
-            if not objective_problems(text, profile, role_title):
+        for text in _broad_objectives(profile, role_title, wanted[:2], voice):
+            if not objective_problems(text, profile, role_title, voice):
                 return text, 'job description'
     schema = {'type': 'object', 'additionalProperties': False, 'required': ['strengths'],
               'properties': {'strengths': {'type': 'array', 'minItems': 2, 'maxItems': 2,
@@ -1105,13 +1176,13 @@ def write_summary(profile, role_title, years, keywords, ai, on_progress=None, em
             break
         strengths = draft.get('strengths') if isinstance(draft, dict) and set(draft) == {'strengths'} else None
         if isinstance(strengths, list) and tuple(strengths) in pairs:
-            for text in _broad_objectives(profile, role_title, strengths):
-                if not objective_problems(text, profile, role_title):
+            for text in _broad_objectives(profile, role_title, strengths, voice):
+                if not objective_problems(text, profile, role_title, voice):
                     return text, 'ai'
         feedback = '\nReturn exactly two different values from allowed_strengths and no other fields.'
     for pair in pairs:
-        for text in _broad_objectives(profile, role_title, pair):
-            if not objective_problems(text, profile, role_title):
+        for text in _broad_objectives(profile, role_title, pair, voice):
+            if not objective_problems(text, profile, role_title, voice):
                 return text, 'composed'
     raise ValueError('Content validation failed: the Career Objective could not be generated.')
 
@@ -1673,7 +1744,8 @@ def _room(role, tools, target):
 # Wording that says nothing concrete about the work ("to process large datasets efficiently").
 VAGUE = re.compile(r'\b(?:efficient(?:ly)?|effective(?:ly)?|successfully|complex|various|variety of|usable format|'
                    r'large (?:datasets?|data ?sets|volumes?|amounts?)|huge|massive|smooth(?:ly)?|seamless(?:ly)?|'
-                   r'etc\.?|and more|as needed|different tasks|multiple tasks)\b', re.IGNORECASE)
+                   r'etc\.?|and more|as needed|different tasks|multiple tasks|for (?:\w+ ){0,2}tasks|'
+                   r'to ensure (?:data )?integrity)\b', re.IGNORECASE)
 # A closing participle that states no concrete result ("..., ensuring code quality and reliability.").
 GENERIC_TAIL = re.compile(r',\s*(?:ensuring|enhancing|improving|reducing|enabling|increasing|boosting|streamlining|'
                           r'facilitating|maintaining|providing|allowing|resulting in)\b[^,.]*\.$', re.IGNORECASE)

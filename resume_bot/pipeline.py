@@ -164,7 +164,7 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
             if not verified_automation(original, target, approval):
                 raise BuildError('Automated resume differs from the attested or source-verified facts.')
         polish_enabled = False
-    career_objective = bool(approval and (approval.get('automation') or {}).get('v') in (4, 5))
+    career_objective = bool(approval and (approval.get('automation') or {}).get('v') in (4, 5, 6))
     layout = {'complete_sections': complete_sections}
     if career_objective:
         layout['career_objective'] = True
