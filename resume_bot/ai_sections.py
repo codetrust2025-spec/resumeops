@@ -32,6 +32,11 @@ MAX_GROUPS = 12
 # Deterministic fact checks
 # ---------------------------------------------------------------------------------------------------------------
 
+def _plain(text):
+    from .generate import plain
+    return plain(text)  # characters the LaTeX template always typesets
+
+
 def _clean(text):
     return ' '.join(str(text or '').split())
 
@@ -43,7 +48,7 @@ TITLE_WORDS = {stem(w) for w in 'engineer developer analyst consultant manager a
 # Connective words that state no fact, beside polish.NEUTRAL.
 EXTRA_NEUTRAL = set('during after before between under over throughout process processes stage stages phase '
                     'activities activity end-to-end efficiently accurately consistently executed performed handled enabled '
-                    'added included featured'.split())
+                    'added included featured code'.split())
 
 
 def _singular(key):
@@ -58,7 +63,7 @@ def additions(source, rewrite, context):
     rewrite = _clean(rewrite)
     if len(rewrite) > MAX_LINE:
         return f'line longer than {MAX_LINE} characters'
-    if re.search(r'[{}\\%#$_<>|]', rewrite):
+    if re.search(r'[{}\\<>|]', rewrite):  # the renderer escapes % # $ _ (C#, 20%); these never belong in a line
         return 'markup characters in the line'
     new_numbers = numbers(rewrite) - numbers(source)
     if new_numbers:
@@ -186,9 +191,10 @@ def write_experience(job, avoid, role_title, ai, on_progress=None):
         items = answer.get('lines') if isinstance(answer, dict) else None
         if not isinstance(items, list) or not items:
             return None, ['return a "lines" array']
-        problems, lines, used = [], [], set()
+        # Lines accepted from earlier answers stay: a later answer only has to add what they missed.
+        problems, lines, used = [], pool['lines'], pool['used']
         for item in items:
-            text = _clean(item.get('text')) if isinstance(item, dict) else ''
+            text = _clean(_plain(item.get('text') or '')) if isinstance(item, dict) else ''
             origin = [i for i in (item.get('from') or []) if type(i) is int and 0 <= i < len(source)] \
                 if isinstance(item, dict) else []
             if not text or not origin:
@@ -202,13 +208,14 @@ def write_experience(job, avoid, role_title, ai, on_progress=None):
                 problems.append(f'"{text[:70]}": {reason}')
                 continue
             if repeats(text, lines) or _same_task(text, lines):
-                problems.append(f'"{text[:70]}" repeats the task of another line; merge them into one line')
-                continue
+                continue  # the same task is already written: one line is kept, never two
             if repeats(text, avoid):
                 problems.append(f'"{text[:70]}" repeats another section')
                 continue
             lines.append(text)
             used.update(origin)
+        # A source line a written line restates counts as used even when the model listed another index for it.
+        used.update(i for i in range(len(source)) if repeats(source[i], lines, 0.4))
         # A source line left out is fine only when it restates a line that was used and none of its facts is lost.
         missing = [i for i in range(len(source)) if i not in used
                    and not (repeats(source[i], [source[j] for j in used], 0.4) and not coverage([source[i]], lines))]
@@ -217,9 +224,12 @@ def write_experience(job, avoid, role_title, ai, on_progress=None):
         lost = coverage([source[i] for i in used], lines)
         if lost:
             problems.append('keep these source facts: ' + ', '.join(lost))
-        return lines, problems
+        if not missing and not lost and lines:
+            return list(lines), []  # complete: lines that failed a check were simply not used
+        return list(lines), problems
 
-    return _ask(ai, prompt, schema, on_progress, check)
+    pool = {'lines': [], 'used': set()}
+    return _ask(ai, prompt, schema, on_progress, check, attempts=3)
 
 
 def split_project(project):
@@ -289,7 +299,7 @@ def write_project(project, avoid, role_title, ai, on_progress=None):
             return None, ['return a "points" array']
         problems = []
         for point in points:
-            text = _clean(point) if isinstance(point, str) else ''
+            text = _clean(_plain(point)) if isinstance(point, str) else ''
             if not text:
                 continue
             text = text[0].upper() + text[1:]
@@ -439,31 +449,66 @@ def write_objective(profile, role_title, brief, ai, on_progress=None):
     opening the validator requires (role, focus and one priority). ``brief`` comes from ``objective_brief``.
     Returns (text, problems); the text is accepted only when the validator passes it."""
     opening, check_text = brief['opening'], brief['check']
-    room = (max(18, 40 - len(opening.split())), 55 - len(opening.split()))
     keys = ('aim', 'commitment', 'value')
-    starts = dict(zip(keys, (brief['aim'], brief['commitment'], brief['value'])))
-    schema = {'type': 'object', 'additionalProperties': False, 'required': list(keys),
-              'properties': {key: {'type': 'string'} for key in keys}}
+    starts = {'aim': brief['aim'], 'commitment': brief['commitment'], 'value': brief['value']}
+    version = {'type': 'object', 'additionalProperties': False, 'required': list(keys),
+               'properties': {key: {'type': 'string'} for key in keys}}
+    # Three different versions in one answer: the validator takes the first that passes.
+    schema = {'type': 'object', 'additionalProperties': False, 'required': ['versions'],
+              'properties': {'versions': {'type': 'array', 'minItems': 3, 'maxItems': 3, 'items': version}}}
+    # Clause patterns: a small model writes 6-word sentences unless the sentence's shape asks for more.
     prompt = (
-        f'Write the rest of the Career Objective of a {role_title} resume. It already opens with: "{opening}" '
-        f'Write three more sentences of about 10-13 words each ({room[0]}-{room[1]} words together). '
-        f'"aim" begins with "{starts["aim"]}" and names two of these priorities: {brief["strengths"]}. '
-        f'"commitment" begins with "{starts["commitment"]}" and says what you want your work to achieve for users '
-        f'or the business. "value" begins with "{starts["value"]}" and says how you want to work with a team. '
-        + brief['rules'] + ' Return JSON {"aim": string, "commitment": string, "value": string}.')
+        f'Write the rest of the Career Objective of a {role_title} resume. It opens with: "{opening}." '
+        'Write three more sentences, each 11-15 words, following these patterns:\n'
+        f'"aim": "{starts["aim"]} bring <priority> and <priority> to <kind of work>, so that <benefit>." using two '
+        f'of these priorities: {brief["strengths"]}.\n'
+        f'"commitment": "{starts["commitment"]} <what you will do well> that <helps whom> <how>."\n'
+        f'"value": "{starts["value"]} <way of working> with <whom>, <where or why>."\n'
+        + brief['rules'] + ' Write three clearly different versions. Return JSON '
+        '{"versions": [{"aim": string, "commitment": string, "value": string}, ...3 versions]}.')
+
+    pools = {key: [] for key in keys}  # every sentence Ollama wrote, per slot, across versions and attempts
 
     def check(answer):
+        versions = answer.get('versions') if isinstance(answer, dict) else None
+        if not isinstance(versions, list) or not versions:
+            return '', ['return {"versions": [3 versions]}']
+        best = None
+        for item in versions[:3]:
+            text, problems = one(item)
+            if not problems:
+                return text, []
+            if best is None or len(problems) < len(best[1]):
+                best = (text, problems)
+        # A small model writes good sentences but cannot count words: its own sentences from different versions,
+        # combined, often meet the length the validator needs. Only whole sentences Ollama wrote are used.
+        from itertools import product
+        combos = sorted(product(*(pools[key][:6] for key in keys)),
+                        key=lambda combo: abs(47 - len(' '.join(combo).split())))
+        for combo in combos[:400]:
+            text, problems = one(dict(zip(keys, combo)), remember=False)
+            if not problems:
+                return text, []
+        return best
+
+    def one(answer, remember=True):
         if not isinstance(answer, dict):
-            return '', ['return {"aim": string, "commitment": string, "value": string}']
-        parts = [_clean(answer.get(key)) for key in keys]
-        # Formatting only: a capital first letter and the pronoun "I" ("i aim to" -> "I aim to").
+            return '', ['each version has aim, commitment and value']
+        if remember:
+            for key in keys:
+                value = _clean(answer.get(key))
+                if value and value not in pools[key]:
+                    pools[key].append(value)
+        from .generate import plain
+        # Formatting only: plain punctuation (curly quotes, dashes), a capital first letter and the pronoun "I".
+        parts = [_clean(plain(answer.get(key) or '')) for key in keys]
         parts = [re.sub(r"\bi\b", 'I', part[0].upper() + part[1:]) for part in parts if part]
         parts = [part if part.endswith('.') else part + '.' for part in parts]
-        text = ' '.join([opening, *parts])
-        problems = check_text(text) if len(parts) == 3 else ['write all three sentences']
-        count = len(' '.join(parts).split())
-        problems = [f'{problem}: your three sentences have {count} words; write {room[0]}-{room[1]}'
-                    if problem.startswith('use 40-55 words') else problem for problem in problems]
+        text = ' '.join([opening + '.', *parts])
+        problems = check_text(text) if len(parts) == 3 else ['write every part']
+        count = len(text.split())
+        problems = [f'{problem}: yours has {count} words' if problem.startswith('use 40-55 words') else problem
+                    for problem in problems]
         return text, problems
 
     return _ask(ai, prompt, schema, on_progress, check, attempts=3)
@@ -596,11 +641,12 @@ def objective_brief(profile, role_title, voice='first'):
     rules = (('Write in the first person; never "candidate", "aims", "seeks", "values", he, she or they. ' if first
               else 'No pronouns (I, my, he, she, they, their) and never "the candidate". ') +
              'Use plain everyday words (lowercase except "I" and sentence starts). Never mention tools, technologies, data pipelines, employers, '
-             'colleges, projects, years, degrees, certifications or numbers. Never claim work done or qualities: '
+             'colleges, projects or project work, years, degrees, certifications or numbers. Never claim work done or qualities: '
              'avoid built, developed, designed, delivered, maintained, experience, expertise, skilled, proven, '
              'hands-on, reliable, reliability, scalable, robust, efficient, innovative, passionate, leverage, '
              'seamless. No semicolons, colons, exclamation or question marks.')
-    return {'opening': f'{identity} focused on {g._objective_focus(role_title)} and {g.OBJECTIVE_EMPHASIS[0]}.',
+    return {'opening': f'{identity} focused on {g._objective_focus(role_title)} and {g.OBJECTIVE_EMPHASIS[0]}',
+            'emphasis': ', '.join(g.OBJECTIVE_EMPHASIS),
             'aim': 'I aim to' if first else 'Aims to', 'value': 'I value' if first else 'Values',
             'commitment': 'I am committed to' if first else 'Committed to',
             'strengths': ', '.join(g._objective_strengths(role_title)), 'rules': rules, 'check': check}

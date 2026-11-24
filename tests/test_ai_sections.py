@@ -56,7 +56,7 @@ class Experience(unittest.TestCase):
     def test_invented_tool_is_rejected_then_retried(self):
         bad = {'lines': [{'text': 'Configured Azure Data Factory and Snowflake pipelines.', 'from': [0, 1]},
                          {'text': JOB['bullets'][2], 'from': [2]}]}
-        ai = Scripted(bad, bad)
+        ai = Scripted(bad, bad, bad)
         lines, problems = write_experience(JOB, [], 'Azure Data Engineer', ai)
         self.assertIsNone(lines)
         self.assertTrue(any('Snowflake' in p for p in problems))
@@ -125,14 +125,16 @@ class Education(unittest.TestCase):
 
 class Objective(unittest.TestCase):
     def test_validator_decides_and_word_count_is_fed_back(self):
-        ai = Scripted({'aim': 'i aim to help.', 'commitment': 'I am committed to ai.', 'value': 'I value teams.'},
-                      {'aim': 'I aim to bring care.', 'commitment': 'I am committed to ai', 'value': 'I value trust.'})
-        brief = {'opening': 'I am X focused on Y.', 'aim': 'I aim to', 'value': 'I value', 'strengths': 'a, b',
-                 'commitment': 'I am committed to',
-                 'rules': '', 'check': lambda text: [] if 'care' in text else ['use 40-55 words']}
+        short = {'aim': 'i aim to help.', 'commitment': 'I am committed to ai.', 'value': 'I value teams.'}
+        good = {'aim': 'I aim to bring care.', 'commitment': 'I am committed to ai', 'value': 'I value trust.'}
+        ai = Scripted({'versions': [short, short, short]}, {'versions': [short, good, short]})
+        brief = {'opening': 'I am X focused on Y', 'aim': 'I aim to', 'value': 'I value', 'strengths': 'a, b',
+                 'commitment': 'I am committed to', 'emphasis': 'quality', 'rules': '',
+                 'check': lambda text: [] if 'bring care' in text and 'trust' in text else ['use 40-55 words']}
         text, problems = write_objective({}, 'Data Engineer', brief, ai)
-        self.assertEqual((text, problems), ('I am X focused on Y. I aim to bring care. I am committed to ai. I value trust.', []))
-        self.assertIn('your three sentences have 12 words', ai.prompts[1])
+        self.assertEqual((text, problems),
+                         ('I am X focused on Y. I aim to bring care. I am committed to ai. I value trust.', []))
+        self.assertIn('yours has 18 words', ai.prompts[1])
 
 
 class WholeResume(unittest.TestCase):
@@ -146,7 +148,7 @@ class WholeResume(unittest.TestCase):
     def test_failed_sections_keep_verified_text_and_watcher_check_passes(self):
         source = self.profile()
         broken = {'lines': [{'text': 'Led Snowflake work.', 'from': [0, 1, 2]}]}
-        ai = Scripted(broken, broken,
+        ai = Scripted(broken, broken, broken,
                       {'points': ['Handled end-to-end cloud infrastructure migration using Azure Migrate',
                                   'Provisioned Azure VM and network configuration',
                                   'Performed replication and cutover using ASR',
