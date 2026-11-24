@@ -92,10 +92,29 @@ OVERLEAF_STEP_COUNT = 6
 DECLINE = re.compile(r'^(maybe later|not now|no thanks|no, thanks|remind me later|dismiss)$', re.I)
 
 
+# A marketing message rendered in its own frame over the whole page (seen live: a Black Friday offer in
+# "#gist-overlay"), whose only control is a close button inside the frame. It intercepted the New Project click on
+# every resume. It is closed by that button, or removed from the page when the button cannot be reached; nothing in
+# it is ever clicked otherwise.
+MESSAGE_OVERLAY = '#gist-overlay.gist-visible, #gist-overlay:has(iframe.gist-visible)'
+
+
+def _close_message_overlay(page):
+    frame = page.frame_locator('#gist-overlay iframe')
+    close = frame.locator('[aria-label*="close" i], button[title*="close" i], .gist-close, button:has-text("×")')
+    try:
+        close.first.click(timeout=3000)
+        page.locator('#gist-overlay').wait_for(state='hidden', timeout=3000)
+    except Exception:  # noqa: BLE001 - the message is not ours to keep: take it off the page
+        page.evaluate("document.querySelectorAll('#gist-overlay').forEach(node => node.remove())")
+
+
 def dismiss_interruptions(page):
-    """Register a handler that clears promotional modals whenever one blocks an action."""
+    """Register handlers that clear promotional modals and framed marketing messages whenever one blocks an
+    action."""
     blocking = page.locator('[role="dialog"], dialog').filter(has=page.get_by_role('button', name=DECLINE))
     page.add_locator_handler(blocking, lambda dialog: dialog.get_by_role('button', name=DECLINE).first.click())
+    page.add_locator_handler(page.locator(MESSAGE_OVERLAY), lambda overlay: _close_message_overlay(page))
 
 
 def import_zip(zip_path, project_name, browser_profile, *, pdf_path,
