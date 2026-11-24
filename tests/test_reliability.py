@@ -12,9 +12,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from dashboard.automation_jobs import AutomationJobs
 from resume_bot import __main__ as cli
 from resume_bot import pipeline
-from resume_bot.overleaf import OverleafAuthError, _signed_out
+from resume_bot.overleaf import OverleafAuthError, _record_sign_in, _require_session, _signed_out
 
 ROOT = Path(__file__).parents[1]
 REQUEST = {'profile': json.loads((ROOT / 'examples/sample_candidate.json').read_text()),
@@ -46,8 +47,28 @@ class StandbyTests(unittest.TestCase):
                 cli.watch(args, None, sleep=lambda s: None)
 
 
+class AutomationStatusTests(unittest.TestCase):
+    def test_waiting_for_sign_in_replaces_the_old_retry_countdown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            jobs = AutomationJobs(SimpleNamespace(root=Path(directory)))
+            task = {'job.json': {'status': 'failed', 'stage_key': 'overleaf', 'percent': 90,
+                                 'awaiting_sign_in': True, 'next_retry': 9999, 'error': 'Sign in to Overleaf'}}
+            job = jobs._status({'job': 'job.json'}, task, 'owner')
+        self.assertEqual((job['status'], job['stage'], job['next_retry']),
+                         ('blocked', 'Waiting for Overleaf sign-in', 0))
+        self.assertGreaterEqual(job['percent'], 90)
+        self.assertLess(job['percent'], 100)
+
+
 @unittest.skipUnless(shutil.which('pdflatex') and shutil.which('pdftotext'), 'TeX/PDF tools missing')
 class OverleafSessionTests(unittest.TestCase):
+    def test_overleaf_login_redirects_and_http_unauthorized_are_auth_failures(self):
+        for url, status in [('https://www.overleaf.com/user/login', 200),
+                            ('https://www.overleaf.com/project', 401)]:
+            with self.subTest(url=url, status=status), self.assertRaises(OverleafAuthError):
+                _require_session(SimpleNamespace(url=url), SimpleNamespace(status=status))
+        self.assertFalse(_signed_out('https://example.test/overleaf.com/login'))
+
     def test_signed_out_session_is_reported_and_recovers_after_sign_in(self):
         self.assertTrue(_signed_out('https://www.overleaf.com/login?redir=%2Fproject'))
         self.assertFalse(_signed_out('https://www.overleaf.com/project'))
@@ -62,6 +83,9 @@ class OverleafSessionTests(unittest.TestCase):
             self.assertEqual(job['status'], 'failed')
             self.assertIn('Overleaf sign-in required', job['error'])
             self.assertEqual(job['failed_stage'], 'overleaf')
+            self.assertFalse(job['retryable'])
+            self.assertIsNone(job['next_retry'])
+            self.assertLess(job['percent'], 100)
             health = json.loads((inbox / '.resume-bot-health.json').read_text())
             self.assertEqual(health['overleaf']['reason'], 'sign-in required')
             self.assertFalse(health['overleaf']['ok'])
@@ -69,10 +93,18 @@ class OverleafSessionTests(unittest.TestCase):
             def signed_in(zip_path, title, browser, *, pdf_path, saved_url, on_step):
                 shutil.copyfile(Path(zip_path).parent / 'resume.pdf', pdf_path)
                 return {'status': 'uploaded', 'project_name': title, 'url': 'https://www.overleaf.com/project/abcdef123'}
-            pipeline.request_retry(inbox, 'job.json')
-            with patch('resume_bot.pipeline.import_zip', side_effect=signed_in):
+            with patch('resume_bot.pipeline.import_zip', side_effect=signed_in) as upload:
+                with patch.object(pipeline.time, 'time', return_value=time.time() + 10_000):
+                    stalled = pipeline.scan(inbox, root / 'output', **kwargs)['job.json']
+                self.assertEqual(stalled, job)
+                upload.assert_not_called()
+                _record_sign_in(root / 'browser')
                 job = pipeline.scan(inbox, root / 'output', **kwargs)['job.json']
+                upload.assert_called_once()
             self.assertEqual((job['status'], job['percent']), ('ok', 100))
+            report = json.loads((Path(job['output']) / 'result.json').read_text())
+            self.assertIn('ats_readiness', report['ats'])
+            self.assertTrue(report['overleaf']['pdf_sha256'])
             self.assertTrue(json.loads((inbox / '.resume-bot-health.json').read_text())['overleaf']['ok'])
 
     def test_job_interrupted_by_a_crash_is_finished_on_restart(self):

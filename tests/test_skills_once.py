@@ -1,8 +1,8 @@
 """Each skill is shown once, and a shown work line keeps a space after its commas (nothing is reworded)."""
 import unittest
 
-from resume_bot.generate import comma_spaced, distinct_skills, present_for_role
-from resume_bot.profile import validate_profile
+from resume_bot.generate import comma_spaced, distinct_skills, present_for_role, skill_groups
+from resume_bot.profile import MAX_SKILL_GROUPS, ProfileError, validate_profile
 from resume_bot.workflow import load_roles
 
 
@@ -49,6 +49,23 @@ class SkillsOnceTests(unittest.TestCase):
         for text in ('Built APIs with Node.js, Express and MongoDB.', 'Managed 1,200 records.', 'Used e.g. Postman.'):
             self.assertEqual(comma_spaced(text), text)
         self.assertEqual(comma_spaced('Tested login,cart;checkout flows.'), 'Tested login, cart; checkout flows.')
+
+    def test_group_overflow_is_normalized_without_losing_skills(self):
+        skills = [f'Tool {index:02}' for index in range(15)]
+        categories = {f'Category {index:02}': [skill] for index, skill in enumerate(skills)}
+        legacy = [{'name': name, 'items': items} for name, items in categories.items()]
+        generated = skill_groups(skills, {'resumeGroups': categories})
+        profile = {**facts(skills, []), 'skill_groups': legacy}
+        normalized = validate_profile(profile)
+        self.assertEqual(normalized['skills'], skills)
+        self.assertEqual(normalized['skill_groups'], generated)
+        self.assertEqual(generated[:11], legacy[:11])
+        self.assertEqual(generated[11], {'name': 'Other skills', 'items': skills[11:]})
+        self.assertEqual(len(generated), MAX_SKILL_GROUPS)
+        self.assertEqual(validate_profile(normalized), normalized)
+        self.assertEqual(len(profile['skill_groups']), 15)
+        with self.assertRaisesRegex(ProfileError, 'contain every listed skill exactly once'):
+            validate_profile({**profile, 'skill_groups': [*legacy, legacy[-1]]})
 
 
 if __name__ == '__main__':

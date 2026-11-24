@@ -476,18 +476,23 @@ class AutomationJobs:
         if state_name == 'ok' and task.get('percent') == 100:
             key = self.workspace.private_revision_key(task.get('output'), owner)
             revision = self.workspace.revision(key) if key else None
-            if revision and self.workspace.artifact(key, 'overleaf.pdf') and revision.get('overleaf'):
+            if (revision and revision.get('ats') and revision.get('overleaf')
+                    and self.workspace.artifact(key, 'resume.pdf') and self.workspace.artifact(key, 'overleaf.pdf')):
                 remote = revision['overleaf']
                 url = remote.get('url', '')
                 if re.fullmatch(r'https://www\.overleaf\.com/project/[A-Za-z0-9_-]+', url) and remote.get('pdf_sha256'):
                     current.update(status='complete', stage='Verified resume ready', percent=100,
                                    revision=key, ats=revision.get('ats'), overleaf=url)
                     return current
-            current.update(status='blocked', error='Verified outputs are missing. Contact the ResumeOps operator.')
+            current.update(status='blocked', stage='Checking verified outputs', percent=99,
+                           error='Verified outputs are missing. Contact the ResumeOps operator.')
             return current
         current['status'] = 'processing'
         if state_name == 'failed':
-            if task.get('next_retry'):
+            if task.get('awaiting_sign_in'):
+                current.update(status='blocked', stage='Waiting for Overleaf sign-in', next_retry=0,
+                               error=task.get('error'))
+            elif task.get('next_retry'):
                 current.update(status='retrying', next_retry=task['next_retry'],
                                error=task.get('error'))
             else:

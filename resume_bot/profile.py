@@ -2,6 +2,21 @@
 import re
 from datetime import date
 
+MAX_SKILL_GROUPS = 12
+
+
+def limit_skill_groups(groups):
+    """Keep the leading categories and collect overflow in one group without dropping skills."""
+    if len(groups) <= MAX_SKILL_GROUPS:
+        return groups
+    leading = groups[:MAX_SKILL_GROUPS - 1]
+    overflow = [item for group in groups[MAX_SKILL_GROUPS - 1:] for item in group['items']]
+    for index, group in enumerate(leading):
+        if group['name'].casefold() == 'other skills':
+            leading[index] = {**group, 'items': [*group['items'], *overflow]}
+            return leading
+    return [*leading, {'name': 'Other skills', 'items': overflow}]
+
 
 class ProfileError(ValueError):
     pass
@@ -100,15 +115,16 @@ def validate_profile(data):
     if 'skill_groups' in data:
         # Presentation only: the candidate's own skills, each in exactly one named group.
         groups = data['skill_groups']
-        if not isinstance(groups, list) or len(groups) > 12 or any(
+        if not isinstance(groups, list) or any(
                 not isinstance(g, dict) or set(g) != {'name', 'items'} or not isinstance(g['items'], list) for g in groups):
-            raise ProfileError('skill_groups: expected up to 12 {name, items} groups')
-        out['skill_groups'] = [{'name': _string(g['name'], 'skill_groups[].name', True),
-                                'items': [_string(item, 'skill_groups[].items', True) for item in g['items']]}
-                               for g in groups]
-        grouped = [item for g in out['skill_groups'] for item in g['items']]
+            raise ProfileError('skill_groups: expected {name, items} groups')
+        groups = [{'name': _string(g['name'], 'skill_groups[].name', True),
+                   'items': [_string(item, 'skill_groups[].items', True) for item in g['items']]}
+                  for g in groups]
+        grouped = [item for g in groups for item in g['items']]
         if sorted(grouped) != sorted(out['skills']):
             raise ProfileError('skill_groups must contain every listed skill exactly once')
+        out['skill_groups'] = limit_skill_groups(groups)
     if not (out['experience'] or out['education']):
         raise ProfileError('At least one experience or education record is required')
     return out

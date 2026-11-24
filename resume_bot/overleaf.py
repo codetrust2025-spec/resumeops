@@ -22,7 +22,30 @@ class OverleafAuthError(OverleafError):
 
 
 def _signed_out(url):
-    return bool(re.search(r'overleaf\.com/(login|register|sign_?in)', url or '', re.I))
+    address = urlparse(url or '')
+    return address.hostname in ('overleaf.com', 'www.overleaf.com') and bool(
+        re.match(r'^/(?:user/)?(?:login|register|sign[-_]?in)(?:/|$)', address.path, re.I))
+
+
+def _require_session(page, response=None):
+    if _signed_out(page.url) or (response is not None and response.status == 401):
+        raise OverleafAuthError('Overleaf sign-in required')
+
+
+def _session_marker(profile):
+    return profile.parent / ('.' + profile.name + '.resume-bot-signed-in.json')
+
+
+def sign_in_time(browser_profile):
+    try:
+        profile = Path(browser_profile).expanduser().resolve()
+        return _session_marker(profile).stat().st_mtime
+    except FileNotFoundError:
+        return 0
+
+
+def _record_sign_in(profile):
+    write_json(_session_marker(profile), {})
 
 
 def _editor_url(url):
@@ -148,18 +171,14 @@ def import_zip(zip_path, project_name, browser_profile, *, pdf_path,
                     if saved_url:
                         if not _editor_url(saved_url):
                             raise OverleafError('Invalid saved Overleaf editor URL')
-                        page.goto(saved_url, wait_until='domcontentloaded')
-                        if _signed_out(page.url):
-                            raise OverleafAuthError('Overleaf sign-in required')
+                        _require_session(page, page.goto(saved_url, wait_until='domcontentloaded'))
                     else:
-                        page.goto(ORIGIN + '/project', wait_until='domcontentloaded')
-                        if _signed_out(page.url):
-                            raise OverleafAuthError('Overleaf sign-in required')
+                        _require_session(page, page.goto(ORIGIN + '/project', wait_until='domcontentloaded'))
                         if page.url.rstrip('/') != ORIGIN + '/project':
                             raise OverleafError('Overleaf dashboard unavailable; check the authorized session')
                         found = _find_project(page, project_name, timeout_ms)
                         if found:
-                            page.goto(found, wait_until='domcontentloaded')
+                            _require_session(page, page.goto(found, wait_until='domcontentloaded'))
                         else:
                             if journal.exists():
                                 raise OverleafError('Prior upload has an unknown outcome; reconcile the exact title on Overleaf')
@@ -175,6 +194,7 @@ def import_zip(zip_path, project_name, browser_profile, *, pdf_path,
                                 page.wait_for_url(EDITOR, wait_until='domcontentloaded')
                             status = 'uploaded'
                     on_step(3, 'Waiting for the Overleaf editor')
+                    _require_session(page)
                     if not _editor_url(page.url):
                         raise OverleafError('Overleaf editor unavailable; check the authorized session')
                     url = page.url
@@ -182,7 +202,11 @@ def import_zip(zip_path, project_name, browser_profile, *, pdf_path,
                     on_step(4, 'Compiling on Overleaf and downloading the PDF')
                     _compile_and_download(page, pdf_path)
                     on_step(6, 'Overleaf PDF downloaded')
+                    _record_sign_in(profile)
                     return {'status': status, 'project_name': project_name, 'url': url}
+                except PlaywrightError:
+                    _require_session(page)
+                    raise
                 finally:
                     context.close()
         except OverleafError:
@@ -208,3 +232,14 @@ def login_setup(browser_profile):
                 page.get_by_role('button', name=re.compile(r'^New Project$', re.I)).wait_for(timeout=5000)
             finally:
                 context.close()
+            # Reopen the same saved profile the way the unattended worker will use it.
+            context = playwright.chromium.launch_persistent_context(
+                str(profile), channel="chrome", headless=True)
+            try:
+                page = context.pages[0] if context.pages else context.new_page()
+                _require_session(page, page.goto(ORIGIN + '/project', wait_until='domcontentloaded'))
+                page.get_by_role('button', name=re.compile(r'^New Project$', re.I)).wait_for(timeout=5000)
+            finally:
+                context.close()
+            _record_sign_in(profile)
+            print('Overleaf sign-in verified. Waiting jobs can resume.')
