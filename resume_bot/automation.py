@@ -28,6 +28,17 @@ def _form_lines(value, label, limit, commas=False):
     return list(dict.fromkeys(item for item in (clean_bullet(' '.join(p.split())) for p in parts) if item))
 
 
+def _grade(value):
+    """The education grade as printed: "CGPA 8.4", or "Percentage 78%" for a percentage; a value that already names
+    its scale ("CGPA 8.4/10") is kept as typed."""
+    value = ' '.join(str(value or '').split())
+    if not value:
+        return ''
+    if re.match(r'(?i)(?:c?gpa|cpi|percentage|marks)\b', value):
+        return value
+    return ('Percentage ' if '%' in value else 'CGPA ') + value
+
+
 def attested_profile(candidate, entries_required=True):
     """The 'Enter details' form, as attested facts. The candidate states every line; nothing is added.
     entries_required=False: the work or education may come from the candidate's note instead, so every typed
@@ -54,8 +65,7 @@ def attested_profile(candidate, entries_required=True):
     profile['experience'] = [{**entry, 'bullets': bullets} for entry, bullets in zip(candidate['work_experience'], duties)]
     profile['education'] = [
         {'institution': item['university'], 'degree': item['degree'], 'end': item['graduation_year'],
-         'details': ' | '.join(filter(None, [item['specialization'],
-                                           'CGPA ' + item['cgpa'] if item['cgpa'] else '']))}
+         'details': ' | '.join(filter(None, [item['specialization'], _grade(item['cgpa'])]))}
         for item in candidate['education']]
     projects = []
     for item, (stack, lines) in zip(candidate['projects'], details):

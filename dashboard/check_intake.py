@@ -96,6 +96,17 @@ def main():
                     field(f'work_experience.{index}.responsibilities').fill(
                         'Built Spring Boot REST APIs for appointment booking with Java and MySQL.')
                 field('education.0.degree').fill('B.Tech')
+                # Specialization and CGPA / percentage are mandatory (marked *); skills and projects are optional.
+                for path in ('education.0.specialization', 'education.0.cgpa'):
+                    expect(page.locator(f'label:has([data-field="{path}"]) .ap-req')).to_have_count(1)
+                expect(page.locator('#ap-skills-title .ap-req')).to_have_count(0)
+                expect(page.locator('#ap-projects-title .ap-opt')).to_have_text('(optional)')
+                expect(page.locator('label:has([data-field="work_experience.0.responsibilities"]) .ap-req')).to_have_count(0)
+                field('education.0.specialization').fill('')
+                page.locator('#ap-submit').click()
+                expect(page.locator('#ap-error')).to_contain_text('specialization')
+                field('education.0.specialization').fill('Mechanical Engineering')
+                field('education.0.cgpa').fill('8.1')
                 field('projects.0.name').fill('Clinic Booking API')
                 field('projects.0.stack').fill('Java, Spring Boot, MySQL')
                 field('projects.0.description').fill('Built booking endpoints with Spring Boot and MySQL.')
