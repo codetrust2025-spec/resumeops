@@ -60,7 +60,7 @@ class Experience(unittest.TestCase):
         lines, problems = write_experience(JOB, [], 'Azure Data Engineer', ai)
         self.assertIsNone(lines)
         self.assertTrue(any('Snowflake' in p for p in problems))
-        self.assertIn('PREVIOUS ANSWER WAS REJECTED', ai.prompts[1])
+        self.assertTrue(ai.prompts[1].startswith('IMPORTANT: YOUR PREVIOUS ANSWER WAS REJECTED'))
 
     def test_line_repeating_a_project_is_left_to_the_project(self):
         job = {**JOB, 'bullets': [*JOB['bullets'], 'Handled end-to-end cloud infrastructure migration, Azure VM '
@@ -78,7 +78,7 @@ class Projects(unittest.TestCase):
             'Handled end-to-end cloud infrastructure migration for CAF using Azure Migrate',
             'Provisioned Azure VM and network configuration',
             'Performed replication and cutover using ASR',
-            'Completed post-migration validation']})
+            'Completed post-migration validation for CAF']})
         project, problems = write_project(PROJECT, [], 'Azure Data Engineer', ai)
         self.assertEqual(problems, [])
         self.assertEqual(project.count(' | '), 4)
@@ -86,7 +86,7 @@ class Projects(unittest.TestCase):
 
     def test_invented_result_rejected(self):
         bad = {'points': ['Migrated 200 servers to Azure with zero downtime using Azure Migrate and ASR.']}
-        _, problems = write_project(PROJECT, [], 'Azure Data Engineer', Scripted(bad, bad))
+        _, problems = write_project(PROJECT, [], 'Azure Data Engineer', Scripted(bad, bad, bad))
         self.assertTrue(problems)
 
 
@@ -147,7 +147,7 @@ class WholeResume(unittest.TestCase):
                       {'points': ['Handled end-to-end cloud infrastructure migration using Azure Migrate',
                                   'Provisioned Azure VM and network configuration',
                                   'Performed replication and cutover using ASR',
-                                  'Completed post-migration validation']},
+                                  'Completed post-migration validation for CAF']},
                       {'groups': [{'name': 'Cloud', 'items': ['Azure Migrate']},
                                   {'name': 'Programming Languages', 'items': ['PySpark']}]},
                       {'education': [{'institution': 'X College', 'degree': 'B.Tech', 'details': ''}]})
