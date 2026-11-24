@@ -574,9 +574,16 @@ class DashboardLayoutTests(unittest.TestCase):
         # the field stays empty and Delete stays disabled until the phrase is entered.
         copy = dialog.get_by_role('button', name='Copy DELETE ALL')
         expect(copy).to_be_visible()
-        copy_box, label_box = copy.bounding_box(), dialog.locator('.auto-delete-code').bounding_box()
-        self.assertLess(abs((copy_box['y'] + copy_box['height'] / 2) - (label_box['y'] + label_box['height'] / 2)), 12)
-        self.assertGreater(copy_box['x'], label_box['x'])
+        # One line, in reading order: "Type", DELETE ALL, the copy icon, "to confirm" (production first showed the
+        # prompt stacked over three lines by the dialog's grid label style).
+        parts = [dialog.locator('.auto-delete-prompt label').first, dialog.locator('.auto-delete-code'), copy,
+                 dialog.locator('.auto-delete-prompt label').last]
+        boxes = [part.bounding_box() for part in parts]
+        middles = [box['y'] + box['height'] / 2 for box in boxes]
+        self.assertLess(max(middles) - min(middles), 8, boxes)
+        self.assertEqual([box['x'] for box in boxes], sorted(box['x'] for box in boxes), boxes)
+        self.assertLess(boxes[2]['x'] - (boxes[1]['x'] + boxes[1]['width']), 16, 'icon sits right beside DELETE ALL')
+        self.assertEqual(phrase.evaluate('input => input.labels.length'), 2)
         copy.click()
         expect(dialog.locator('#auto-delete-copied')).to_have_text('Copied!')
         self.assertEqual(page.evaluate('navigator.clipboard.readText()'), 'DELETE ALL')

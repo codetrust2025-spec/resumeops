@@ -150,11 +150,12 @@
         <p id="auto-delete-text">Deletes every resume and its files. This cannot be undone. Resumes in progress are kept.</p>
         <div class="auto-delete-field">
           <div class="auto-delete-prompt">
-            <label for="auto-delete-phrase">Type <span class="auto-delete-code">DELETE ALL</span> to confirm</label>
+            <label for="auto-delete-phrase">Type <span class="auto-delete-code">DELETE ALL</span></label>
             <button id="auto-delete-copy" class="auto-copy" type="button" title="Copy DELETE ALL" aria-label="Copy DELETE ALL"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg></button>
+            <label for="auto-delete-phrase">to confirm</label>
             <span id="auto-delete-copied" class="auto-copied" role="status"></span>
           </div>
-          <input id="auto-delete-phrase" autocomplete="off" autocapitalize="characters" spellcheck="false">
+          <input id="auto-delete-phrase" aria-label="Type DELETE ALL to confirm" autocomplete="off" autocapitalize="characters" spellcheck="false">
         </div>
         <p id="auto-delete-error" class="auto-dialog-error" role="alert"></p>
         <div class="auto-dialog-actions">
