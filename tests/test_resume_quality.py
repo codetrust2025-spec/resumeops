@@ -87,6 +87,9 @@ class NormalizationTests(unittest.TestCase):
                          'Migrated servers using Azure Migrate and PySpark for internal dashboards.')
         self.assertEqual(canonical_case('Built streaming pipelines with ReactJS.'),
                          'Built streaming pipelines with ReactJS.')
+        # Seen live: "Set up Networking configurations ..." (a practice recased mid-sentence).
+        self.assertEqual(canonical_case('Set up networking configurations for secure data transfer.'),
+                         'Set up networking configurations for secure data transfer.')
         for value in ('NA', 'n/a', ' - ', 'None', 'nil'):
             self.assertTrue(is_placeholder(value), value)
         self.assertFalse(is_placeholder('NAS backups'))
