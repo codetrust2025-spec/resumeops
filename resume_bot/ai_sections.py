@@ -32,6 +32,25 @@ MAX_GROUPS = 12
 # Deterministic fact checks
 # ---------------------------------------------------------------------------------------------------------------
 
+# A section request answers in a few hundred tokens. Unbounded, a 7B model can run on inside one JSON string until
+# the whole context is used (seen live: "output reached the 8192-token limit" after minutes, then the verified text
+# kept anyway). Every string in a section schema has a length cap, and each request a small token budget.
+SECTION_TOKENS = 1536
+SECTION_DEADLINE = 180
+
+
+def _text(limit):
+    return {'type': 'string', 'maxLength': limit}
+
+
+def _bounded(ai):
+    """The same model and server with the section budget (tests pass their own stand-in, used as it is)."""
+    from .ollama import Ollama
+    if not isinstance(ai, Ollama) or ai.max_tokens <= SECTION_TOKENS:
+        return ai
+    return Ollama(ai.model, ai.url, ai.timeout, SECTION_TOKENS, min(ai.deadline, SECTION_DEADLINE), ai.num_ctx)
+
+
 def _plain(text):
     from .generate import plain
     return plain(text)  # characters the LaTeX template always typesets
@@ -149,7 +168,7 @@ def _ask(ai, prompt, schema, on_progress, check, attempts=2):
         try:
             # Through resume_bot.generate's binding, the one every other drafting step (and every test) uses.
             from . import generate as drafting
-            answer = drafting.generate(ai, feedback + prompt, schema=schema, on_progress=on_progress)
+            answer = drafting.generate(_bounded(ai), feedback + prompt, schema=schema, on_progress=on_progress)
         except RuntimeError as error:
             return None, [f'Ollama: {error}']
         value, problems = check(answer)
@@ -188,7 +207,7 @@ def write_experience(job, avoid, role_title, ai, on_progress=None):
               'properties': {'lines': {'type': 'array', 'minItems': 1, 'maxItems': max(1, len(source) + 2),
                                        'items': {'type': 'object', 'additionalProperties': False,
                                                  'required': ['text', 'from'],
-                                                 'properties': {'text': {'type': 'string'},
+                                                 'properties': {'text': _text(MAX_LINE),
                                                                 'from': {'type': 'array', 'minItems': 1,
                                                                          'items': {'type': 'integer'}}}}}}}
     prompt = (
@@ -307,7 +326,7 @@ def write_project(project, avoid, role_title, ai, on_progress=None):
     wanted_low = min(low, max(1, sum(len(re.split(r',\s*|\s+and\s+', d)) for d in details)))
     schema = {'type': 'object', 'additionalProperties': False, 'required': ['points'],
               'properties': {'points': {'type': 'array', 'minItems': 1, 'maxItems': high,
-                                        'items': {'type': 'string'}}}}
+                                        'items': _text(MAX_LINE)}}}
     # The tasks the text itself lists ("migration, VM provisioning, network configuration, ..."): each point is
     # written from one or two of them, so nothing outside the project text is needed.
     tasks = [t.strip(' .') for d in details for t in re.split(r',\s*(?:and\s+)?|;\s*', d) if t.strip(' .')]
@@ -390,7 +409,7 @@ def write_project(project, avoid, role_title, ai, on_progress=None):
     # Repair: each task no point covers yet gets its own small request (one point for exactly that task), so one
     # missing task never sends the whole project back to its paragraph.
     schema_one = {'type': 'object', 'additionalProperties': False, 'required': ['point'],
-                  'properties': {'point': {'type': 'string'}}}
+                  'properties': {'point': _text(MAX_LINE)}}
     for task in gaps(pool)[0]:
         ask = (f'Write one resume bullet point for the project "{name}" from exactly this task in its text: '
                f'"{task}". Start with a past-tense action verb; keep the words of the task and the tools it names; add '
@@ -398,7 +417,7 @@ def write_project(project, avoid, role_title, ai, on_progress=None):
         for _ in range(2):
             try:
                 from . import generate as drafting
-                answer = drafting.generate(ai, ask, schema=schema_one, on_progress=on_progress)
+                answer = drafting.generate(_bounded(ai), ask, schema=schema_one, on_progress=on_progress)
             except RuntimeError:
                 break
             text = _clean(_plain(answer.get('point') or '')) if isinstance(answer, dict) else ''
@@ -419,7 +438,7 @@ def write_project(project, avoid, role_title, ai, on_progress=None):
                '\nPOINTS: ' + json.dumps(pair, ensure_ascii=False))
         try:
             from . import generate as drafting
-            answer = drafting.generate(ai, ask, schema=schema_one, on_progress=on_progress)
+            answer = drafting.generate(_bounded(ai), ask, schema=schema_one, on_progress=on_progress)
         except RuntimeError:
             break
         text = _clean(_plain(answer.get('point') or '')) if isinstance(answer, dict) else ''
@@ -452,7 +471,7 @@ def write_skill_groups(skills, categories, role_title, ai, on_progress=None, cat
               'properties': {'groups': {'type': 'array', 'minItems': 1, 'items': {
                   'type': 'object', 'additionalProperties': False, 'required': ['name', 'items'],
                   'properties': {'name': {'type': 'string', 'enum': allowed},
-                                 'items': {'type': 'array', 'items': {'type': 'string'}}}}}}}
+                                 'items': {'type': 'array', 'maxItems': 80, 'items': _text(80)}}}}}}
     prompt = (
         f'Organize the candidate\'s verified skills into the Technical Skills section of a {role_title} resume. '
         'Put each skill under the category from CATEGORIES it belongs to; use "Other Skills" only when none fits. '
@@ -555,7 +574,7 @@ def write_education(education, ai, on_progress=None):
               'properties': {'education': {'type': 'array', 'minItems': len(source), 'maxItems': len(source),
                                            'items': {'type': 'object', 'additionalProperties': False,
                                                      'required': list(fields),
-                                                     'properties': {k: {'type': 'string'} for k in fields}}}}}
+                                                     'properties': {k: _text(200) for k in fields}}}}}
     prompt = (
         'Fix only the letter case of the education entries for a professional resume: title case for institution names, '
         'degrees and subjects (keep abbreviations such as B.Tech, M.Sc, CGPA as commonly written), single '
@@ -593,7 +612,7 @@ def write_objective(profile, role_title, brief, ai, on_progress=None):
     keys = ('aim', 'commitment', 'value')
     starts = {'aim': brief['aim'], 'commitment': brief['commitment'], 'value': brief['value']}
     version = {'type': 'object', 'additionalProperties': False, 'required': list(keys),
-               'properties': {key: {'type': 'string'} for key in keys}}
+               'properties': {key: _text(160) for key in keys}}
     # Several different versions in one answer: the validator takes the first that passes.
     schema = {'type': 'object', 'additionalProperties': False, 'required': ['versions'],
               'properties': {'versions': {'type': 'array', 'minItems': 3, 'maxItems': 5, 'items': version}}}
@@ -684,7 +703,7 @@ def write_objective(profile, role_title, brief, ai, on_progress=None):
                ensure_ascii=False))
     try:
         from . import generate as drafting
-        repaired = check(drafting.generate(ai, ask, schema=schema, on_progress=on_progress))
+        repaired = check(drafting.generate(_bounded(ai), ask, schema=schema, on_progress=on_progress))
     except RuntimeError:
         return text, problems
     return repaired if repaired and not repaired[1] else (text, problems)
@@ -716,7 +735,9 @@ def write_sections(profile, role, role_title, ai, *, objective=None, on_progress
         note(f'experience_{index}', problems if job['bullets'] else [], bool(job['bullets']))
         as_written = [line for line in job['bullets'] if line in before]
         if as_written and lines and not problems:
-            report['sections'][f'experience_{index}']['kept_as_written'] = len(as_written)
+            report['sections'][f'experience_{index}'] = (
+                {'by': 'ollama', 'kept_as_written': len(as_written)} if len(as_written) < len(job['bullets'])
+                else {'by': 'verified text kept', 'reasons': ['no rewrite kept every detail; confirmed lines used']})
 
     work = [line for job in out['experience'] for line in job['bullets']]
     projects = []
