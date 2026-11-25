@@ -25,7 +25,7 @@ class Scripted:
 
     def generate(self, prompt, schema=None):
         self.prompts.append(prompt)
-        return self.replies.pop(0)
+        return self.replies.pop(0) if self.replies else {}  # out of script: an unusable answer
 
 
 class FactChecks(unittest.TestCase):
@@ -53,13 +53,14 @@ class Experience(unittest.TestCase):
         self.assertEqual(len(lines), 2)
         self.assertTrue(all(line.endswith('.') for line in lines))
 
-    def test_invented_tool_is_rejected_then_retried(self):
+    def test_invented_tool_is_rejected_and_the_line_kept_as_written(self):
         bad = {'lines': [{'text': 'Configured Azure Data Factory and Snowflake pipelines.', 'from': [0, 1]},
                          {'text': JOB['bullets'][2], 'from': [2]}]}
         ai = Scripted(bad, bad, bad)
         lines, problems = write_experience(JOB, [], 'Azure Data Engineer', ai)
-        self.assertIsNone(lines)
-        self.assertTrue(any('Snowflake' in p for p in problems))
+        self.assertEqual(problems, [])
+        self.assertNotIn('Snowflake', ' '.join(lines))
+        self.assertEqual(sorted(lines), sorted(JOB['bullets']), 'every confirmed line, verbatim where not rewritten')
         self.assertTrue(ai.prompts[1].startswith('IMPORTANT: YOUR PREVIOUS ANSWER WAS REJECTED'))
 
     def test_line_repeating_a_project_is_left_to_the_project(self):
@@ -101,11 +102,23 @@ class Skills(unittest.TestCase):
         self.assertEqual(problems, [])
         self.assertEqual(groups[0]['items'], ['Azure Data Factory', 'Azure Databricks'])  # verified spelling
 
-    def test_added_or_missing_skill_rejected(self):
-        bad = {'groups': [{'name': 'Programming Languages', 'items': ['PySpark', 'Scala']}]}
-        groups, problems = write_skill_groups(['PySpark', 'SQL'], ['Programming Languages'], 'X', Scripted(bad, bad))
-        self.assertIsNone(groups)
-        self.assertTrue(any('Scala' in p for p in problems) and any('SQL' in p for p in problems))
+    def test_invented_skill_never_listed_and_omitted_skill_never_dropped(self):
+        answer = {'groups': [{'name': 'Programming Languages', 'items': ['PySpark', 'Scala']}]}
+        groups, problems = write_skill_groups(['PySpark', 'SQL'], ['Programming Languages'], 'X', Scripted(answer))
+        self.assertEqual(problems, [])
+        self.assertEqual(groups, [{'name': 'Programming Languages', 'items': ['PySpark']},
+                                  {'name': 'Other Skills', 'items': ['SQL']}])
+
+    def test_stray_single_skill_groups_join_other_skills(self):
+        from resume_bot.ai_sections import compact_groups
+        groups = [{'name': 'Azure Data Services', 'items': ['Azure Data Factory', 'Azure Databricks']},
+                  {'name': 'Reporting', 'items': ['Power BI']}, {'name': 'Cloud & DevOps', 'items': ['Azure Migrate']},
+                  {'name': 'Networking & Security', 'items': ['Networking']}]
+        catalog = {'Azure Data Services': [], 'Reporting': []}
+        self.assertEqual(compact_groups(groups, catalog), [
+            {'name': 'Azure Data Services', 'items': ['Azure Data Factory', 'Azure Databricks']},
+            {'name': 'Reporting', 'items': ['Power BI']},
+            {'name': 'Other Skills', 'items': ['Azure Migrate', 'Networking']}])
 
 
 class Education(unittest.TestCase):
@@ -197,9 +210,30 @@ class CatalogPlacement(unittest.TestCase):
 
 
 class KeepsEveryDetail(unittest.TestCase):
-    def test_dropped_or_trimmed_line_is_rejected(self):
+    def test_trimmed_line_is_replaced_by_the_confirmed_line(self):
         trimmed = {'lines': [{'text': 'Configured Azure Data Factory pipelines for data ingestion', 'from': [0, 1]},
-                             {'text': JOB['bullets'][2], 'from': [2]}]}
+                             {'text': 'Developed PySpark scripts that process large datasets in Azure Databricks clusters',
+                              'from': [2]}]}
         lines, problems = write_experience(JOB, [], 'Azure Data Engineer', Scripted(trimmed, trimmed, trimmed))
-        self.assertIsNone(lines)
-        self.assertTrue(any('lost' in p for p in problems), problems)
+        self.assertEqual(problems, [])
+        self.assertIn('Developed PySpark scripts that process large datasets in Azure Databricks clusters.', lines)
+        self.assertIn(JOB['bullets'][0], lines)
+        self.assertIn(JOB['bullets'][1], lines)
+        self.assertNotIn('Configured Azure Data Factory pipelines for data ingestion.', lines, 'no partial duplicate')
+
+
+class CrossSectionRepeats(unittest.TestCase):
+    def test_only_a_fully_stated_line_is_left_to_the_other_section(self):
+        from resume_bot.ai_sections import stated_in
+        point = 'Integrated Azure Data Factory with Azure Databricks for automated data processing.'
+        self.assertTrue(stated_in('Integrated Azure Data Factory with Azure Databricks for automated processing.', [point]))
+        self.assertFalse(stated_in('Integrated Azure Data Factory with Azure Databricks for real-time data processing.',
+                                   [point]), '"real-time" is said nowhere else: the line stays')
+
+    def test_paraphrases_across_sections_are_reported(self):
+        from resume_bot.ai_sections import duplicate_pairs
+        profile = {'experience': [{'bullets': ['Automated data validation checks in Azure Databricks.']}],
+                   'projects': ['Lakehouse - Tech stack: Azure Databricks | Automated validation checks of data in '
+                                'Azure Databricks for consistent quality.']}
+        pairs = duplicate_pairs(profile)
+        self.assertEqual([(p['a'], p['b']) for p in pairs], [('experience 0', 'project 0')])
