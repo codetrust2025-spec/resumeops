@@ -66,7 +66,9 @@ class Experience(unittest.TestCase):
         job = {**JOB, 'bullets': [*JOB['bullets'], 'Handled end-to-end cloud infrastructure migration, Azure VM '
                                   'provisioning, network configuration, replication, cutover, and post-migration '
                                   'validation using Azure Migrate and ASR.']}
-        ai = Scripted({'lines': [{'text': JOB['bullets'][0], 'from': [0, 1]}, {'text': JOB['bullets'][2], 'from': [2]}]})
+        merged = ('Configured Azure Data Factory pipelines to automate data ingestion from on-premises sources '
+                  'and synchronize on-premises databases')
+        ai = Scripted({'lines': [{'text': merged, 'from': [0, 1]}, {'text': JOB['bullets'][2], 'from': [2]}]})
         lines, problems = write_experience(job, [PROJECT.split(' | ', 1)[1]], 'Azure Data Engineer', ai)
         self.assertEqual(problems, [])
         self.assertNotIn('ASR', ' '.join(lines))
@@ -160,7 +162,7 @@ class WholeResume(unittest.TestCase):
         self.assertEqual(out['experience'][0]['bullets'], JOB['bullets'])
         self.assertEqual(report['sections']['experience_0']['by'], 'verified text kept')
         self.assertEqual(report['sections']['project_0']['by'], 'ollama')
-        self.assertEqual(out['skills'], ['Azure Migrate', 'PySpark'])
+        self.assertEqual(out['skills'], ['PySpark', 'Azure Migrate'])  # catalog category order
         self.assertEqual(out['education'][0]['institution'], 'X College')
         self.assertEqual(rewrite_problems(source, out), [])
 
@@ -176,3 +178,28 @@ class WholeResume(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CatalogPlacement(unittest.TestCase):
+    def test_catalog_decides_category_ollama_places_the_rest(self):
+        catalog = {'Azure Data Services': ['Azure Data Factory', 'Microsoft Fabric'],
+                   'Governance & Security': ['Unity Catalog'], 'Programming Languages': ['Python']}
+        ai = Scripted({'groups': [{'name': 'Azure Data Services', 'items': ['Unity Catalog', 'Azure Data Factory']},
+                                  {'name': 'Other Skills', 'items': ['Microsoft Fabric', 'Networking', 'Python']}]})
+        groups, problems = write_skill_groups(['Azure Data Factory', 'Microsoft Fabric', 'Unity Catalog', 'Python',
+                                               'Networking'], list(catalog), 'Azure Data Engineer', ai,
+                                              catalog=catalog)
+        self.assertEqual(problems, [])
+        self.assertEqual(groups, [{'name': 'Azure Data Services', 'items': ['Azure Data Factory', 'Microsoft Fabric']},
+                                  {'name': 'Governance & Security', 'items': ['Unity Catalog']},
+                                  {'name': 'Programming Languages', 'items': ['Python']},
+                                  {'name': 'Other Skills', 'items': ['Networking']}])
+
+
+class KeepsEveryDetail(unittest.TestCase):
+    def test_dropped_or_trimmed_line_is_rejected(self):
+        trimmed = {'lines': [{'text': 'Configured Azure Data Factory pipelines for data ingestion', 'from': [0, 1]},
+                             {'text': JOB['bullets'][2], 'from': [2]}]}
+        lines, problems = write_experience(JOB, [], 'Azure Data Engineer', Scripted(trimmed, trimmed, trimmed))
+        self.assertIsNone(lines)
+        self.assertTrue(any('lost' in p for p in problems), problems)
