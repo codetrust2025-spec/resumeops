@@ -506,8 +506,9 @@ class DashboardLayoutTests(unittest.TestCase):
         self.assertTrue(row.locator('label.auto-drafted').first.is_visible(), 'drafts are marked as AI drafts')
         work.fill('Deployed services to Cloud Run with Terraform.')
         row.get_by_label('Work as Associate Engineer at Sample Systems (AI draft)').fill('')  # leave this job without lines
-        # A suggested project starts included as an AI draft (one confirmation); the candidate skips this one.
-        expect(row.get_by_label('I built this: include it')).to_be_checked()
+        # A suggested project starts undecided: it is included only by an explicit choice; the candidate skips it.
+        expect(row.get_by_label('I built this: include it')).not_to_be_checked()
+        expect(row.get_by_label('Skip')).not_to_be_checked()
         row.get_by_label('Skip').check()
         # Certifications are recommendations: unticked until the candidate says they completed one.
         expect(row.get_by_label('Google Cloud Associate Cloud Engineer')).not_to_be_checked()

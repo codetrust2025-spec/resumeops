@@ -693,13 +693,16 @@ function certificationChoices(job) {
 // AI skill suggestions for the role: unticked, so a skill reaches the resume only when the candidate ticks a tool
 // they have used (pre-filled suggestions were confirmed with one click). Ticked ones join the skills box on confirm.
 function skillSuggestions(question, field) {
-  if (question.field !== 'skills' || !(question.suggestions || []).length) return null;
+  if (!['skills', 'bullets'].includes(question.field) || !(question.suggestions || []).length) return null;
   const box = element('fieldset');
   box.className = 'auto-picks';
-  box.append(element('legend', 'AI suggestions (tick only tools you have used)'));
+  // Work lines that use role tools the candidate has not listed: unticked, added to the job only when ticked.
+  box.lines = question.field === 'bullets';
+  box.append(element('legend', box.lines ? 'AI suggestions using role tools you have not listed (tick only work you did)'
+    : 'AI suggestions (tick only tools you have used)'));
   const pick = name => {
     const option = element('label'); const tick = element('input');
-    tick.type = 'checkbox'; tick.value = name; tick.name = 'skill_suggestion';
+    tick.type = 'checkbox'; tick.value = name; tick.name = box.lines ? 'line_suggestion' : 'skill_suggestion';
     option.append(tick, ' ' + name);
     return option;
   };
@@ -721,6 +724,13 @@ function skillSuggestions(question, field) {
 
 function addTickedSkills(form) {
   for (const box of form.querySelectorAll('.auto-picks')) {
+    if (box.lines) {
+      const ticked = [...box.querySelectorAll('input[type=checkbox]:checked')].map(item => item.value);
+      const kept = box.target.value.split('\n').map(line => line.trim()).filter(Boolean);
+      const fresh = ticked.filter(line => !kept.includes(line));
+      if (fresh.length) box.target.value = [...kept, ...fresh].join('\n');
+      continue;
+    }
     const typed = box.target.value.split(',').map(item => item.trim()).filter(Boolean);
     const have = new Set(typed.map(item => item.toLowerCase()));
     const ticked = [...box.querySelectorAll('input[type=checkbox]:checked')].map(item => item.value)
@@ -746,8 +756,8 @@ function chosenCertifications(form) {
   return [...new Set([...ticked, ...typed])];
 }
 
-// Suggested projects: never resume content until the candidate confirms the card. Like the drafted work lines,
-// each starts included as an AI draft; the candidate edits it or chooses Skip, then confirms once.
+// Suggested projects: never resume content until the candidate confirms the card. Each starts undecided: the
+// candidate chooses "I built this" (and may edit it) or Skip, then confirms once.
 // The background (problem, architecture, features) stays folded so the card is short on a phone.
 function proposalCards(job) {
   return job.proposals.map((proposal, index) => {
@@ -775,7 +785,7 @@ function proposalCards(job) {
     for (const [value, text] of [['include', 'I built this: include it'], ['skip', 'Skip']]) {
       const option = element('label'); const radio = element('input');
       radio.type = 'radio'; radio.name = 'decision-' + index; radio.value = value;
-      radio.checked = value === 'include';
+      radio.checked = false;  // no default: each suggested project is included only by an explicit choice
       option.append(radio, ' ' + text); choice.append(option);
     }
     card.append(nameLabel, stackLabel, bulletsLabel, choice, ...(facts.children.length ? [about] : []));

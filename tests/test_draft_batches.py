@@ -67,7 +67,9 @@ class DraftBatchTests(unittest.TestCase):
         model = Model()
         with patch('resume_bot.generate.generate', model):
             work, _ = draft_role_content(candidate(2), target(), 'Java Backend Developer', 3, [0, 1], False, object())
-        self.assertTrue(all([job['index'] for job in facts['jobs_to_draft']] == [0, 1] for facts in model.asked))
+        # The shared attempts draft both jobs together; only a job still short is then asked alone.
+        self.assertEqual([job['index'] for job in model.asked[0]['jobs_to_draft']], [0, 1])
+        self.assertTrue(all(len(facts['jobs_to_draft']) == 1 for facts in model.asked[3:]))
         self.assertEqual(sorted(work), [0, 1])
 
     def test_a_line_differing_from_another_job_only_in_its_generic_ending_is_offered_once(self):

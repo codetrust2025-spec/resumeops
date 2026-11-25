@@ -397,13 +397,16 @@ class PageTests(unittest.TestCase):
                     self.assertIn('Java Backend Developer', item.locator('.auto-role').inner_text())
                     self.assertIn('unconfirmed AI draft', item.inner_text())
                     cards = item.locator('.auto-proposal')
-                    # Like the drafted work lines, each suggestion starts included; its background stays folded.
+                    # Each suggestion starts undecided (included only by an explicit choice); its background stays
+                    # folded.
                     for index in range(2):
-                        self.assertTrue(cards.nth(index).get_by_label('I built this: include it').is_checked())
+                        self.assertFalse(cards.nth(index).get_by_label('I built this: include it').is_checked())
+                        self.assertFalse(cards.nth(index).get_by_label('Skip').is_checked())
                         self.assertTrue(cards.nth(index).locator('dl').is_hidden(), 'background folded on a phone')
                     cards.nth(0).get_by_text('About this project').click()
                     self.assertTrue(cards.nth(0).locator('dl').is_visible())
                     cards.nth(0).locator('[name=name]').fill('Order Tracking Service')
+                    cards.nth(0).get_by_label('I built this: include it').check()
                     cards.nth(1).get_by_label('Skip').check()
                     with page.expect_response(lambda r: r.url.endswith('/api/automation/projects')) as saved:
                         item.get_by_role('button', name='Save project choices').click()

@@ -56,7 +56,8 @@ class FullLineCount(unittest.TestCase):
             return {'roles': [{'index': 0, 'bullets': replies.pop(0)}], 'skills': []}
         with patch('resume_bot.generate.generate', model):
             work, _ = draft_role_content(arun(), role('GCP Data Engineer'), 'GCP Data Engineer', 3, [0], False, object())
-        self.assertEqual(len(prompts), 3)
+        # Three shared attempts, then the job alone (the model gives nothing more here): the pooled lines stay.
+        self.assertEqual(len(prompts), 4)
         self.assertEqual(work[0], GCP_LINES[:6], 'the lines of all three attempts (two after one retry, before)')
 
     def test_a_fill_line_loses_its_generic_ending(self):
@@ -93,7 +94,8 @@ class ProjectBullets(unittest.TestCase):
     def test_a_short_proposal_is_completed_to_five_checked_bullets(self):
         kept, prompts = self.propose([depth.ProposalTests.SHORT, depth.ProposalTests.THIRD],
                                      {'projects': [{'index': 0, 'bullets': self.MORE}, {'index': 1, 'bullets': []}]})
-        self.assertEqual(len(prompts), 2)
+        # The top-up, then one more round for the project still under four points (no answer: it keeps its three).
+        self.assertEqual(len(prompts), 3)
         self.assertIn('"existing_bullets"', prompts[1])
         microservices = kept[0]
         self.assertEqual(len(microservices['bullets']), 5)

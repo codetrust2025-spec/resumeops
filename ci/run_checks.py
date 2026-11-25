@@ -13,6 +13,11 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# Checks never reach a real Ollama: CI runs on the same PC as production, whose GPU serves resumes. A model call a
+# test forgot to stub fails fast here (connection refused) instead of generating on the shared GPU. Checks that
+# need a model start their own fake server and pass its URL explicitly (dashboard/check_live.py).
+import os  # noqa: E402
+os.environ['OLLAMA_URL'] = 'http://127.0.0.1:9'
 SLOW_UNIT_MODULES = {'test_live_progress', 'test_acceptance'}
 CHECKS = {
     'live': [['check_live.py']],
