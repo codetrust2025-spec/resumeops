@@ -141,7 +141,10 @@ class AutomationContract(unittest.TestCase):
                     patch('resume_bot.generate.catalog_skill_suggestions', return_value=[]), \
                     patch('resume_bot.generate.fits_role', return_value=True), \
                     patch('resume_bot.generate.technical_job', return_value=False), \
+                    patch('resume_bot.generate.generate', return_value={}), \
                     patch('resume_bot.automation.generate', side_effect=[OllamaError('transient'), {}]):
+                # Every model call is stubbed (drafts and project suggestions answer nothing): a check never reaches the
+                # real Ollama on the shared GPU.
                 with closing(jobs.connection()) as db:
                     job = db.execute('SELECT * FROM automation').fetchone()
                 jobs._prepare(job)

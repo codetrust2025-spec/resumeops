@@ -213,8 +213,10 @@ class EmployerDateOnlyTests(unittest.TestCase):
             self.assertIn('work lines from your employers and dates', result['error'])
 
             # AI skill suggestions start unticked: the operator ticks them (automation.js adds ticked ones to the box).
+            # The candidate ticks every suggestion (skills, and work lines that use role tools they have not listed).
             answers = {q['id']: ', '.join(filter(None, [q['value'], *(q.get('suggestions') or [])]))
-                       if q['field'] == 'skills' else q['value'] for q in questions}
+                       if q['field'] == 'skills' else '\n'.join(filter(None, [q['value'], *(q.get('suggestions') or [])]))
+                       for q in questions}
             jobs.answer(owner, identity, answers, [{'include': True}, {'include': False}])
             prepare()
             result = jobs.list(owner, identity)[0]

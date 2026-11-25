@@ -106,7 +106,8 @@ class DraftRoleContentTests(unittest.TestCase):
             work, skills = draft_role_content(cloud, GCP, 'GCP Cloud Engineer', 5, [0, 1], True, object())
         self.assertEqual(len(work[0]), 3)
         self.assertNotIn('React', ' '.join(work[0]))
-        self.assertNotIn(1, work, 'one acceptable line is not enough to draft a job')
+        self.assertEqual(work[1], ['Maintained Docker images for build agents running on Google Cloud.'],
+                         'an acceptable draft is offered: the candidate is never left to write the job alone')
         self.assertIn('Terraform', skills)
         self.assertNotIn('React.js', skills)
 
@@ -239,13 +240,21 @@ class ReviewOnceTests(unittest.TestCase):
         job = self.jobs.list(OWNER)[0]
         # Two stated skills: the role's skills catalog is offered too, unticked, in the same review.
         self.assertEqual([q['id'] for q in job['questions']], ['experience.0.bullets', 'experience.1.bullets', 'skills'])
-        self.assertFalse(any(q['drafted'] for q in job['questions'][:2]), 'drafts using unstated tools are discarded')
+        # Drafts using unstated tools (HTML, CSS, Cloud Run, Angular) and the invented metric are discarded; the two
+        # drafts using only the candidate's own React.js and TypeScript are offered rather than an empty box.
+        self.assertEqual(job['questions'][0]['value'].splitlines(), [
+            'Integrated REST APIs into React.js pages with shared TypeScript types for order tracking screens.',
+            'Built reusable React.js components with TypeScript for internal dashboards and forms.'])
+        # Every draft for this job names tools the candidate has not listed (Angular, JavaScript): nothing is
+        # pre-filled; the drafts are unticked suggestions, printed only if ticked.
+        self.assertEqual(job['questions'][1]['value'], '')
+        self.assertTrue(job['questions'][1]['suggestions'])
+        self.assertTrue(all('Angular' in line or 'JavaScript' in line for line in job['questions'][1]['suggestions']))
         self.assertEqual(job['questions'][2]['value'], 'React.js, TypeScript')
         self.assertIn('Next.js', job['questions'][2]['suggestions'])
         # The skills box already holds the candidate's skills: the message asks to tick others, not to add skills.
         self.assertIn('Tick any other skills you have used.', job['error'])
         self.assertNotIn('Add your skills', job['error'])
-        self.assertEqual(job['questions'][0]['value'], '')
         self.assertEqual([p['name'] for p in job['proposals']], ['Practice Catalogue', 'Practice Planner'])
         self.assertIn('confirm once', job['error'])
 
@@ -283,8 +292,10 @@ class ReviewOnceTests(unittest.TestCase):
                 patch('resume_bot.generate.propose_projects', return_value=[]) as projects, \
                 patch('resume_bot.automation.generate', return_value={}):
             self.jobs._prepare(self.row())
-        self.assertTrue(draft.call_args.kwargs['grounded'])
-        self.assertTrue(projects.call_args.kwargs['grounded'])
+        # Drafts and projects may use the role's catalog tools (grounded=False); a line using a tool the candidate has
+        # not listed arrives unticked and a project undecided, so neither is trusted without confirmation.
+        self.assertFalse(draft.call_args.kwargs['grounded'])
+        self.assertFalse(projects.call_args.kwargs['grounded'])
         self.assertNotIn('Kafka', projects.call_args.args[0]['skills'])
         self.assertEqual(set(projects.call_args.args[0]['skills']), {'React.js', 'TypeScript'})
         self.assertIsNone(self.row()['job'], 'suggestions never publish without confirmation')

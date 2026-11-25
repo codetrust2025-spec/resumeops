@@ -1326,6 +1326,7 @@ def propose_projects(profile, target, role_title, years, ai, on_progress=None, a
 
 
 PROJECT_BULLETS = 5
+PROJECT_MIN_BULLETS = 4
 TOP_UP_SCHEMA = {
     'type': 'object', 'additionalProperties': False, 'required': ['projects'],
     'properties': {'projects': {'type': 'array', 'maxItems': 3, 'items': {
@@ -1336,12 +1337,21 @@ TOP_UP_SCHEMA = {
 
 
 def _top_up_projects(proposals, profile, role_title, ai, avoid=(), on_progress=None):
-    """A proposal kept with fewer than PROJECT_BULLETS bullets is asked once for the missing ones, about parts of
-    the project its bullets do not cover yet. Every added bullet passes the same checks as the first ones; when the
+    """A proposal kept with fewer than PROJECT_BULLETS bullets is asked for the missing ones (up to three rounds while
+    one has fewer than PROJECT_MIN_BULLETS), about parts of the project its bullets do not cover yet. Every added bullet passes the same checks as the first ones; when the
     model gives nothing usable the proposal keeps its bullets (never fewer: a proposal is never lost to this)."""
-    short = [i for i, p in enumerate(proposals) if len(p['bullets']) < PROJECT_BULLETS]
-    if not short:
-        return
+    for turn in range(3):
+        short = [i for i, p in enumerate(proposals) if len(p['bullets']) < PROJECT_BULLETS]
+        # A project is shown with 4-5 points (the resume standard): asked again while one has fewer than four.
+        if not short or (turn and all(len(proposals[i]['bullets']) >= PROJECT_MIN_BULLETS for i in short)):
+            return
+        before = sum(len(p['bullets']) for p in proposals)
+        _top_up_round(proposals, short, profile, role_title, ai, avoid, on_progress)
+        if sum(len(p['bullets']) for p in proposals) == before:
+            return  # nothing usable came back: asking again would not help
+
+
+def _top_up_round(proposals, short, profile, role_title, ai, avoid, on_progress):
     asked = [{'index': i, 'name': proposals[i]['name'], 'stack': proposals[i]['stack'],
               'existing_bullets': proposals[i]['bullets'], 'bullets_wanted': PROJECT_BULLETS - len(proposals[i]['bullets'])}
              for i in short]
@@ -1592,13 +1602,16 @@ def draft_role_content(profile, target, role_title, years, missing, need_skills,
     # Two retries, told why lines were rejected, for jobs still short of detailed lines: with one retry the local
     # model sometimes left a job at four of its seven lines.
     failed = False
-    for attempt in range(3):
+    # Then two more, one job per request, for a job still short of its lines (seen: three of seven after three
+    # shared attempts): asked alone, the model writes for that job's own focus instead of the other job's.
+    for attempt in range(5):
         if failed or (not pending and not (need_skills and not skills)):
             break
         rejected = set()
         # At most two jobs per request: asked for four jobs (about 29 lines) at once, the local model left the oldest
         # job without a single usable line. (Shown the other jobs' lines, it copied them, so it is not.)
-        for batch in [pending[start:start + 2] for start in range(0, len(pending), 2)] or [[]]:
+        size = 2 if attempt < 3 else 1
+        for batch in [pending[start:start + size] for start in range(0, len(pending), size)] or [[]]:
             ask_skills = need_skills and not skills
             # Only the candidate's skills that fit the role: another field's tools never enter the role's work lines.
             # A retry sees the lines already kept, so it adds different work instead of repeating it.
@@ -1717,10 +1730,14 @@ def draft_role_content(profile, target, role_title, years, missing, need_skills,
                                   or _same_task(line, taken))
         strong = [line for line in lines if not draft_weakness(line) and fresh(line)][:room]
         # A fill line loses a generic ending ("..., ensuring data integrity."): the work it names stays.
+        # Never padding: a weaker line is used only while the job has fewer than three, never to reach the full count
+        # (fewer, well-supported lines are better than invented duties).
         fill = [line for line in (without_generic_tail(line) for line in lines if draft_weakness(line))
-                if fresh(line) and not _near_duplicate(line, strong)][:max(0, room - len(strong))]
+                if fresh(line) and not _near_duplicate(line, strong)][:max(0, min(room, 3) - len(strong))]
         chosen = strong + fill
-        if len(chosen) >= min(3, room):
+        # Every acceptable draft is offered, even one or two: a job left without drafts asks the candidate to write
+        # their own lines, which ResumeOps never needs them to do.
+        if chosen:
             work[role['index']] = chosen
             taken.extend(chosen)
     if need_skills and work:

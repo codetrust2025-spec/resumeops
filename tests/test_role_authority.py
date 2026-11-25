@@ -220,8 +220,11 @@ class AcceptanceCases(unittest.TestCase):
         job = self.jobs.list(OWNER, ident)[0]
         self.assertEqual(job['status'], 'needs_input')
         self.assertTrue(any(q['field'] == 'skills' for q in job['questions']))
-        self.assertFalse(any(q['field'] == 'bullets' and q['drafted'] for q in job['questions']))
-        self.assertEqual(job['proposals'], [])
+        # Nothing the role suggests is pre-filled as the candidate's work: Java lines are unticked suggestions and
+        # projects undecided, and nothing is published before the review.
+        work = [q for q in job['questions'] if q['field'] == 'bullets']
+        self.assertTrue(all(not q['value'] for q in work))
+        self.assertTrue(any(q.get('suggestions') for q in work))
         enqueue.assert_not_called()
 
     def test_a_regenerated_resume_gets_work_lines_for_the_new_role(self):
@@ -341,9 +344,8 @@ class DraftQualityTests(unittest.TestCase):
         self.assertEqual(len(prompts), 3, 'a job still short of its lines is asked twice more')
         self.assertIn('previous draft was rejected', prompts[1])
         self.assertIn('Configured Cloud Composer to automate ETL processes', prompts[1], 'the retry sees kept lines')
-        # The current job is drafted to eight lines: the five detailed lines first, the thinner ones fill it up.
-        self.assertEqual(lines[:5], GCP_DRAFTS[:5])
-        self.assertEqual(lines[5:], self.FILLED)
+        # The five detailed lines; thinner ones are never used to pad a job up to eight (only to reach three).
+        self.assertEqual(lines, GCP_DRAFTS[:5])
 
     def test_short_or_vague_lines_still_fill_the_job_when_nothing_better_comes(self):
         lines, prompts = self.draft(self.WEAK, self.WEAK)

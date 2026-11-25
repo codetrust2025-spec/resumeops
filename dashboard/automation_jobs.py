@@ -696,7 +696,15 @@ class AutomationJobs:
         work (``carry``) are not shown beside the drafts: they stay in the stored facts for other roles and are
         never printed on this role's resume."""
         entry = facts['experience'][index]
-        carry = [line for line in carry if line in (entry.get('bullets') or [])] if lines else []
+        # A draft naming only tools the candidate listed (or none) is pre-filled for them to keep or edit; a draft
+        # naming a role tool they have not listed is a suggestion, unticked, printed only if they tick it.
+        from resume_bot.generate import evidence_tools, named_tools
+        from resume_bot.workflow import matched_terms
+        listed = {tool.casefold() for tool in evidence_tools(facts)}
+        unlisted = lambda line: [t for t in matched_terms(named_tools(), line) if t.casefold() not in listed]  # noqa: E731
+        suggested = [line for line in lines or [] if unlisted(line)]
+        lines = [line for line in lines or [] if not unlisted(line)]
+        carry = [line for line in carry if line in (entry.get('bullets') or [])] if (lines or suggested) else []
         own = [line for line in entry.get('bullets') or [] if line not in carry]
         place = ' at ' + entry['company'] if entry.get('company') else ''
         dates = ' - '.join(value for value in (entry.get('start'), entry.get('end')) if value)
@@ -710,10 +718,16 @@ class AutomationJobs:
                        'confirm them.' + (' Your lines about other work are kept for other roles.' if carry else '')
                        if lines else 'In your own simple words, what did you do? One line each. Leave '
                        'it empty to list this job without details.')
+        if suggested:
+            explanation = (explanation if lines else f'AI suggested {label} lines from your '
+                           + ('job title and dates.' if entry.get('position') else 'employer and dates.')) + \
+                ' Lines that use tools you have not listed are suggestions: tick only work you actually did.'
         question = {'id': f'experience.{index}.bullets', 'section': 'experience', 'entry': index, 'field': 'bullets',
-                    'drafted': bool(lines), 'value': '\n'.join([*own, *(lines or [])]),
-                    'label': title + (' (AI draft)' if lines else ''),
+                    'drafted': bool(lines or suggested), 'value': '\n'.join([*own, *(lines or [])]),
+                    'label': title + (' (AI draft)' if lines or suggested else ''),
                     'explanation': explanation}
+        if suggested:
+            question['suggestions'] = suggested
         if carry:
             question['carry'] = carry
         return question
@@ -1304,8 +1318,10 @@ class AutomationJobs:
             questions = []
             if missing or need_skills or breadth:
                 progress(28, f'AI drafting {label} content for your review')
+                # Drafts may use the role's catalog tools: a line naming a tool the candidate has not listed is never
+                # pre-filled, it arrives as an unticked suggestion (_draft_question), so it is printed only when ticked.
                 work, skills = draft_role_content(facts, target, label, years, missing, need_skills, model,
-                                                  draft_progress, grounded=True)
+                                                  draft_progress, grounded=False)
                 # A job without lines is always asked about; a thin job that already has lines only when there are
                 # drafts to review (asking it again with nothing new would be an unnecessary question).
                 questions = [self._draft_question(facts, index, work.get(index), label,
@@ -1345,7 +1361,7 @@ class AutomationJobs:
                             facts, target, label, years,
                             model, proposal_progress,
                             avoid=[*(line for entry in facts['experience'] for line in entry['bullets']),
-                                   *(line for lines in work.values() for line in lines)], grounded=True))
+                                   *(line for lines in work.values() for line in lines)], grounded=False))
                 checkpoints.update(draft=facts, questions=questions)
                 if proposals:
                     checkpoints['proposals'] = proposals
@@ -1398,7 +1414,7 @@ class AutomationJobs:
                     proposals = checkpoint('proposals_made', propose_projects(
                         facts, {'role': intelligence['role'], 'keywords': intelligence['terms']},
                         intelligence['label'], years, model, proposal_progress,
-                        avoid=[line for entry in facts['experience'] for line in entry['bullets']], grounded=True))
+                        avoid=[line for entry in facts['experience'] for line in entry['bullets']], grounded=False))
                 if proposals:
                     # Suggestions are never resume content until the candidate confirms them.
                     checkpoints['proposals'] = proposals
