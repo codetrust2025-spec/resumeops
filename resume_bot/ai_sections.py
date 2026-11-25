@@ -119,6 +119,11 @@ def unsaid(line, lines, allowance=0):
     return gone if len(gone) > allowance else []
 
 
+def stated_in(line, others):
+    """Another single line says everything ``line`` says (in any wording): leaving ``line`` out loses nothing."""
+    return any(not unsaid(line, [other]) and not coverage([line], [other]) for other in others)
+
+
 def _same_task(line, others):
     """The same kind of work with the same technology, in other words (generate._same_task)."""
     from .generate import _same_task as same
@@ -173,8 +178,9 @@ LINE_RULES = (
 def write_experience(job, avoid, role_title, ai, on_progress=None):
     """One job's lines, rewritten and deduplicated by Ollama. Returns (lines, problems)."""
     source = [_clean(line) for line in job['bullets'] if _clean(line)]
-    # A line another section already states (a project told as a work line) is left to that section.
-    source = [line for line in source if not repeats(line, avoid)] or source
+    # A line another section states in full (a project point told again as a work line) is left to that section:
+    # nothing it says is lost. A line that only resembles one keeps its place.
+    source = [line for line in source if not stated_in(line, avoid)] or source
     if not source:
         return [], []
     context = '\n'.join([job['company'], job['position'], *source])
@@ -240,7 +246,31 @@ def write_experience(job, avoid, role_title, ai, on_progress=None):
         return list(lines), problems
 
     pool = {'lines': [], 'used': set()}
-    return _ask(ai, prompt, schema, on_progress, check, attempts=3)
+    lines, problems = _ask(ai, prompt, schema, on_progress, check, attempts=3)
+    if lines is not None or not pool['lines']:
+        return lines, problems
+    return keep_as_written(source, pool['lines'], avoid), []
+
+
+def keep_as_written(source, written, avoid=()):
+    """Ollama's checked lines, plus every source line they do not fully say, exactly as confirmed. A written line
+    that only restates part of a source line kept as written is dropped, so nothing appears twice. One line Ollama
+    could not rewrite faithfully never costs the job all its rewritten lines, and no confirmed detail is lost."""
+    written = list(written)
+    kept = set()
+    for _ in range(len(source) + 1):
+        missing = [i for i, line in enumerate(source) if i not in kept and unsaid(line, written + [source[j] for j in kept])]
+        if not missing:
+            break
+        for i in missing:
+            kept.add(i)
+            written = [line for line in written if unsaid(line, [source[i]])]
+    result = [*written, *(source[i] for i in sorted(kept))]
+    out = []
+    for line in result:
+        if not any(not unsaid(line, [other]) and not unsaid(other, [line]) for other in out):
+            out.append(line)
+    return out
 
 
 def split_project(project):
@@ -317,7 +347,7 @@ def write_project(project, avoid, role_title, ai, on_progress=None):
 
     def check(answer):
         points = answer.get('points') if isinstance(answer, dict) else None
-        if not isinstance(points, list) or not points:
+        if not isinstance(points, list) or (not points and not pool):
             return None, ['return a "points" array']
         problems = []
         for point in points:
@@ -354,7 +384,52 @@ def write_project(project, avoid, role_title, ai, on_progress=None):
             return join_project(name, stack, kept), []  # complete: the invalid extras were simply not used
         return join_project(name, stack, kept), problems
 
-    return _ask(ai, prompt, schema, on_progress, check, attempts=3)
+    written, problems = _ask(ai, prompt, schema, on_progress, check, attempts=3)
+    if not problems:
+        return written, []
+    # Repair: each task no point covers yet gets its own small request (one point for exactly that task), so one
+    # missing task never sends the whole project back to its paragraph.
+    schema_one = {'type': 'object', 'additionalProperties': False, 'required': ['point'],
+                  'properties': {'point': {'type': 'string'}}}
+    for task in gaps(pool)[0]:
+        ask = (f'Write one resume bullet point for the project "{name}" from exactly this task in its text: '
+               f'"{task}". Start with a past-tense action verb; keep the words of the task and the tools it names; add '
+               'nothing else. Return JSON {"point": string}. PROJECT TEXT: ' + json.dumps(details, ensure_ascii=False))
+        for _ in range(2):
+            try:
+                from . import generate as drafting
+                answer = drafting.generate(ai, ask, schema=schema_one, on_progress=on_progress)
+            except RuntimeError:
+                break
+            text = _clean(_plain(answer.get('point') or '')) if isinstance(answer, dict) else ''
+            if text:
+                text = text[0].upper() + text[1:] + ('' if text.endswith('.') else '.')
+            if text and not additions(' '.join([name, *details]), text, context) and task not in gaps([text])[0]:
+                pool.append(text)
+                break
+    # More points than a project shows (4-5): Ollama joins the two shortest neighbouring points into one; the join
+    # must add nothing and keep every task and fact of both.
+    for _ in range(len(pool)):
+        if len(pool) <= high:
+            break
+        index = min(range(len(pool) - 1), key=lambda i: len(pool[i].split()) + len(pool[i + 1].split()))
+        pair = pool[index:index + 2]
+        ask = ('Join these two resume points of one project into one point that starts with a past-tense action '
+               'verb and keeps every word that carries meaning in both; add nothing. Return JSON {"point": string}.'
+               '\nPOINTS: ' + json.dumps(pair, ensure_ascii=False))
+        try:
+            from . import generate as drafting
+            answer = drafting.generate(ai, ask, schema=schema_one, on_progress=on_progress)
+        except RuntimeError:
+            break
+        text = _clean(_plain(answer.get('point') or '')) if isinstance(answer, dict) else ''
+        if text:
+            text = text[0].upper() + text[1:] + ('' if text.endswith('.') else '.')
+        if (not text or additions(' '.join([name, *details]), text, context) or unsaid(pair[0], [text])
+                or unsaid(pair[1], [text]) or coverage(pair, [text])):
+            break
+        pool[index:index + 2] = [text]
+    return check({'points': []}) if pool else (None, problems)
 
 
 def _skill_key(skill):
@@ -394,14 +469,15 @@ def write_skill_groups(skills, categories, role_title, ai, on_progress=None, cat
             return None, ['return a "groups" array']
         out, seen, problems = [], set(), []
         for group in groups:
-            if not isinstance(group, dict) or group.get('name') not in allowed:
-                problems.append('use only category names from CATEGORIES')
+            if not isinstance(group, dict):
                 continue
+            if group.get('name') not in allowed:  # an unknown name: its skills are placed below like any omitted one
+                group = {**group, 'name': 'Other Skills'}
             items = []
             for item in group.get('items') or []:
                 key = _skill_key(item) if isinstance(item, str) else ''
                 if key not in by_key:
-                    problems.append(f'"{item}" is not one of the given skills')
+                    continue  # never added: only the verified skills are listed
                 elif key not in seen:
                     seen.add(key)
                     items.append(by_key[key])
@@ -411,6 +487,15 @@ def write_skill_groups(skills, categories, role_title, ai, on_progress=None, cat
                     existing['items'].extend(items)
                 else:
                     out.append({'name': group['name'], 'items': items})
+        # A skill Ollama left out is still listed (never dropped): in its catalog category, or Other Skills.
+        for key, skill in by_key.items():
+            if key not in seen:
+                seen.add(key)
+                other = next((g for g in out if g['name'] == 'Other Skills'), None)
+                if other is None:
+                    other = {'name': 'Other Skills', 'items': []}
+                    out.append(other)
+                other['items'].append(skill)
         if catalog:
             from .generate import _category
             # The catalog decides the category of every skill it lists; Ollama's order inside a category stays.
@@ -430,12 +515,28 @@ def write_skill_groups(skills, categories, role_title, ai, on_progress=None, cat
             rest = [item for g in named[MAX_GROUPS - 1:] for item in g['items']] + rest
             out = named[:MAX_GROUPS - 1]
             out.append({'name': 'Other Skills', 'items': rest})
-        left = [skill for key, skill in by_key.items() if key not in seen]
-        if left:
-            problems.append('use every skill: missing ' + ', '.join(left))
+        out = compact_groups(out, catalog)
+        if not out:
+            problems.append('return the skills in groups')
         return out, problems
 
     return _ask(ai, prompt, schema, on_progress, check)
+
+
+def compact_groups(groups, catalog):
+    """No category holding one skill outside the role's own catalog ("Cloud & DevOps: Azure Migrate"): such
+    skills join Other Skills, which comes last. The role's own categories stay even with one skill
+    ("Reporting: Power BI"), and so does Other Skills."""
+    if not catalog:
+        return groups
+    own = set(catalog)
+    stray = [g for g in groups if len(g['items']) == 1 and g['name'] not in own and g['name'] != 'Other Skills']
+    if not stray or len(groups) <= 1:
+        return groups
+    kept = [g for g in groups if g not in stray and g['name'] != 'Other Skills']
+    rest = [item for g in stray for item in g['items']] + [
+        item for g in groups if g['name'] == 'Other Skills' for item in g['items']]
+    return kept + [{'name': 'Other Skills' if kept else 'Skills', 'items': rest}]
 
 
 def _same_words(before, after):
@@ -493,9 +594,9 @@ def write_objective(profile, role_title, brief, ai, on_progress=None):
     starts = {'aim': brief['aim'], 'commitment': brief['commitment'], 'value': brief['value']}
     version = {'type': 'object', 'additionalProperties': False, 'required': list(keys),
                'properties': {key: {'type': 'string'} for key in keys}}
-    # Three different versions in one answer: the validator takes the first that passes.
+    # Several different versions in one answer: the validator takes the first that passes.
     schema = {'type': 'object', 'additionalProperties': False, 'required': ['versions'],
-              'properties': {'versions': {'type': 'array', 'minItems': 3, 'maxItems': 3, 'items': version}}}
+              'properties': {'versions': {'type': 'array', 'minItems': 3, 'maxItems': 5, 'items': version}}}
     # Clause patterns: a small model writes 6-word sentences unless the sentence's shape asks for more.
     prompt = (
         f'Write the rest of the Career Objective of a {role_title} resume. It opens with: "{opening}." '
@@ -504,8 +605,8 @@ def write_objective(profile, role_title, brief, ai, on_progress=None):
         f'of these priorities: {brief["strengths"]}.\n'
         f'"commitment": "{starts["commitment"]} <what you will do well> that <helps whom> <how>."\n'
         f'"value": "{starts["value"]} <way of working> with <whom>, <where or why>."\n'
-        + brief['rules'] + ' Write three clearly different versions. Return JSON '
-        '{"versions": [{"aim": string, "commitment": string, "value": string}, ...3 versions]}.')
+        + brief['rules'] + ' Write five clearly different versions. Return JSON '
+        '{"versions": [{"aim": string, "commitment": string, "value": string}, ...5 versions]}.')
 
     pools = {key: [] for key in keys}  # every sentence Ollama wrote, per slot, across versions and attempts
 
@@ -514,22 +615,46 @@ def write_objective(profile, role_title, brief, ai, on_progress=None):
         if not isinstance(versions, list) or not versions:
             return '', ['return {"versions": [3 versions]}']
         best = None
-        for item in versions[:3]:
+        for item in versions[:5]:
             text, problems = one(item)
             if not problems:
                 return text, []
             if best is None or len(problems) < len(best[1]):
                 best = (text, problems)
+        return combine() or best
+
+    screened = {}
+
+    def tidy(part):
+        """Formatting only: plain punctuation (curly quotes, dashes), a capital first letter, the pronoun "I"."""
+        from .generate import plain
+        part = _clean(plain(part or ''))
+        if not part:
+            return ''
+        part = re.sub(r"\bi\b", 'I', part[0].upper() + part[1:])
+        return part if part.endswith('.') else part + '.'
+
+    def clean(sentence):
+        """A sentence with nothing the validator objects to in itself (forbidden words, claimed qualities, named
+        tools): only its length and the paragraph's shape are left for the combination to settle."""
+        if sentence not in screened:
+            problems = check_text(opening + '. ' + tidy(sentence))
+            screened[sentence] = not [p for p in problems if not p.startswith(
+                ('use 40-55 words', 'follow the opening', 'do not repeat phrases'))]
+        return screened[sentence]
+
+    def combine():
         # A small model writes good sentences but cannot count words: its own sentences from different versions,
-        # combined, often meet the length the validator needs. Only whole sentences Ollama wrote are used.
+        # combined, often meet the length the validator needs. Only whole sentences Ollama wrote are used, and only
+        # those that are clean on their own.
         from itertools import product
-        combos = sorted(product(*(pools[key][:6] for key in keys)),
-                        key=lambda combo: abs(47 - len(' '.join(combo).split())))
-        for combo in combos[:400]:
+        combos = sorted(product(*([x for x in pools[key] if clean(x)][:10] for key in keys)),
+                        key=lambda combo: abs(47 - len(' '.join([opening, *combo]).split())))
+        for combo in combos[:600]:
             text, problems = one(dict(zip(keys, combo)), remember=False)
             if not problems:
                 return text, []
-        return best
+        return None
 
     def one(answer, remember=True):
         if not isinstance(answer, dict):
@@ -539,19 +664,30 @@ def write_objective(profile, role_title, brief, ai, on_progress=None):
                 value = _clean(answer.get(key))
                 if value and value not in pools[key]:
                     pools[key].append(value)
-        from .generate import plain
-        # Formatting only: plain punctuation (curly quotes, dashes), a capital first letter and the pronoun "I".
-        parts = [_clean(plain(answer.get(key) or '')) for key in keys]
-        parts = [re.sub(r"\bi\b", 'I', part[0].upper() + part[1:]) for part in parts if part]
-        parts = [part if part.endswith('.') else part + '.' for part in parts]
-        text = ' '.join([opening + '.', *parts])
+        parts = [part for part in (tidy(answer.get(key)) for key in keys) if part]
+        text =' '.join([opening + '.', *parts])
         problems = check_text(text) if len(parts) == 3 else ['write every part']
         count = len(text.split())
         problems = [f'{problem}: yours has {count} words' if problem.startswith('use 40-55 words') else problem
                     for problem in problems]
         return text, problems
 
-    return _ask(ai, prompt, schema, on_progress, check, attempts=3)
+    text, problems = _ask(ai, prompt, schema, on_progress, check, attempts=3)
+    if not problems or not any(pools.values()):
+        return text, problems
+    # Repair: the clean sentences rewritten to a steady length by Ollama, same meaning and opening words.
+    ask = ('Rewrite each sentence of this Career Objective so that each has 13-17 words. Keep its meaning, its '
+           'first words and the first person; add no tools, employers, numbers or claims of work done. '
+           + brief['rules'] + ' Write five versions. Return JSON {"versions": [{"aim": string, "commitment": '
+           'string, "value": string}, ...]}.\nSENTENCES: ' + json.dumps(
+               {key: next((x for x in pools[key] if clean(x)), pools[key][0] if pools[key] else '') for key in keys},
+               ensure_ascii=False))
+    try:
+        from . import generate as drafting
+        repaired = check(drafting.generate(ai, ask, schema=schema, on_progress=on_progress))
+    except RuntimeError:
+        return text, problems
+    return repaired if repaired and not repaired[1] else (text, problems)
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -573,10 +709,14 @@ def write_sections(profile, role, role_title, ai, *, objective=None, on_progress
 
     project_text = [p for project in out.get('projects') or [] for p in split_project(project)[2]]
     for index, job in enumerate(out['experience']):
+        before = [_clean(line) for line in job['bullets']]
         lines, problems = write_experience(job, project_text, role_title, ai, step(f'work lines {index + 1}'))
         if lines and not problems:
             job['bullets'] = lines
         note(f'experience_{index}', problems if job['bullets'] else [], bool(job['bullets']))
+        as_written = [line for line in job['bullets'] if line in before]
+        if as_written and lines and not problems:
+            report['sections'][f'experience_{index}']['kept_as_written'] = len(as_written)
 
     work = [line for job in out['experience'] for line in job['bullets']]
     projects = []
@@ -595,6 +735,8 @@ def write_sections(profile, role, role_title, ai, *, objective=None, on_progress
         out['skill_groups'] = [{**g, 'name': 'Architecture & Practices' if g['name'] == 'Concepts' else g['name']}
                                for g in groups]
         out['skills'] = [item for group in groups for item in group['items']]
+    elif out.get('skill_groups'):
+        out['skill_groups'] = compact_groups(out['skill_groups'], catalog)
     note('skills', problems, bool(out.get('skills')))
 
     education, problems = write_education(out.get('education') or [], ai, step('education'))
@@ -607,7 +749,24 @@ def write_sections(profile, role, role_title, ai, *, objective=None, on_progress
         if text and not problems:
             out['summary'] = text
         note('summary', problems)
+    report['duplicates'] = duplicate_pairs(out)
     return out, report
+
+
+def duplicate_pairs(profile):
+    """Lines in different places that tell the same task in other words (a work line and a project point, or two
+    projects): reported, never removed here, because each still states something the other does not. Lines that
+    state nothing new are already left out where they are written (``stated_in``)."""
+    places = [(f'experience {i}', line) for i, job in enumerate(profile.get('experience') or [])
+              for line in job.get('bullets') or []]
+    places += [(f'project {i}', point) for i, project in enumerate(profile.get('projects') or [])
+               for point in split_project(project)[2]]
+    pairs = []
+    for a, (where_a, line_a) in enumerate(places):
+        for where_b, line_b in places[a + 1:]:
+            if where_a != where_b and (repeats(line_a, [line_b], 0.5) or _same_task(line_a, [line_b])):
+                pairs.append({'a': where_a, 'line_a': line_a, 'b': where_b, 'line_b': line_b})
+    return pairs
 
 
 def rewrite_problems(sources, facts, project_count=None):
@@ -630,7 +789,7 @@ def rewrite_problems(sources, facts, project_count=None):
             reason = additions(' '.join(source), line, context)
             if reason:
                 problems.append(f'job {index}: {reason}')
-        kept = [line for line in source if not repeats(line, project_points)]
+        kept = [line for line in source if not stated_in(line, project_points)]
         lost = coverage(kept, after['bullets'])
         if lost:
             problems.append(f'job {index}: lost source facts ' + ', '.join(lost))
