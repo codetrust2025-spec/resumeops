@@ -58,6 +58,9 @@ def main():
         os.environ.setdefault('RESUMEOPS_GPU_GATE', str(Path(a.inbox).resolve().parent / '.resumeops-gpu'))
     ai=Ollama(a.model,a.ollama_url)
     if a.command=='run':
+        if not a.no_polish or Path(a.input).suffix.lower() != '.json':
+            from .model_settings import ModelSettings
+            ai = ModelSettings(Path.cwd(), ai.model, ai.url).client()
         result=process(a.input,a.output,ai=ai,polish_enabled=not a.no_polish,
                        overleaf=a.overleaf,browser_profile=a.browser_profile,max_pages=a.max_pages)
         print(json.dumps(result,indent=2))
@@ -71,14 +74,10 @@ def watch(a, ai, sleep=None):
     import sqlite3
     import time
     from .model_settings import ModelSettings
-    from .ollama import Ollama
 
     if ai is not None:
-        settings = ModelSettings(Path(a.inbox).resolve().parent, ai.model, ai.url)
-
-        def ai_for_job():
-            model = settings.current()
-            return ai if model == ai.model else Ollama(model, ai.url)
+        settings = ModelSettings(Path(a.inbox).parent.resolve(), ai.model, ai.url)
+        ai_for_job = settings.client
     else:
         ai_for_job = None
     sleep = sleep or time.sleep

@@ -142,7 +142,7 @@ def _clean(value):
     return value.strip().strip('"\'“”‘’').strip().rstrip('.!').strip()
 
 
-def corrections(facts, message, ai=None):
+def corrections(facts, message, ai=None, *, ai_factory=None):
     """Proposed field changes for a correction request. Explicit requests are read exactly ("from A to B", "add
     skill X", "remove skill X"); otherwise the local model maps the request to fields, and every change it names
     is checked against the facts."""
@@ -190,11 +190,14 @@ def corrections(facts, message, ai=None):
             return [{'path': path, 'label': label, 'old': value, 'new': _clean(set_to.group(1))}]
     if ai is not None:
         return _model_corrections(facts, text, values, ai)
+    if ai_factory is not None:
+        return _model_corrections(facts, text, values, ai_factory())
     raise EditError('Say the change exactly, for example "Change the graduation year from 2024 to 2026".')
 
 
 def _model_corrections(facts, text, values, ai):
     from .generate import generate
+    from .ollama import OllamaUnavailableError
     schema = {'type': 'object', 'required': ['edits'], 'additionalProperties': False,
               'properties': {'edits': {'type': 'array', 'maxItems': 8, 'items': {
                   'type': 'object', 'required': ['path', 'new'], 'additionalProperties': False,
@@ -206,6 +209,8 @@ def _model_corrections(facts, text, values, ai):
               + json.dumps(text) + '\nFIELDS: ' + json.dumps(fields, ensure_ascii=False))
     try:
         data = generate(ai, prompt, schema=schema)
+    except OllamaUnavailableError:
+        raise
     except Exception as exc:  # noqa: BLE001 - the user is asked to rephrase
         raise EditError('The AI could not read that request. Say the change exactly, for example '
                         '"Change the graduation year from 2024 to 2026".') from exc

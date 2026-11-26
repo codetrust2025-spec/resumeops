@@ -65,12 +65,21 @@ The watcher retries transient Ollama, MongoDB, browser and build failures with b
 
 ## Ollama model selection
 
-Operators can open **Candidates → Model settings** to choose an installed local Ollama model or restore the
-service default. The choice is shared by the dashboard and watcher and survives restarts. New AI work picks it
-up without a watcher restart. Work already in progress keeps its model, and changing the choice does not
-regenerate published resumes. The dashboard and watcher should share the same data root and Ollama server
+Operators can open **Ollama model** beside **My Resumes** or **Candidates → Model settings**. The selector shows
+installed model sizes and digests and the models currently loaded in Ollama, including reported VRAM. Choose
+an installed local model or restore the service default. The choice is shared by the dashboard and watcher and
+survives restarts. New AI work picks it up without restarting. In-progress jobs keep their recorded model across
+retries, and changing the choice does not regenerate published resumes. Jobs and new build results record the
+model when known. An unavailable selected model or invalid saved preference is reported instead of switching models.
+The dashboard and watcher should share the same data root and Ollama server
 (`OLLAMA_URL`, normally `http://127.0.0.1:11434`). Each service uses its `--model` or `OLLAMA_MODEL` default
 when no override is saved.
+
+Before merging a selector release, run `python ci/check_ollama_models_live.py TAG_A TAG_B` on the RTX laptop
+with two exact installed local model tags and the same `RESUMEOPS_GPU_GATE` directory as the watcher. The
+probe uses a disposable preference and synthetic JSON. Its output records both model digests, persisted
+selections, and nonzero VRAM from Ollama after each inference. Review the selector on loopback staging before
+following the production release steps in `AGENTS.md`.
 
 ## Restarting the watcher after a deployment
 

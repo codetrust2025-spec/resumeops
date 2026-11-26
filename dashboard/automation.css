@@ -485,6 +485,12 @@ li[data-status=blocked] .auto-state strong{background:var(--a-red-bg);color:var(
 
 /* AI Edit */
 .auto-head-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.auto-model-settings{margin:8px 0;color:var(--a-ink);min-width:0;overflow-wrap:anywhere}
+.auto-model-settings summary{cursor:pointer;font-weight:600;width:fit-content;max-width:100%}
+.auto-model-settings form{display:grid;gap:6px;margin-top:8px;max-width:36rem}
+.auto-model-settings select{min-width:0;max-width:100%;font:inherit;padding:8px}
+.auto-model-settings p{margin:0;color:var(--a-muted)}
+.auto-model-settings .auto-head-actions{justify-content:flex-start}
 .auto-edit-dialog{max-width:min(620px,calc(100vw - 24px));width:100%}
 .auto-edit-dialog label{display:grid;gap:5px;font-weight:600;font-size:.9rem}
 .auto-edit-dialog textarea{min-height:52px}

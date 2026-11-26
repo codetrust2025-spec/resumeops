@@ -45,7 +45,7 @@ IMAGES = {'.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.webp'}
 # Measured progress fields written by the watcher (resume_bot/progress.py and pipeline.scan).
 LIVE_FIELDS = ('stage_key', 'stage_label', 'measured', 'units', 'detail', 'started', 'stage_started',
                'activity', 'expected_seconds', 'completed_stages', 'skipped_stages', 'heartbeat',
-               'attempt', 'next_retry', 'failed_stage', 'error_detail', 'ollama_runtime', 'retryable')
+               'attempt', 'next_retry', 'failed_stage', 'error_detail', 'ollama_runtime', 'retryable', 'ai_model')
 
 
 def read_json(path):
@@ -101,6 +101,9 @@ class Workspace:
     @property
     def model(self):
         return self.model_settings.current()
+
+    def ai(self, model=None):
+        return self.model_settings.client(model)
 
     def status(self):
         state = read_json(self.inbox / '.resume-bot-state.json')
@@ -170,9 +173,8 @@ class Workspace:
                     raise ValueError('The Word document could not be read.') from exc
             return read_evidence(path)
 
-    def draft(self, extension, data, report=lambda stage, metrics=None: None):
+    def draft(self, extension, data, report=lambda stage, metrics=None: None, *, model=None):
         from resume_bot.ingest import extract_profile, read_resume_text
-        from resume_bot.ollama import Ollama
 
         report('Reading document')
         with tempfile.TemporaryDirectory(prefix='resume-dashboard-') as directory:
@@ -210,8 +212,8 @@ class Workspace:
             if not 120 <= len(source_text.strip()) <= 75000:
                 raise ValueError('The source needs 120–75,000 characters of readable résumé text.')
             report('Document text ready')
-            report('Extracting candidate details with Ollama')
-            model = Ollama(model=self.model, url=self.model_settings.url)
+            model = self.ai(model)
+            report('Extracting candidate details with Ollama', {'ai_model': model.model})
 
             def measured(metrics):
                 # Count top-level JSON fields as the model actually emits them. This
@@ -225,7 +227,7 @@ class Workspace:
                 report(stage, fields)
             profile = extract_profile(source_text, model, for_review=True, on_progress=measured)
             report('Candidate fields validated')
-            return {'profile': profile, 'source': source_text}
+            return {'profile': profile, 'source': source_text, 'ai_model': model.model}
 
     @staticmethod
     def _tool(arguments):
@@ -292,6 +294,8 @@ class Workspace:
                    'market_sources': approval.get('market_sources', [])}
         if approval.get('automation'):
             content['automation'] = approval['automation']
+        if approval.get('ai_model'):
+            content['ai_model'] = approval['ai_model']
         identity = hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()[:32]
         record = {**content, 'record_id': identity,
                   'recorded_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
@@ -464,19 +468,19 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
 
     import_stages = {}
     import_lock = Lock()
-    def process_draft(extension, data, report):
+    def process_draft(extension, data, report, *, model=None):
         if extension != '.ai':
-            return workspace.draft(extension, data, report)
+            return (workspace.draft(extension, data, report, model=model) if model else
+                    workspace.draft(extension, data, report))
         from resume_bot.ai_first import suggest_sections
         from resume_bot.ai_review import claims_for_review, role_intelligence
-        from resume_bot.ollama import Ollama
         request = json.loads(data)
         candidate = request['candidate']
         evidence = request['source']
         report('Preparing role intelligence')
         intelligence = role_intelligence(candidate['role'], workspace.root)
-        report('Drafting suggestions with Ollama')
-        model = Ollama(model=workspace.model, url=workspace.model_settings.url)
+        model = workspace.ai(model)
+        report('Drafting suggestions with Ollama', {'ai_model': model.model})
 
         def measured(metrics):
             payload = {'phase': metrics['phase'], 'chars': metrics['chars'],
@@ -493,7 +497,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
         draft.update(source=evidence, intelligence=intelligence)
         claims = claims_for_review(draft)
         report('AI suggestions validated')
-        return {**draft, 'claims': claims}
+        return {**draft, 'claims': claims, 'ai_model': model.model}
 
     durable = DurableImports(workspace.root, process_draft)
     automation = AutomationJobs(workspace)
@@ -635,12 +639,19 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                     return self.send_json({'error': 'An operator account is required for this route.'}, 403)
                 from resume_bot.ollama import OllamaError
                 settings = workspace.model_settings
+                response = {'selected': None, 'default': settings.default, 'selection_error': None}
                 try:
-                    installed = settings.installed()
-                except OllamaError:
-                    installed = None
-                return self.send_json({'selected': settings.selected(), 'default': settings.default,
-                                       'installed': installed})
+                    response['selected'] = settings.selected()
+                except OllamaError as exc:
+                    response['selection_error'] = str(exc)
+                for field, query_models in (('models', settings.installed), ('loaded', settings.loaded)):
+                    try:
+                        response[field] = query_models()
+                    except OllamaError:
+                        response[field] = None
+                response['installed'] = ([model['name'] for model in response['models']]
+                                         if response['models'] is not None else None)
+                return self.send_json(response)
             if url.path == '/api/catalog':
                 from resume_bot.workflow import ROLES, TEMPLATES, load_roles
                 load_roles()
@@ -733,6 +744,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             assets = {'/': (homepage, 'text/html'),
                       '/automated': ('automation.html', 'text/html'),
                       '/automation.js': ('automation.js', 'text/javascript'),
+                      '/model-selector.js': ('model-selector.js', 'text/javascript'),
                       '/automation.css': ('automation.css', 'text/css'),
                       '/candidates': ('candidates.html', 'text/html'),
                       '/candidates.js': ('candidates.js', 'text/javascript'),
@@ -761,7 +773,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 data = path.read_bytes()
                 if url.path == '/candidates' and not self.is_operator(request_origin):
                     return self.send_json({'error': 'An operator account is required for this page.'}, 403)
-                if url.path == '/operations':
+                if name in ('operations.html', 'automation.html'):
                     visibility = b'' if self.is_operator(request_origin) else b'hidden'
                     data = data.replace(b'__MODEL_VISIBILITY__', visibility)
                 if url.path in ('/', '/automated', '/operations', '/ai-builder', '/workflow', '/roles', '/candidates'):
@@ -1108,6 +1120,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             """AI Edit for the signed-in account: edit-preview proposes changes (nothing is changed), edit-apply builds
             the approved changes as a new version. A job description may come as text or as a document."""
             from resume_bot.ai_edit import EditError
+            from resume_bot.ollama import OllamaUnavailableError
             owner = self.session_owner(request_origin)
             if not owner:
                 return self.reject_post('Sign in first.')
@@ -1141,6 +1154,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 new_id = automation.edit_apply(owner, identifier, request.get('edits') or [], request.get('keywords'),
                                                request.get('strengths'))
                 return self.send_json({'id': new_id, 'status': 'queued'}, 202)
+            except OllamaUnavailableError as exc:
+                return self.send_json({'error': str(exc)}, 503)
             except EditError as exc:
                 return self.send_json({'error': str(exc)}, 400)
             except (ValueError, UnicodeError, KeyError, TypeError):
@@ -1356,6 +1371,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                     result = workspace.enqueue(json.dumps(payload).encode(), approval={
                         'operation': operation, 'approved_by': account, 'claims': reviewed['approved_claims'],
                         'project_names': reviewed['project_names'],
+                        'ai_model': draft.get('ai_model'),
                         'market_sources': draft.get('intelligence', {}).get('sources', [])})
                     return self.send_json(result, 201 if result['created'] else 200)
                 if self.path == '/api/retry':
@@ -1389,8 +1405,8 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 result = workspace.enqueue(data)
             except (ValueError, UnicodeError) as exc:
                 return self.send_json({'error': str(exc), 'stage': draft_stage}, 400)
-            except OllamaError:
-                return self.send_json({'error': 'Local Ollama extraction failed. Check that the configured model is running and retry.',
+            except OllamaError as exc:
+                return self.send_json({'error': str(exc),
                                        'stage': draft_stage}, 503)
             except OSError:
                 return self.send_json({'error': 'Could not read the document or write to the watcher inbox.',

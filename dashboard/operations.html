@@ -7,6 +7,7 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="stylesheet" href="/dashboard.css">
 <script defer src="/auth.js"></script>
 <script defer src="/dashboard.js"></script>
+<script defer src="/model-selector.js"></script>
 <script defer src="/workflow.js"></script>
 </head>
 <body>
@@ -25,7 +26,9 @@
 <h2 id="ollama-model-title">Ollama model</h2>
 <p>Applies to new AI work across this workspace.</p>
 <form id="ollama-model-form">
-<label for="ollama-model">Model</label><select id="ollama-model" disabled></select>
+<label for="ollama-model">Model</label><select id="ollama-model" aria-describedby="ollama-model-info" disabled></select>
+<p id="ollama-model-info"></p>
+<p id="ollama-model-loaded"></p>
 <div class="candidate-actions"><button type="submit" id="ollama-model-save" disabled>Save model</button><button type="button" id="ollama-model-refresh">Refresh models</button></div>
 <p id="ollama-model-status" role="status">Loading installed models…</p>
 </form>

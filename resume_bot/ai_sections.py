@@ -20,6 +20,7 @@ import copy
 import json
 import re
 
+from .ollama import Ollama, OllamaUnavailableError
 from .polish import INFLATING, NEUTRAL, numbers, stem, tokens, words
 
 VERSION = 'ollama-sections-1'
@@ -45,7 +46,6 @@ def _text(limit):
 
 def _bounded(ai):
     """The same model and server with the section budget (tests pass their own stand-in, used as it is)."""
-    from .ollama import Ollama
     if not isinstance(ai, Ollama) or ai.max_tokens <= SECTION_TOKENS:
         return ai
     return Ollama(ai.model, ai.url, ai.timeout, SECTION_TOKENS, min(ai.deadline, SECTION_DEADLINE), ai.num_ctx)
@@ -169,6 +169,8 @@ def _ask(ai, prompt, schema, on_progress, check, attempts=2):
             # Through resume_bot.generate's binding, the one every other drafting step (and every test) uses.
             from . import generate as drafting
             answer = drafting.generate(_bounded(ai), feedback + prompt, schema=schema, on_progress=on_progress)
+        except OllamaUnavailableError:
+            raise
         except RuntimeError as error:
             return None, [f'Ollama: {error}']
         value, problems = check(answer)
@@ -418,6 +420,8 @@ def write_project(project, avoid, role_title, ai, on_progress=None):
             try:
                 from . import generate as drafting
                 answer = drafting.generate(_bounded(ai), ask, schema=schema_one, on_progress=on_progress)
+            except OllamaUnavailableError:
+                raise
             except RuntimeError:
                 break
             text = _clean(_plain(answer.get('point') or '')) if isinstance(answer, dict) else ''
@@ -439,6 +443,8 @@ def write_project(project, avoid, role_title, ai, on_progress=None):
         try:
             from . import generate as drafting
             answer = drafting.generate(_bounded(ai), ask, schema=schema_one, on_progress=on_progress)
+        except OllamaUnavailableError:
+            raise
         except RuntimeError:
             break
         text = _clean(_plain(answer.get('point') or '')) if isinstance(answer, dict) else ''
@@ -704,6 +710,8 @@ def write_objective(profile, role_title, brief, ai, on_progress=None):
     try:
         from . import generate as drafting
         repaired = check(drafting.generate(_bounded(ai), ask, schema=schema, on_progress=on_progress))
+    except OllamaUnavailableError:
+        raise
     except RuntimeError:
         return text, problems
     return repaired if repaired and not repaired[1] else (text, problems)

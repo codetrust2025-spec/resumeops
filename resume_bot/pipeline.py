@@ -8,7 +8,8 @@ import threading
 import time
 import zipfile
 from pathlib import Path
-from .ollama import Ollama, OllamaError
+from .model_settings import ModelSettings
+from .ollama import OllamaError, OllamaUnavailableError
 from .ingest import ExtractionError, extract_profile, read_resume_text
 from .latex import FIT_LEVELS, render
 from .polish import polish, safe_edit, verify_tailored
@@ -169,7 +170,7 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
     if career_objective:
         layout['career_objective'] = True
     uses_ai = polish_enabled or source.suffix != '.json'
-    ai = (ai or Ollama()) if uses_ai else None
+    ai = (ai or ModelSettings(Path.cwd()).client()) if uses_ai else None
     model_name = getattr(ai, 'model', '') if uses_ai else 'disabled'
     # Preserve v2 project names for the same source and configuration.
     config = json.dumps({'source_sha256': source_digest, 'model': model_name,
@@ -243,7 +244,7 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
 
     profile = original
     audit = {'source': str(original_source.resolve()), 'source_sha256': source_digest,
-             'source_kind': source.suffix, 'ai_model': model_name}
+             'source_kind': source.suffix, 'ai_model': (approval or {}).get('ai_model') or model_name}
     if polish_enabled:
         t.enter('ai', 'Waiting for Ollama to load the model and read the prompt')
         profile, audit['polish'] = polish(
@@ -537,8 +538,12 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
         beater.start()
         job_ai = ai
         try:
-            if ai_for_job is not None:
-                job_ai = ai_for_job()
+            if polish_enabled or candidate.suffix.lower() != '.json':
+                if ai_for_job is not None:
+                    job_ai = ai_for_job(previous.get('ai_model') if same else None)
+                if getattr(job_ai, 'model', None):
+                    with lock:
+                        activity['ai_model'] = job_ai.model
             result = process(candidate, output_root, ai=job_ai, polish_enabled=polish_enabled,
                              overleaf=overleaf, browser_profile=browser_profile, max_pages=max_pages,
                              progress=tracker)
@@ -546,6 +551,10 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
                 continue
             record = {'sha256': digest, 'status': 'ok', 'output': result['output'],
                       'attempt': attempt, 'code_version': CODE_VERSION, **activity}
+            if result.get('model') == 'disabled':
+                record.pop('ai_model', None)
+            elif result.get('model'):
+                record['ai_model'] = result['model']
             print('OK resume processed', flush=True)
         except Exception as exc:
             blocked = isinstance(exc, (OllamaError, OverleafError, BuildError, DatabaseUnavailable,
@@ -564,6 +573,8 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
                 # Not a build-dependency problem: the final fact check refused the resume, so nothing was published.
                 error = ('The resume did not pass the final fact check, so nothing was published. '
                          'It is checked again automatically when ResumeOps is updated.')
+            if isinstance(exc, OllamaUnavailableError):
+                error = str(exc)
             now = time.time()
             awaiting_sign_in = isinstance(exc, OverleafAuthError)
             retryable = not isinstance(exc, DETERMINISTIC + (OverleafAuthError,))

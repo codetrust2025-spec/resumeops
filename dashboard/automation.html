@@ -11,6 +11,7 @@
 <script defer src="/auth.js"></script>
 <script defer src="/recovery.js"></script>
 <script defer src="/automation.js"></script>
+<script defer src="/model-selector.js"></script>
 </head>
 <body class="auto-page">
 <svg class="auto-sprite" aria-hidden="true" focusable="false">
@@ -113,6 +114,16 @@
         <button id="auto-delete-all" type="button" hidden><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg>Delete All</button>
       </div>
     </div>
+    <details id="ollama-model-settings" class="auto-model-settings" __MODEL_VISIBILITY__>
+      <summary id="ollama-model-summary">Ollama model</summary>
+      <form id="ollama-model-form">
+        <label for="ollama-model">Model</label><select id="ollama-model" aria-describedby="ollama-model-info" disabled></select>
+        <p id="ollama-model-info"></p>
+        <p id="ollama-model-loaded"></p>
+        <div class="auto-head-actions"><button type="submit" id="ollama-model-save" disabled>Save model</button><button type="button" id="ollama-model-refresh">Refresh models</button></div>
+        <p id="ollama-model-status" role="status">Loading models…</p>
+      </form>
+    </details>
     <dialog id="auto-compare-dialog" class="auto-dialog auto-edit-dialog" aria-labelledby="auto-compare-title">
       <form method="dialog">
         <h3 id="auto-compare-title">Original vs edited</h3>

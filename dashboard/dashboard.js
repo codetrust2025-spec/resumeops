@@ -24,6 +24,7 @@ function renderJobs() {
   const rows = snapshot.jobs.filter(job => job.name.toLowerCase().includes(query)).map(job => {
     const row = document.createElement('tr');
     const name = text('td', job.name);
+    if (job.ai_model) name.append(text('small', 'Model: ' + job.ai_model, 'sha'));
     if (job.error) name.append(text('small', job.error, 'error'));
     const status = document.createElement('td');
     status.append(pill(job.blocked ? 'Blocked · retrying' : statusLabels[job.status] || job.status, job.status));
@@ -128,80 +129,6 @@ $('filter').addEventListener('input', renderJobs);
 $('output-filter').addEventListener('input', renderRevisions);
 $('log-select').addEventListener('change', loadLog);
 const token = document.querySelector('meta[name=dashboard-token]').content;
-
-function setupModelSelector() {
-  if ($('ollama-model-settings').hidden) return;
-  const select = $('ollama-model');
-  const save = $('ollama-model-save');
-  const reload = $('ollama-model-refresh');
-  const status = $('ollama-model-status');
-  let models;
-
-  function render() {
-    const {selected, default: fallback, installed} = models;
-    const choices = [new Option(`Service default (${fallback})`, '')];
-    for (const model of installed || []) choices.push(new Option(model, model));
-    if (selected && !installed?.includes(selected)) {
-      const unavailable = new Option(`${selected} (unavailable)`, selected);
-      unavailable.disabled = true;
-      choices.push(unavailable);
-    }
-    select.replaceChildren(...choices);
-    select.value = selected || '';
-    status.textContent = `Current model: ${selected || fallback}.`;
-    if (installed === null) status.textContent += ' Ollama is unavailable. Refresh to try again.';
-    else if (!installed.length) status.textContent += ' No local models are installed.';
-    else if (selected && !installed.includes(selected)) status.textContent += ' The saved model is no longer installed.';
-  }
-
-  function setBusy(busy) {
-    reload.disabled = busy;
-    select.disabled = busy || !models || (!models.selected && !models.installed?.length);
-    save.disabled = select.disabled || select.value === (models.selected || '');
-  }
-
-  async function request(init) {
-    const response = await ResumeAuth.call('/api/ollama-model', init);
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'Could not load Ollama model settings.');
-    return result;
-  }
-
-  async function load() {
-    setBusy(true);
-    try {
-      models = await request();
-      render();
-    } catch (error) {
-      status.textContent = error.message;
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  select.addEventListener('change', () => setBusy(false));
-  reload.addEventListener('click', load);
-  $('ollama-model-form').addEventListener('submit', async event => {
-    event.preventDefault();
-    if (save.disabled) return;
-    const model = select.value || null;
-    setBusy(true);
-    try {
-      const result = await request({method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({model})});
-      models.selected = result.selected;
-      render();
-      status.textContent = `Saved. ${status.textContent}`;
-    } catch (error) {
-      status.textContent = error.message;
-    } finally {
-      setBusy(false);
-    }
-  });
-  load();
-}
-
-setupModelSelector();
 
 async function submitFile(path, data, headers) {
   const response = await fetch(path, {method: 'POST', body: data,
