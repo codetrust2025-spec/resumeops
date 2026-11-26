@@ -78,7 +78,6 @@ def private_owner(key):
 class Workspace:
     def __init__(self, root, model="qwen2.5:7b", code_root=None):
         self.root = root.resolve()
-        self.model = model
         self.inbox = self.root / 'inbox'
         self.output = self.root / 'output'
         self.logs = self.root / 'logs'
@@ -94,8 +93,14 @@ class Workspace:
             os.path.normcase(os.path.abspath(str(base))) for base in (self.output, self.output.resolve())))
         self.inbox.mkdir(exist_ok=True)
         sys.path.insert(0, str(code_root.resolve() if code_root else self.root))
+        from resume_bot.model_settings import ModelSettings
         from resume_bot.workflow import normalize_request
+        self.model_settings = ModelSettings(self.root, model)
         self.normalize = normalize_request
+
+    @property
+    def model(self):
+        return self.model_settings.current()
 
     def status(self):
         state = read_json(self.inbox / '.resume-bot-state.json')
@@ -206,7 +211,7 @@ class Workspace:
                 raise ValueError('The source needs 120–75,000 characters of readable résumé text.')
             report('Document text ready')
             report('Extracting candidate details with Ollama')
-            model = Ollama(model=self.model, url='http://127.0.0.1:11434')
+            model = Ollama(model=self.model, url=self.model_settings.url)
 
             def measured(metrics):
                 # Count top-level JSON fields as the model actually emits them. This
@@ -471,7 +476,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
         report('Preparing role intelligence')
         intelligence = role_intelligence(candidate['role'], workspace.root)
         report('Drafting suggestions with Ollama')
-        model = Ollama(model=workspace.model, url='http://127.0.0.1:11434')
+        model = Ollama(model=workspace.model, url=workspace.model_settings.url)
 
         def measured(metrics):
             payload = {'phase': metrics['phase'], 'chars': metrics['chars'],
@@ -625,6 +630,17 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                         managed = None
                 return self.send_json({'roles': list(ROLES.values()), 'status': dict(CATALOG_STATUS),
                                        'file': catalog_path().name, 'managed': managed})
+            if url.path == '/api/ollama-model':
+                if not self.is_operator(request_origin):
+                    return self.send_json({'error': 'An operator account is required for this route.'}, 403)
+                from resume_bot.ollama import OllamaError
+                settings = workspace.model_settings
+                try:
+                    installed = settings.installed()
+                except OllamaError:
+                    installed = None
+                return self.send_json({'selected': settings.selected(), 'default': settings.default,
+                                       'installed': installed})
             if url.path == '/api/catalog':
                 from resume_bot.workflow import ROLES, TEMPLATES, load_roles
                 load_roles()
@@ -745,6 +761,9 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 data = path.read_bytes()
                 if url.path == '/candidates' and not self.is_operator(request_origin):
                     return self.send_json({'error': 'An operator account is required for this page.'}, 403)
+                if url.path == '/operations':
+                    visibility = b'' if self.is_operator(request_origin) else b'hidden'
+                    data = data.replace(b'__MODEL_VISIBILITY__', visibility)
                 if url.path in ('/', '/automated', '/operations', '/ai-builder', '/workflow', '/roles', '/candidates'):
                     data = data.replace(b'__TOKEN__', token.encode('ascii'))
                 return self.send_content(data, mime + '; charset=utf-8')
@@ -984,6 +1003,30 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 ai = None  # the quick prefill stands; the AI reading is skipped while the reader is busy
             return self.send_json({'candidate': candidate, 'ai': ai})
 
+        def save_ollama_model(self):
+            from resume_bot.ollama import OllamaError
+            if self.headers.get_content_type() != 'application/json':
+                return self.send_json({'error': 'Expected JSON.'}, 415)
+            try:
+                size = int(self.headers.get('Content-Length', ''))
+                if not 0 < size <= 4096:
+                    return self.send_json({'error': 'Invalid request size.'}, 413)
+                request = json.loads(self.rfile.read(size))
+                if not isinstance(request, dict) or set(request) != {'model'}:
+                    raise ValueError('Choose a model or restore the service default.')
+            except (ValueError, UnicodeError):
+                return self.send_json({'error': 'Invalid model preference.'}, 400)
+            model = request['model']
+            try:
+                workspace.model_settings.update(model)
+            except ValueError as exc:
+                return self.send_json({'error': str(exc)}, 400)
+            except OllamaError:
+                return self.send_json({'error': 'Ollama is unavailable. Refresh the model list and try again.'}, 503)
+            except OSError:
+                return self.send_json({'error': 'Could not save the model preference.'}, 500)
+            return self.send_json({'selected': model})
+
         def intake_operator_post(self, request_origin):
             from intake import IntakeError
             try:
@@ -1186,7 +1229,7 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
             if (self.path not in ('/api/automation', '/api/automation/answer', '/api/automation/projects',
                                   '/api/automation/regenerate', '/api/automation/delete', '/api/automation/edit-preview',
                                   '/api/automation/edit-apply', '/api/automation/compare', '/api/intake/key',
-                                  '/api/intake/queue', '/api/intake/human-check', '/api/intake/start', '/api/intake/delete', '/api/roles', '/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry', '/api/ai-draft', '/api/ai-review', '/api/ai-queue') or request_origin is None
+                                  '/api/intake/queue', '/api/intake/human-check', '/api/intake/start', '/api/intake/delete', '/api/roles', '/api/queue', '/api/draft', '/api/preview', '/api/keywords/update', '/api/keywords/extract', '/api/retry', '/api/ai-draft', '/api/ai-review', '/api/ai-queue', '/api/ollama-model') or request_origin is None
                     or self.headers.get('Origin') != request_origin
                     or not secrets.compare_digest(self.headers.get('X-Dashboard-Token', ''), token)):
                 return self.reject_post('Request not authorized.')
@@ -1207,6 +1250,10 @@ def handler(workspace, origin, token, phone_origin=None, phone_user=None, *,
                 if not self.is_operator(request_origin):
                     return self.reject_post('An operator account is required for this route.')
                 return self.save_roles()
+            if self.path == '/api/ollama-model':
+                if not self.is_operator(request_origin):
+                    return self.reject_post('An operator account is required for this route.')
+                return self.save_ollama_model()
             if self.path in ('/api/queue', '/api/retry', '/api/ai-queue', '/api/keywords/update') and not self.is_operator(request_origin):
                 return self.reject_post('An operator account is required for this route.')
             drafting = self.path == '/api/draft'

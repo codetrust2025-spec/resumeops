@@ -5,6 +5,7 @@
 <meta name="dashboard-token" content="__TOKEN__">
 <title>ResumeOps</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="stylesheet" href="/dashboard.css">
+<script defer src="/auth.js"></script>
 <script defer src="/dashboard.js"></script>
 <script defer src="/workflow.js"></script>
 </head>
@@ -19,6 +20,15 @@
 <section class="hero">
 <div><h1>Resume operations</h1><p id="heartbeat">Reading watcher status…</p></div>
 <form id="submit"><input type="file" id="candidate" aria-label="Candidate file" required><button type="submit">Import candidate</button><small>Word, PDF, text, images, or candidate JSON</small><progress id="import-progress" aria-label="Import progress" max="100" value="0" hidden></progress><small id="import-stage" role="status" hidden></small><small id="feedback" role="status"></small></form>
+</section>
+<section class="panel workflow" id="ollama-model-settings" aria-labelledby="ollama-model-title" __MODEL_VISIBILITY__>
+<h2 id="ollama-model-title">Ollama model</h2>
+<p>Applies to new AI work across this workspace.</p>
+<form id="ollama-model-form">
+<label for="ollama-model">Model</label><select id="ollama-model" disabled></select>
+<div class="candidate-actions"><button type="submit" id="ollama-model-save" disabled>Save model</button><button type="button" id="ollama-model-refresh">Refresh models</button></div>
+<p id="ollama-model-status" role="status">Loading installed models…</p>
+</form>
 </section>
 <section class="panel review" id="review" hidden>
 <div class="section-head"><h2>Review extracted candidate details</h2><button id="discard" type="button">Discard draft</button></div>
