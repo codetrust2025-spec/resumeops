@@ -17,7 +17,7 @@ import json
 import re
 
 from .ats import CLICHES, FIRST_PERSON, LIST_MARKER
-from .ollama import generate
+from .ollama import OllamaUnavailableError, generate
 from .profile import limit_skill_groups
 from .workflow import ALIASES, ROLES, load_roles, matched_terms
 
@@ -1172,6 +1172,8 @@ def write_summary(profile, role_title, years, keywords, ai, on_progress=None, em
     for _ in range(2):
         try:
             draft = generate(ai, rules + feedback, schema=schema, on_progress=on_progress)
+        except OllamaUnavailableError:
+            raise
         except RuntimeError:
             break
         strengths = draft.get('strengths') if isinstance(draft, dict) and set(draft) == {'strengths'} else None
@@ -1316,6 +1318,8 @@ def propose_projects(profile, target, role_title, years, ai, on_progress=None, a
                       "that name only tools in that project's stack."):
         try:
             data = generate(ai, prompt + retry, schema=PROPOSAL_SCHEMA, on_progress=on_progress)
+        except OllamaUnavailableError:
+            raise
         except Exception:
             return proposals
         proposals = _checked_proposals(data, profile, role, avoid, grounded)[:wanted]
@@ -1367,6 +1371,8 @@ def _top_up_round(proposals, short, profile, role_title, ai, avoid, on_progress)
               + json.dumps({'target_role': role_title, 'projects': asked}, ensure_ascii=False))
     try:
         data = generate(ai, prompt, schema=TOP_UP_SCHEMA, on_progress=on_progress)
+    except OllamaUnavailableError:
+        raise
     except Exception:
         return
     skills, tools = profile.get('skills', []), named_tools()
@@ -1661,6 +1667,8 @@ def draft_role_content(profile, target, role_title, years, missing, need_skills,
                       + json.dumps(facts, ensure_ascii=False) + feedback)
             try:
                 data = generate(ai, prompt, schema=DRAFT_SCHEMA, on_progress=on_progress)
+            except OllamaUnavailableError:
+                raise
             except Exception:  # Ollama problems leave the fields empty; nothing unchecked is ever kept
                 failed = True
                 break

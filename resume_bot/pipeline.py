@@ -8,7 +8,8 @@ import threading
 import time
 import zipfile
 from pathlib import Path
-from .ollama import Ollama, OllamaError
+from .model_settings import ModelSettings
+from .ollama import OllamaError, OllamaUnavailableError
 from .ingest import ExtractionError, extract_profile, read_resume_text
 from .latex import FIT_LEVELS, render
 from .polish import polish, safe_edit, verify_tailored
@@ -169,7 +170,7 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
     if career_objective:
         layout['career_objective'] = True
     uses_ai = polish_enabled or source.suffix != '.json'
-    ai = (ai or Ollama()) if uses_ai else None
+    ai = (ai or ModelSettings(Path.cwd()).client()) if uses_ai else None
     model_name = getattr(ai, 'model', '') if uses_ai else 'disabled'
     # Preserve v2 project names for the same source and configuration.
     config = json.dumps({'source_sha256': source_digest, 'model': model_name,
@@ -243,7 +244,7 @@ def _process(source, original_source, output_root, *, ai, polish_enabled, overle
 
     profile = original
     audit = {'source': str(original_source.resolve()), 'source_sha256': source_digest,
-             'source_kind': source.suffix, 'ai_model': model_name}
+             'source_kind': source.suffix, 'ai_model': (approval or {}).get('ai_model') or model_name}
     if polish_enabled:
         t.enter('ai', 'Waiting for Ollama to load the model and read the prompt')
         profile, audit['polish'] = polish(
@@ -423,7 +424,7 @@ def restart_requested(inbox):
 
 
 def scan(inbox, output_root, *, ai=None, polish_enabled=True, overleaf=False,
-         browser_profile=None, once=False, interval=30, max_pages=2, automate=False):
+         browser_profile=None, once=False, interval=30, max_pages=2, automate=False, ai_for_job=None):
     """Watch the inbox. A ``.resume-bot-restart`` file makes the watcher return between jobs
     (never during one) so its launcher restarts it with the code currently on disk."""
     inbox = Path(inbox).resolve()
@@ -434,11 +435,12 @@ def scan(inbox, output_root, *, ai=None, polish_enabled=True, overleaf=False,
         while True:
             known = _scan_once(inbox, output_root, ai=ai, polish_enabled=polish_enabled,
                                overleaf=overleaf, browser_profile=browser_profile,
-                               max_pages=max_pages)
+                               max_pages=max_pages, ai_for_job=ai_for_job)
             if automate and private_inbox.is_dir() and not restart_requested(inbox):
                 with workspace_lock(private_inbox, '.resume-bot-watch.sqlite3'):
                     _scan_once(private_inbox, private_output, ai=ai, polish_enabled=False,
-                               overleaf=overleaf, browser_profile=browser_profile, max_pages=max_pages)
+                               overleaf=overleaf, browser_profile=browser_profile, max_pages=max_pages,
+                               ai_for_job=ai_for_job)
             if restart_requested(inbox):
                 (inbox / RESTART_FILE).unlink(missing_ok=True)
                 _write_health(inbox, known, restarting=True)
@@ -451,7 +453,7 @@ def scan(inbox, output_root, *, ai=None, polish_enabled=True, overleaf=False,
                 time.sleep(1)
 
 
-def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_profile, max_pages):
+def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_profile, max_pages, ai_for_job=None):
     state = inbox / '.resume-bot-state.json'
     known = _read_json(state) if state.exists() else {}
     database = flush_outbox(output_root)
@@ -470,6 +472,7 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
             fingerprint = _source_digest(candidate)
         except OSError:
             continue  # File is still being copied or was moved out of the inbox.
+        # Keep the launch configuration stable: a preference change must not requeue existing jobs.
         config = (fingerprint, getattr(ai, 'model', ''), polish_enabled, overleaf,
                   str(Path(output_root).resolve()), str(browser_profile), max_pages)
         digest = hashlib.sha256(repr(config).encode('utf-8')).hexdigest()
@@ -533,14 +536,25 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
         beater = threading.Thread(target=beat, name='resume-heartbeat', daemon=True)
         tracker = Tracker(save)
         beater.start()
+        job_ai = ai
         try:
-            result = process(candidate, output_root, ai=ai, polish_enabled=polish_enabled,
+            if polish_enabled or candidate.suffix.lower() != '.json':
+                if ai_for_job is not None:
+                    job_ai = ai_for_job(previous.get('ai_model') if same else None)
+                if getattr(job_ai, 'model', None):
+                    with lock:
+                        activity['ai_model'] = job_ai.model
+            result = process(candidate, output_root, ai=job_ai, polish_enabled=polish_enabled,
                              overleaf=overleaf, browser_profile=browser_profile, max_pages=max_pages,
                              progress=tracker)
             if fingerprint != result['source_sha256']:
                 continue
             record = {'sha256': digest, 'status': 'ok', 'output': result['output'],
                       'attempt': attempt, 'code_version': CODE_VERSION, **activity}
+            if result.get('model') == 'disabled':
+                record.pop('ai_model', None)
+            elif result.get('model'):
+                record['ai_model'] = result['model']
             print('OK resume processed', flush=True)
         except Exception as exc:
             blocked = isinstance(exc, (OllamaError, OverleafError, BuildError, DatabaseUnavailable,
@@ -559,12 +573,14 @@ def _scan_once(inbox, output_root, *, ai, polish_enabled, overleaf, browser_prof
                 # Not a build-dependency problem: the final fact check refused the resume, so nothing was published.
                 error = ('The resume did not pass the final fact check, so nothing was published. '
                          'It is checked again automatically when ResumeOps is updated.')
+            if isinstance(exc, OllamaUnavailableError):
+                error = str(exc)
             now = time.time()
             awaiting_sign_in = isinstance(exc, OverleafAuthError)
             retryable = not isinstance(exc, DETERMINISTIC + (OverleafAuthError,))
             detail = f'{type(exc).__name__}: {exc}'[:300]
             stopped = not retryable or failures + 1 >= MAX_AUTO_ATTEMPTS
-            runtime = ai.runtime() if isinstance(exc, OllamaError) and hasattr(ai, 'runtime') else None
+            runtime = job_ai.runtime() if isinstance(exc, OllamaError) and hasattr(job_ai, 'runtime') else None
             if runtime:
                 LAST_RUNTIME.update(runtime, checked=time.time())
             record = {'sha256': digest, 'status': 'failed', 'blocked': blocked, 'error': error,

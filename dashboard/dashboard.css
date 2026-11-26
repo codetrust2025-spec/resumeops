@@ -4,6 +4,7 @@
 #import-progress{width:100%;height:10px;accent-color:var(--accent)}
 #import-stage{font-variant-numeric:tabular-nums}
 #submit button:disabled{opacity:.65;cursor:wait}
+#ollama-model-info,#ollama-model-loaded{overflow-wrap:anywhere}
 .workflow{padding:16px 20px;margin-bottom:18px}.workflow h2{margin:0 0 8px}.workflow summary{cursor:pointer;font-weight:650}.workflow form{display:grid;gap:10px;margin-top:14px}.candidate-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}.workflow label{display:grid;gap:4px}.workflow label.verify-facts{display:flex;align-items:center}.workflow input:not([type=checkbox]),.workflow textarea,.workflow select{width:100%;padding:7px;background:var(--base);color:var(--cream);border:1px solid var(--line);border-radius:5px}.workflow fieldset{margin:8px 0;border:1px solid var(--line);border-radius:5px}.workflow button{width:fit-content;padding:7px 12px}.workflow .candidate-actions{display:flex;gap:8px;flex-wrap:wrap}.workflow pre{white-space:pre-wrap}#workflow-progress{width:100%;accent-color:var(--accent)}
 
 /* One-panel-at-a-time operations layout: keep controls readable without tall cards. */

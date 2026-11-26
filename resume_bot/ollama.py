@@ -3,11 +3,19 @@ import json
 import os
 import time
 from urllib.request import Request, urlopen
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 
 class OllamaError(RuntimeError):
     pass
+
+
+class OllamaUnavailableError(OllamaError):
+    """The requested model or service could not run the request."""
+
+class OllamaRunnerError(OllamaUnavailableError):
+    """The runner stopped and may accept the same request without streaming."""
+
 
 
 class OllamaLimitError(OllamaError):
@@ -127,8 +135,8 @@ class Ollama:
         except OllamaLimitError:
             raise  # temperature 0: repeating the same request would exhaust the same budget
         except OllamaError as exc:
-            if 'unreachable' in str(exc) and 'refused' in str(exc).lower():
-                raise  # the service is down; a second request cannot help
+            if isinstance(exc, OllamaUnavailableError) and not isinstance(exc, OllamaRunnerError):
+                raise
             # The streamed request failed part-way. Run it once without streaming (the request
             # format used before live progress) and say so instead of inventing progress.
             on_progress({'phase': 'fallback', 'chars': 0, 'chunks': 0, 'elapsed': 0.0,
@@ -160,6 +168,14 @@ class Ollama:
             used = max(int(item.get('prompt_eval_count') or 0), len(prompt) // 4) + int(item.get('eval_count') or 0)
             if used >= num_ctx:
                 raise OllamaBudgetError(f'Ollama context window of {num_ctx} tokens overflowed; output discarded')
+
+        def check_model(item):
+            if not isinstance(item, dict):
+                raise OllamaError('Ollama returned an invalid response.')
+            reported = item.get('model')
+            canonical = lambda name: name if ':' in name.rsplit('/', 1)[-1] else name + ':latest'
+            if reported and (not isinstance(reported, str) or canonical(reported) != canonical(self.model)):
+                raise OllamaUnavailableError(f'Ollama returned a different model than {self.model}.')
         req = Request(self.url + '/api/generate',
                       data=json.dumps(payload).encode('utf8'),
                       headers={'Content-Type':'application/json'},method='POST')
@@ -168,6 +184,9 @@ class Ollama:
             with urlopen(req, timeout=self.timeout) as resp:
                 if not streaming:
                     body = json.load(resp)
+                    check_model(body)
+                    if body.get('error'):
+                        raise OllamaRunnerError(f'Ollama could not run {self.model}.')
                     text = body['response']
                     check_budget(body)
                 else:
@@ -178,8 +197,9 @@ class Ollama:
                         if not line.strip():
                             continue
                         item = json.loads(line)
+                        check_model(item)
                         if item.get('error'):
-                            raise OllamaError('Ollama reported an error during generation')
+                            raise OllamaRunnerError(f'Ollama could not run {self.model}.')
                         piece = item.get('response', '')
                         if piece:
                             parts.append(piece)
@@ -207,7 +227,11 @@ class Ollama:
                                  'elapsed': time.monotonic() - started, **final})
         except OllamaError:
             raise
-        except (URLError,TimeoutError,OSError,ValueError,KeyError,TypeError) as exc:
+        except (URLError, TimeoutError, OSError) as exc:
+            if isinstance(exc, HTTPError) and exc.code == 404:
+                raise OllamaUnavailableError(f'Ollama model {self.model} is unavailable on this server.') from exc
+            raise OllamaUnavailableError(f'Ollama is unreachable or could not run {self.model}. Check the local Ollama service.') from exc
+        except (ValueError,KeyError,TypeError) as exc:
             raise OllamaError(f'Ollama unreachable or invalid response: {exc}') from exc
         try:
             result = json.loads(text)

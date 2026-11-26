@@ -331,7 +331,7 @@ class AutomationJobs:
             # drafts, so a role resume never presents drafted target-role work as employment.
             # source: 'intake' for public candidate submissions, NULL for an account's own (see enqueue).
             # client: a hashed network tag of a public submission, for the per-network limit and fair order.
-            for column in ('notice', 'role', 'candidate', 'facts', 'origin', 'source', 'client'):
+            for column in ('notice', 'role', 'candidate', 'facts', 'origin', 'source', 'client', 'ai_model'):
                 if column not in columns:
                     db.execute(f'ALTER TABLE automation ADD COLUMN {column} TEXT')
             # Who deleted what, and when: one row per Delete or Delete all request, kept when the resumes go (it
@@ -470,6 +470,8 @@ class AutomationJobs:
         if not name:
             return current
         task = state.get(name, {})
+        if not current.get('ai_model') and task.get('ai_model'):
+            current['ai_model'] = task['ai_model']
         state_name = task.get('status')
         current.update(stage=task.get('stage') or 'Waiting for the resume builder',
                        percent=self._watcher_percent(task) if task else 65)
@@ -500,7 +502,7 @@ class AutomationJobs:
         return current
 
     def list(self, owner, identity=None):
-        fields = 'id, status, stage, percent, attempts, next_retry, error, created, updated, job, notice, role, candidate'
+        fields = 'id, status, stage, percent, attempts, next_retry, error, created, updated, job, notice, role, candidate, ai_model'
         with closing(self.connection()) as db:
             rows = db.execute(f"SELECT {fields}, CASE status WHEN 'needs_input' THEN checkpoints END AS waiting, "
                               "facts IS NOT NULL AS regenerable, CASE WHEN json_valid(payload) THEN json_extract(payload, '$.edited_from') END AS edited_from "
@@ -855,7 +857,6 @@ class AutomationJobs:
         """AI Edit: the proposed changes for one resume (named in the request, or chosen), for approval. Nothing is
         changed here. A correction request and a job description can be given together."""
         from resume_bot.ai_edit import EditError, corrections, role_change, select_resume, tailor
-        from resume_bot.ollama import Ollama
         message, jd = ' '.join(str(message or '').split())[:2000], str(jd or '')[:20000]
         if not message and not jd.strip():
             raise EditError('Describe the correction, or paste a job description.')
@@ -888,7 +889,12 @@ class AutomationJobs:
             result['edits'].append(retarget)  # regeneration for another role, through the same approval and apply
         elif message and not (jd.strip() and not re.search(r'\b(?:change|update|correct|fix|set|replace|add|remove|'
                                                             r'delete)\b', message, re.I)):
-            result['edits'] += corrections(facts, message, Ollama(model=self.workspace.model))
+            def edit_model():
+                model = self.workspace.ai()
+                result['ai_model'] = model.model
+                return model
+
+            result['edits'] += corrections(facts, message, ai_factory=edit_model)
         if not result['edits'] and not result['keywords']:
             raise EditError('No change to propose: the resume already matches.')
         return result
@@ -1121,7 +1127,7 @@ class AutomationJobs:
         from resume_bot.workflow import ROLES
         from resume_bot.workflow import matched_terms
         from resume_bot.facts_quality import normalize_facts
-        from resume_bot.ollama import Ollama, OllamaError
+        from resume_bot.ollama import OllamaError, OllamaUnavailableError
 
         key = (job['owner'], job['id'])
         # A candidate's application (started by the operator, who confirms the drafts on the candidate's behalf):
@@ -1136,7 +1142,6 @@ class AutomationJobs:
         enough_projects = lambda facts: len([p for p in all_projects(facts)
                                              if split_project(p)[1] and len(split_project(p)[2]) >= 3]) >= 2
         checkpoints = json.loads(job['checkpoints'])
-        model = Ollama(model=self.workspace.model)
         request = json.loads(job['payload'])
         updated = lambda: time.time()
 
@@ -1231,6 +1236,10 @@ class AutomationJobs:
                     return
             if source is None:
                 source = checkpoint('source', extract())
+            model = self.workspace.ai(job['ai_model'] if 'ai_model' in job.keys() else None)
+            with closing(self.connection()) as db, db:
+                db.execute('UPDATE automation SET ai_model=COALESCE(ai_model,?) WHERE owner=? AND id=?',
+                           (model.model, *key))
             facts = checkpoints.get('facts')
             if facts is None:
                 progress(20, 'Candidate fact validation')
@@ -1475,7 +1484,7 @@ class AutomationJobs:
                 source_kind = 'documents'
             elif request.get('regenerated_from'):
                 source_kind = 'regenerated'
-            approval = {'operation': job['id'], 'approved_by': job['owner'], 'claims': claims,
+            approval = {'operation': job['id'], 'approved_by': job['owner'], 'claims': claims, 'ai_model': model.model,
                         'project_names': [split_project(p)[0] for p in packet['profile'].get('projects', [])],
                         'market_sources': intelligence['sources'],
                         'automation': {'v': 7, 'consent': request['consent'], 'submission_sha256': job['id'],
@@ -1506,7 +1515,7 @@ class AutomationJobs:
             with closing(self.connection()) as db, db:
                 db.execute("UPDATE automation SET status='needs_input',stage='Needs your input',error=?,checkpoints=?,"
                            'updated=? WHERE owner=? AND id=?', (str(gap), json.dumps(checkpoints), updated(), *key))
-        except (OllamaError, OSError, sqlite3.Error):
+        except (OllamaError, OSError, sqlite3.Error) as error:
             # Temporary: keep the submission and every checkpoint, so the retry resumes where it stopped.
             count = job['attempts'] + 1
             available = count < RETRY_LIMIT
@@ -1514,6 +1523,7 @@ class AutomationJobs:
                 db.execute("UPDATE automation SET status=?,stage=?,error=?,attempts=?,next_retry=?,updated=? WHERE owner=? AND id=?",
                            ('retrying' if available else 'blocked',
                             'Retrying automatically' if available else 'Needs operator attention',
+                            str(error) if isinstance(error, OllamaUnavailableError) else
                             'A temporary Ollama or storage problem interrupted preparation.' if available else
                             'Ollama or local storage needs attention.',
                             count, updated() + min(3600, 30 * 2 ** count) if available else 0, updated(), *key))

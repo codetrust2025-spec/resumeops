@@ -411,6 +411,7 @@ function showEditPreview(result) {
   // Original vs edited, before approval: each proposed change beside the current value, with its own tick box.
   const box = byId('auto-edit-changes');
   box.replaceChildren(element('strong', 'Original vs edited: untick any change you do not want'));
+  if (result.ai_model) box.append(element('p', 'Model: ' + result.ai_model));
   const table = element('table');
   table.className = 'auto-compare-table';
   const head = element('tr');
@@ -1120,6 +1121,12 @@ function jobItem(job) {
     role.className = 'auto-role';
     role.title = job.role;
     who.append(role);
+  }
+  if (job.ai_model) {
+    const model = element('span', 'Model: ' + job.ai_model);
+    model.className = 'auto-role';
+    model.title = job.ai_model;
+    who.append(model);
   }
   if (job.created) {
     const date = element('span');

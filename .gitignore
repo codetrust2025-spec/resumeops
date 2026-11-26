@@ -13,6 +13,7 @@ releases/
 *.resume-bot-uploads/
 *.sqlite3*
 dashboard-config.json
+.resumeops-ollama.json
 release-state.json
 *.pem
 *.p12

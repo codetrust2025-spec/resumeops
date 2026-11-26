@@ -485,6 +485,20 @@ li[data-status=blocked] .auto-state strong{background:var(--a-red-bg);color:var(
 
 /* AI Edit */
 .auto-head-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.auto-history-heading{display:flex;align-items:center;gap:12px;min-width:0}
+.auto-history-heading h2{white-space:nowrap}
+.auto-model-settings{position:relative;color:var(--a-ink);min-width:0;overflow-wrap:anywhere}
+.auto-model-settings summary{cursor:pointer;font-weight:600;max-width:min(18vw,14rem);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.auto-model-settings form{display:grid;gap:6px;position:absolute;z-index:4;top:100%;left:0;margin-top:6px;
+  width:min(23rem,calc(100vw - 48px));padding:12px;background:#fff;border:1px solid var(--a-line);border-radius:10px;
+  box-shadow:0 6px 18px rgba(15,31,61,.14)}
+.auto-model-settings select{min-width:0;max-width:100%;font:inherit;padding:8px}
+.auto-model-settings p{margin:0;color:var(--a-muted)}
+.auto-model-settings .auto-head-actions{justify-content:flex-start}
+@media(max-width:760px){
+  .auto-model-settings{grid-row:2;grid-column:1/-1;justify-self:start}
+  .auto-model-settings summary{max-width:65vw}
+}
 .auto-edit-dialog{max-width:min(620px,calc(100vw - 24px));width:100%}
 .auto-edit-dialog label{display:grid;gap:5px;font-weight:600;font-size:.9rem}
 .auto-edit-dialog textarea{min-height:52px}

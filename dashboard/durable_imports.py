@@ -66,6 +66,8 @@ class DurableImports:
                 owner TEXT, id TEXT, extension TEXT, digest TEXT, document BLOB,
                 status TEXT, stage TEXT, created REAL, started REAL, activity REAL,
                 metrics TEXT, result TEXT, PRIMARY KEY(owner,id))''')
+            if 'ai_model' not in {column[1] for column in db.execute('PRAGMA table_info(imports)')}:
+                db.execute('ALTER TABLE imports ADD COLUMN ai_model TEXT')
 
     def freeze_review(self, owner, identifier, payload):
         with closing(self.connection()) as db, db:
@@ -115,7 +117,8 @@ class DurableImports:
                                      (owner,)).fetchone()[0]
                 if count >= 128 or pending >= 4:
                     raise ImportCapacity('Import storage is busy. Your upload can retry shortly.')
-                db.execute('INSERT INTO imports VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+                db.execute('INSERT INTO imports(owner,id,extension,digest,document,status,stage,created,started,activity,metrics,result) '
+                           'VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
                            (owner, identifier, extension, digest, data, 'queued', 'Reading document',
                             now, None, now, None, None))
         self.start()
@@ -125,7 +128,7 @@ class DurableImports:
     def get(self, owner, identifier):
         now = time.time()
         with closing(self.connection()) as db:
-            item = db.execute('SELECT status,stage,started,activity,metrics,result,extension FROM imports WHERE owner=? AND id=?',
+            item = db.execute('SELECT status,stage,started,activity,metrics,result,extension,ai_model FROM imports WHERE owner=? AND id=?',
                               (owner, identifier)).fetchone()
         if not item or (item['status'] in ('complete','error') and item['activity'] < now - RETENTION):
             return None
@@ -138,6 +141,8 @@ class DurableImports:
             item['status'], item['stage'], metrics, item['extension']))
         if metrics:
             data['metrics'] = metrics
+        if item['ai_model']:
+            data['ai_model'] = item['ai_model']
         return data
 
     def start(self):
@@ -171,7 +176,7 @@ class DurableImports:
         while not self.stop_signal.is_set():
             with closing(self.connection()) as db, db:
                 self.purge(db, time.time())
-                job = db.execute("SELECT owner,id,extension,document FROM imports WHERE status='queued' ORDER BY created LIMIT 1").fetchone()
+                job = db.execute("SELECT owner,id,extension,document,ai_model FROM imports WHERE status='queued' ORDER BY created LIMIT 1").fetchone()
                 if job:
                     db.execute("UPDATE imports SET status='processing',started=?,activity=? WHERE owner=? AND id=?",
                                (time.time(), time.time(), job['owner'], job['id']))
@@ -182,17 +187,19 @@ class DurableImports:
                 self.wake.clear()
 
     def process(self, job):
+        from resume_bot.ollama import OllamaUnavailableError
         key = (job['owner'], job['id'])
 
         def update(stage, metrics=None):
             with closing(self.connection()) as db, db:
-                db.execute('UPDATE imports SET stage=?,activity=?,metrics=? WHERE owner=? AND id=?',
-                           (stage, time.time(), json.dumps(metrics), *key))
+                db.execute('UPDATE imports SET stage=?,activity=?,metrics=?,ai_model=COALESCE(?,ai_model) WHERE owner=? AND id=?',
+                           (stage, time.time(), json.dumps(metrics), (metrics or {}).get('ai_model'), *key))
 
         try:
-            result = self.draft(job['extension'], job['document'], update)
+            options = {'model': job['ai_model']} if job['ai_model'] else {}
+            result = self.draft(job['extension'], job['document'], update, **options)
             status, stage = 'complete', 'Draft ready for review'
-        except ValueError as error:
+        except (ValueError, OllamaUnavailableError) as error:
             status, stage = 'error', 'Import failed'
             result = {'error': str(error)}
         except Exception:

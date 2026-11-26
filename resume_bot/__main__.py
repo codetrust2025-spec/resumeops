@@ -13,8 +13,8 @@ def main():
         subp=sub.add_parser(name)
         subp.add_argument('--input' if name=='run' else '--inbox',required=True)
         subp.add_argument('--output',default='output')
-        subp.add_argument('--model',default='qwen2.5:7b')
-        subp.add_argument('--ollama-url',default='http://127.0.0.1:11434')
+        subp.add_argument('--model',default=os.getenv('OLLAMA_MODEL') or 'qwen2.5:7b')
+        subp.add_argument('--ollama-url',default=os.getenv('OLLAMA_URL') or 'http://127.0.0.1:11434')
         subp.add_argument('--no-polish',action='store_true',help='Only for offline debugging; AI normally mandatory')
         subp.add_argument('--overleaf',action='store_true',help='Import final ZIP using signed-in browser profile')
         subp.add_argument('--browser-profile',default='.overleaf-browser-profile')
@@ -58,6 +58,9 @@ def main():
         os.environ.setdefault('RESUMEOPS_GPU_GATE', str(Path(a.inbox).resolve().parent / '.resumeops-gpu'))
     ai=Ollama(a.model,a.ollama_url)
     if a.command=='run':
+        if not a.no_polish or Path(a.input).suffix.lower() != '.json':
+            from .model_settings import ModelSettings
+            ai = ModelSettings(Path.cwd(), ai.model, ai.url).client()
         result=process(a.input,a.output,ai=ai,polish_enabled=not a.no_polish,
                        overleaf=a.overleaf,browser_profile=a.browser_profile,max_pages=a.max_pages)
         print(json.dumps(result,indent=2))
@@ -70,13 +73,21 @@ def watch(a, ai, sleep=None):
     and a logon task both started one), stand by and take over when it stops, instead of crashing."""
     import sqlite3
     import time
+    from .model_settings import ModelSettings
+
+    if ai is not None:
+        settings = ModelSettings(Path(a.inbox).parent.resolve(), ai.model, ai.url)
+        ai_for_job = settings.client
+    else:
+        ai_for_job = None
     sleep = sleep or time.sleep
     waiting = False
     while True:
         try:
             return scan(a.inbox,a.output,ai=ai,polish_enabled=not a.no_polish,
                         overleaf=a.overleaf,browser_profile=a.browser_profile,
-                        once=a.once,interval=a.interval,max_pages=a.max_pages,automate=True)
+                        once=a.once,interval=a.interval,max_pages=a.max_pages,automate=True,
+                        ai_for_job=ai_for_job)
         except sqlite3.OperationalError as exc:
             if 'locked' not in str(exc).lower() or a.once:
                 raise

@@ -24,6 +24,7 @@ function renderJobs() {
   const rows = snapshot.jobs.filter(job => job.name.toLowerCase().includes(query)).map(job => {
     const row = document.createElement('tr');
     const name = text('td', job.name);
+    if (job.ai_model) name.append(text('small', 'Model: ' + job.ai_model, 'sha'));
     if (job.error) name.append(text('small', job.error, 'error'));
     const status = document.createElement('td');
     status.append(pill(job.blocked ? 'Blocked · retrying' : statusLabels[job.status] || job.status, job.status));
